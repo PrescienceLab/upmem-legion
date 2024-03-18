@@ -351,6 +351,30 @@ ifeq ($(strip $(USE_LLVM)),1)
   LEGION_LD_FLAGS += $(LLVM_SYSTEM_LIBS)
 endif
 
+
+ifeq ($(strip $(USE_SIMPLETEST)),1)
+  REALM_CC_FLAGS += -DREALM_USE_SIMPLE_TEST
+endif
+
+ifeq ($(strip $(USE_UPMEM)),1)
+  ifndef UPMEM_HOME
+    $(error UPMEM_HOME variable is not defined, aborting build)
+  endif
+  UPMEM_CC	      ?= $(UPMEM_HOME)/bin/dpu-upmem-dpurte-clang
+  REALM_CC_FLAGS  += -DREALM_USE_UPMEM
+  # LEGION_CC_FLAGS += -DLEGION_USE_HIP
+  CC_FLAGS        += -DNR_TASKLETS=16 -DNR_DPUS=128
+  LD_FLAGS        += -L$(UPMEM_HOME)/lib -ldpu
+  UPMEM_CC_FLAGS  += 
+  INC_FLAGS       += -I$(UPMEM_HOME)/include/dpu
+  ifeq ($(strip $(DEBUG)),1)
+    UPMEM_CC_FLAGS	+= -g
+  else
+    UPMEM_CC_FLAGS	+= -O2
+  endif
+  # LEGION_LD_FLAGS	+= -lm -L$(UPMEM_PATH)/lib
+endif
+
 ifeq ($(strip $(USE_OPENMP)),1)
   REALM_CC_FLAGS += -DREALM_USE_OPENMP
   # Add the -fopenmp flag for Linux, but not for Mac as clang doesn't need it
@@ -1042,6 +1066,16 @@ endif
 ifeq ($(strip $(USE_NVTX)),1)
 REALM_SRC 	+= $(LG_RT_DIR)/realm/nvtx.cc
 endif
+ifeq ($(strip $(USE_SIMPLETEST)),1)
+REALM_SRC 	+= $(LG_RT_DIR)/realm/simpletest/simpletest_module.cc \
+              $(LG_RT_DIR)/realm/simpletest/simpletest_access.cc 
+endif
+ifeq ($(strip $(USE_UPMEM)),1)
+REALM_SRC 	+= $(LG_RT_DIR)/realm/upmem/upmem_module.cc \
+              $(LG_RT_DIR)/realm/upmem/upmem_access.cc \
+              $(LG_RT_DIR)/realm/upmem/upmem_internal.cc 
+endif
+
 REALM_SRC 	+= $(LG_RT_DIR)/realm/activemsg.cc \
                    $(LG_RT_DIR)/realm/nodeset.cc \
                    $(LG_RT_DIR)/realm/network.cc
@@ -1204,7 +1238,12 @@ ifeq ($(strip $(USE_HDF)),1)
 INSTALL_HEADERS += realm/hdf5/hdf5_access.h \
 		   realm/hdf5/hdf5_access.inl
 endif
-
+ifeq ($(strip $(USE_SIMPLETEST)),1)
+INSTALL_HEADERS += realm/simpletest/simpletest_access.h
+endif
+ifeq ($(strip $(USE_UPMEM)),1)
+INSTALL_HEADERS += realm/upmem/upmem_access.h
+endif
 # General shell commands
 SHELL	:= /bin/sh
 SH	:= sh

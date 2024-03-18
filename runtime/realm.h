@@ -58,6 +58,15 @@
 #include "realm/hdf5/hdf5_access.h"
 #endif
 
+
+#ifdef REALM_USE_SIMPLE_TEST
+#include "realm/simpletest/simpletest_access.h"
+#endif
+
+#ifdef REALM_USE_UPMEM
+#include "realm/upmem/upmem_access.h"
+#endif
+
 #endif // ifndef REALM_H
 #endif // ifdef REALM_ENABLE_CXX_BINDINGS
 

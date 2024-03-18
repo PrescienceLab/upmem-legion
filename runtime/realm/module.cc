@@ -98,6 +98,17 @@ REGISTER_REALM_NETWORK_MODULE_STATIC(Realm::GASNetEXModule, "gasnetex", 3);
 REGISTER_REALM_NETWORK_MODULE_STATIC(Realm::MPIModule, "mpi", 100);
 #endif
 
+
+#ifdef REALM_USE_SIMPLE_TEST
+#include "realm/simpletest/simpletest_module.h"
+REGISTER_REALM_MODULE_STATIC(Realm::SimpleTest::SimpleTestModule);
+#endif
+
+#ifdef REALM_USE_UPMEM
+#include "realm/upmem/upmem_module.h"
+REGISTER_REALM_MODULE_STATIC(Realm::Upmem::UpmemModule);
+#endif
+
 namespace Realm {
 
   Logger log_module("module");
