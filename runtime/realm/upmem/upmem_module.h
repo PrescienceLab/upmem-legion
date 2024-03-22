@@ -16,8 +16,11 @@
 
 #ifndef REALM_UPMEM_MODULE_H
 #define REALM_UPMEM_MODULE_H
+
 #define MEGABYTE (2 << 20)
 #define KILOBYTE (2 << 10)
+
+#include <dpu.h> // UPMEM rt syslib
 
 #include "realm/realm_config.h"
 #include "realm/module.h"
@@ -25,9 +28,26 @@
 #include "realm/network.h"
 #include "realm/atomics.h"
 
+#include "realm/logging.h"
+#include "realm/cmdline.h"
+#include "realm/proc_impl.h"
+#include "realm/threads.h"
+#include "realm/runtime_impl.h"
+#include "realm/utils.h"
+#include "realm/tasks.h"
+#include "realm/event_impl.h"
+#include "realm/idx_impl.h"
+
 namespace Realm {
   namespace Upmem {
+    // REALM_PUBLIC_API dpu_set_t *get_task_upmem_stream();
+    // REALM_PUBLIC_API void set_task_ctxsync_required(bool is_required);
+
+    typedef void (*StreamAwareTaskFuncPtr)(const void *args, size_t arglen,
+                                           const void *user_data, size_t user_data_len,
+                                           Processor proc, dpu_set_t *stream);
     class DPU;
+    class DPUProcessor;
     class DPUWorker;
     struct DPUInfo;
     // class DPUZCMemory;
@@ -50,7 +70,7 @@ namespace Realm {
       // size_t cfg_fb_mem_size = 256 << 20, cfg_fb_ib_size = 128 << 20;
       // bool cfg_use_dynamic_fb = true;
       // size_t cfg_dynfb_max_size = ~size_t(0);
-      // std::string cfg_dpu_idxs;
+      std::string cfg_dpu_idxs;
       unsigned cfg_task_streams = 12, cfg_d2d_streams = 4;
       bool cfg_use_worker_threads = false, cfg_use_shared_worker = true,
            cfg_pin_sysmem = true;
@@ -74,9 +94,9 @@ namespace Realm {
     };
 
     // our interface to the rest of the runtime
-    class UpmemModule : public Module {
+    class REALM_PUBLIC_API UpmemModule : public Module {
     protected:
-      UpmemModule(void);
+      UpmemModule(RuntimeImpl *_runtime);
 
     public:
       virtual ~UpmemModule(void);
@@ -108,6 +128,9 @@ namespace Realm {
       //  after all memories/processors/etc. have been shut down and destroyed
       virtual void cleanup(void);
 
+      dpu_set_t *get_task_upmem_stream();
+      void set_task_ctxsync_required(bool is_required);
+
     public:
       UpmemModuleConfig *config;
       RuntimeImpl *runtime;
@@ -121,6 +144,35 @@ namespace Realm {
       // DPUZCMemory *zcmem;
       std::vector<void *> registered_host_ptrs;
       DPUReplHeapListener *rh_listener;
+
+      Mutex upmemipc_mutex;
+      Mutex::CondVar upmemipc_condvar;
+      atomic<int> upmemipc_responses_needed;
+      atomic<int> upmemipc_releases_needed;
+      atomic<int> upmemipc_exports_remaining;
+    };
+
+    // we want to subclass the scheduler to replace the execute_task method, but we also
+    // want to
+    //  allow the use of user or kernel threads, so we apply a bit of template magic
+    //  (which only works because the constructors for the KernelThreadTaskScheduler and
+    //  UserThreadTaskScheduler classes have the same prototypes)
+
+    template <typename T>
+    class DPUTaskScheduler : public T {
+    public:
+      DPUTaskScheduler(Processor _proc, Realm::CoreReservation &_core_rsrv,
+                       DPUProcessor *_dpu_proc);
+
+      virtual ~DPUTaskScheduler(void);
+
+    protected:
+      virtual bool execute_task(Task *task);
+      virtual void execute_internal_task(InternalTask *task);
+
+      // might also need to override the thread-switching methods to keep TLS up to date
+
+      DPUProcessor *dpu_proc;
     };
 
   }; // namespace Upmem

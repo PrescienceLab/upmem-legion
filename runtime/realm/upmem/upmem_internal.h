@@ -13,10 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-#include "realm/upmem/upmem_module.h"
+#ifndef REALM_UPMEM_INT_H
+#define REALM_UPMEM_INT_H
 
 #include "dpu.h" // UPMEM rt syslib
+
+#include "realm/upmem/upmem_module.h"
 
 #include "realm/operation.h"
 #include "realm/threads.h"
@@ -34,15 +36,24 @@ namespace Realm {
 
   namespace Upmem {
 
+    typedef uint32_t upmemDevice_t;
+    typedef std::string upmemEvent_t;
+
     enum DPUMemcpyKind
     {
       DPU_MEMCPY_HOST_TO_DEVICE,
       DPU_MEMCPY_DEVICE_TO_HOST,
-      DPU_MEMCPY_DEVICE_TO_DEVICE,
+      DPU_MEMCPY_DEVIC2E_TO_DEVICE,
+    };
+
+    struct DPUInfo {
+      int index;
+      upmemDevice_t device;
+      static const size_t MAX_NAME_LEN = 64;
+      std::set<upmemDevice_t> peers;
     };
 
     // Forard declaration
-    class UpmemModule;
     class DPU;
     class DPUProcessor;
     class DPUWorker;
@@ -50,6 +61,10 @@ namespace Realm {
     class DPURequest;
     class DPUCompletionEvent;
     class DPUCompletionNotification;
+    class DPUEventPool;
+    class DPUMemcpy;
+    class DPUWorkStart;
+    class DPUWorkFence;
 
     // class DPUFBMemory;
     // class DPUZCMemory;
@@ -57,126 +72,6 @@ namespace Realm {
     class UpmemModule;
 
     extern UpmemModule *upmem_module_singleton;
-
-    class DPU {
-    public:
-      DPU(UpmemModule *_module, DPUInfo *_info, DPUWorker *worker, int _device_id);
-      ~DPU(void);
-
-      void push_context(void);
-      void pop_context(void);
-
-      void create_processor(RuntimeImpl *runtime, size_t stack_size);
-      // void create_fb_memory(RuntimeImpl *runtime, size_t size, size_t ib_size);
-      // void create_dynamic_fb_memory(RuntimeImpl *runtime, size_t max_size);
-      // void create_dma_channels(Realm::RuntimeImpl *r);
-
-    protected:
-      upmemModule_t load_upmem_module(const void *data);
-
-    public:
-      UpmemModule *module;
-      DPUInfo *info;
-      DPUWorker *worker;
-      DPUProcessor *proc;
-      // DPUFBMemory *fbmem;
-      // DPUFBIBMemory *fb_ibmem;
-
-      // upmemCtx_t context;
-      int device_id;
-      char *fbmem_base, *fb_ibmem_base;
-
-      // which system memories have been registered and can be used for cuMemcpyAsync
-      // std::set<Memory> pinned_sysmems;
-
-      // which other FBs we have peer access to
-      // std::set<Memory> peer_fbs;
-
-      // streams for different copy types and a pile for actual tasks
-      // DPUStream *host_to_device_stream;
-      // DPUStream *device_to_host_stream;
-      // DPUStream *device_to_device_stream;
-      // std::vector<DPUStream *> device_to_device_streams;
-      // std::vector<DPUStream *> peer_to_peer_streams; // indexed by target
-      // std::vector<DPUStream *> task_streams;
-      atomic<unsigned> next_task_stream, next_d2d_stream;
-
-      DPUEventPool event_pool;
-
-      struct UpmemIpcMapping {
-        NodeID owner;
-        Memory mem;
-        uintptr_t local_base;
-        uintptr_t address_offset; // add to convert from original to local base
-      };
-      std::vector<UpmemIpcMapping> upmemipc_mappings;
-      // std::map<NodeID, DPUStream *> upmemipc_streams;
-      // const UpmemIpcMapping *find_ipc_mapping(Memory mem) const;
-    };
-
-    class DPUProcessor : public Realm::LocalTaskProcessor {
-    public:
-      DPUProcessor(DPU *_dpu, Processor _me, Realm::CoreReservationSet &crs,
-                   size_t _stack_size);
-      virtual ~DPUProcessor(void);
-
-    public:
-      virtual bool register_task(Processor::TaskFuncID func_id, CodeDescriptor &codedesc,
-                                 const ByteArrayRef &user_data);
-
-      virtual void shutdown(void);
-
-    protected:
-      virtual void execute_task(Processor::TaskFuncID func_id,
-                                const ByteArrayRef &task_args);
-
-    public:
-      static DPUProcessor *get_current_dpu_proc(void);
-
-      //   void stream_wait_on_event(dpu_set_t stream, upmem_bin event);
-      //   void stream_synchronize(dpu_set_t stream);
-      void device_synchronize(void);
-
-      void dpu_memcpy(void *dst, const void *src, size_t size, UpmemMemcpyKind kind);
-      //   void dpu_memcpy_async(void *dst, const void *src, size_t size,
-      // 		    UpmemMemcpyKind kind, dpu_set_t stream);
-      void dpu_memset(void *dst, int value, size_t count);
-      //   void dpu_memset_async(void *dst, int value, size_t count, dpu_set_t
-      //   stream);
-
-    public:
-      DPU *dpu;
-
-      // data needed for kernel launches
-      struct LaunchConfig {
-        uint16_t tasklets;
-        uint16_t dpus;
-        size_t mram;
-        LaunchConfig(uint16_t tasklets, uint16_t dpus, size_t _mram);
-      };
-      struct CallConfig : public LaunchConfig {
-        dpu_set_t stream;
-        CallConfig(uint16_t tasklets, uint16_t dpus, size_t _mram, dpu_set_t _stream);
-      };
-      std::vector<CallConfig> launch_configs;
-      std::vector<char> kernel_args;
-      std::vector<CallConfig> call_configs;
-      bool block_on_synchronize;
-      ContextSynchronizer ctxsync;
-
-    protected:
-      Realm::CoreReservation *core_rsrv;
-
-      struct DPUTaskTableEntry {
-        Processor::TaskFuncPtr fnptr;
-        // DPU::StreamAwareTaskFuncPtr stream_aware_fnptr;
-        ByteArray user_data;
-      };
-
-      // we're not using the parent's task table, but we can use the mutex
-      // RWLock task_table_mutex;
-      std::map<Processor::TaskFuncID, DPUTaskTableEntry> dpu_task_table;
-    };
 
     // a DPUWorker is responsible for making progress on one or more DPUStreams -
     //  this may be done directly by a DPUProcessor or in a background thread
@@ -216,15 +111,52 @@ namespace Realm {
       Realm::Thread *worker_thread;
       bool thread_sleeping;
       atomic<bool> worker_shutdown_requested;
-    };
+
+    }; // end class DPUWorker
+
+    class DPUWorkFence : public Realm::Operation::AsyncWorkItem {
+    public:
+      DPUWorkFence(Realm::Operation *op);
+
+      virtual void request_cancellation(void);
+
+      void enqueue_on_stream(DPUStream *stream);
+
+      virtual void print(std::ostream &os) const;
+
+      IntrusiveListLink<DPUWorkFence> fence_list_link;
+      REALM_PMTA_DEFN(DPUWorkFence, IntrusiveListLink<DPUWorkFence>, fence_list_link);
+      typedef IntrusiveList<DPUWorkFence, REALM_PMTA_USE(DPUWorkFence, fence_list_link),
+                            DummyLock>
+          FenceList;
+
+    protected:
+      static void upmem_callback(dpu_set_t stream, uint32_t rank_id, void *data);
+    }; // end class DPUWorkFence
+
+    class DPUWorkStart : public Realm::Operation::AsyncWorkItem {
+    public:
+      DPUWorkStart(Realm::Operation *op);
+
+      virtual void request_cancellation(void) { return; };
+
+      void enqueue_on_stream(DPUStream *stream);
+
+      virtual void print(std::ostream &os) const;
+
+      void mark_dpu_work_start();
+
+    protected:
+      static void upmem_start_callback(dpu_set_t stream, uint32_t rank_id, void *data);
+    }; // end class DPUWorkStart
 
     class DPUStream {
     public:
-      DPUStream(DPU *_dpu, DPUWorker *_worker, int rel_priority = 0);
+      DPUStream(DPU *_dpu, DPUWorker *_worker /*,  int rel_priority = 0 */);
       ~DPUStream(void);
 
       DPU *get_dpu(void) const;
-      dpu_set_t get_stream(void) const;
+      dpu_set_t *get_stream(void) const;
 
       // may be called by anybody to enqueue a copy or an event
       void add_copy(DPUMemcpy *copy);
@@ -248,14 +180,14 @@ namespace Realm {
       // may only be tested with lock held
       bool has_work(void) const;
 
-      void add_event(upmem_bin event, DPUWorkFence *fence,
+      void add_event(upmemEvent_t event, DPUWorkFence *fence,
                      DPUCompletionNotification *notification = NULL,
                      DPUWorkStart *start = NULL);
 
       DPU *dpu;
       DPUWorker *worker;
 
-      dpu_set_t stream;
+      dpu_set_t *stream;
 
       Mutex mutex;
 
@@ -268,7 +200,7 @@ namespace Realm {
       bool issuing_copies;
 
       struct PendingEvent {
-        upmem_bin event;
+        upmemEvent_t event;
         DPUWorkFence *fence;
         DPUWorkStart *start;
         DPUCompletionNotification *notification;
@@ -278,7 +210,8 @@ namespace Realm {
 #else
       std::deque<PendingEvent> pending_events;
 #endif
-    };
+
+    }; // end class DPUStream
 
     // a little helper class to manage a pool of CUevents that can be reused
     //  to reduce alloc/destroy overheads
@@ -292,14 +225,52 @@ namespace Realm {
       void init_pool(int init_size = 0 /* default == batch size */);
       void empty_pool(void);
 
-      upmem_bin get_event(bool external = false);
-      void return_event(upmem_bin e, bool external = false);
+      upmemEvent_t get_event(bool external = false);
+      void return_event(upmemEvent_t e, bool external = false);
 
     protected:
       Mutex mutex;
       int batch_size, current_size, total_size, external_count;
-      std::vector<upmem_bin> available_events;
-    };
+      std::vector<upmemEvent_t> available_events;
+
+    }; // end class DPUEventPool
+
+    class ContextSynchronizer {
+    public:
+      ContextSynchronizer(DPU *_dpu, int _device_id, CoreReservationSet &crs,
+                          int _max_threads);
+      ~ContextSynchronizer();
+
+      void add_fence(DPUWorkFence *fence);
+
+      void shutdown_threads();
+
+      void thread_main();
+
+    protected:
+      DPU *dpu;
+
+      int device_id;
+      int max_threads;
+      Mutex mutex;
+      Mutex::CondVar condvar;
+      bool shutdown_flag;
+      DPUWorkFence::FenceList fences;
+      int total_threads, sleeping_threads, syncing_threads;
+      std::vector<Thread *> worker_threads;
+      CoreReservation *core_rsrv;
+    }; // end class ContextSynchronizer
+
+    // helper to push/pop a DPU's context by scope
+    class AutoDPUContext {
+    public:
+      AutoDPUContext(DPU &_dpu);
+      AutoDPUContext(DPU *_dpu);
+      ~AutoDPUContext(void);
+
+    protected:
+      DPU *dpu;
+    }; // end class AutoDPUContext
 
     // an interface for receiving completion notification for a DPU operation
     //  (right now, just copies)
@@ -308,7 +279,7 @@ namespace Realm {
       virtual ~DPUCompletionNotification(void) {}
 
       virtual void request_completed(void) = 0;
-    };
+    }; // end class DPUCompletionNotification
 
     class DPUPreemptionWaiter : public DPUCompletionNotification {
     public:
@@ -324,14 +295,14 @@ namespace Realm {
     private:
       DPU *const dpu;
       Event wait_event;
-    };
+    }; // end class DPUPreemptionWaiter
 
     class DPUCompletionEvent : public DPUCompletionNotification {
     public:
       void request_completed(void);
 
       DPURequest *req;
-    };
+    }; // end class DPUCompletionEvent
 
     class DPURequest : public Request {
     public:
@@ -340,46 +311,127 @@ namespace Realm {
       // off_t src_dpu_off, dst_dpu_off;
       DPU *dst_dpu;
       DPUCompletionEvent event;
-    };
+    }; // end class DPURequest
 
-    class DPUWorkFence : public Realm::Operation::AsyncWorkItem {
+    class DPU {
     public:
-      DPUWorkFence(Realm::Operation *op);
+      DPU(UpmemModule *_module, DPUInfo *_info, DPUWorker *worker, int _device_id);
+      ~DPU(void);
 
-      virtual void request_cancellation(void);
+      void push_context(void);
+      void pop_context(void);
 
-      void enqueue_on_stream(DPUStream *stream);
+      void create_processor(RuntimeImpl *runtime, size_t stack_size);
+      // void create_fb_memory(RuntimeImpl *runtime, size_t size, size_t ib_size);
+      // void create_dynamic_fb_memory(RuntimeImpl *runtime, size_t max_size);
+      // void create_dma_channels(Realm::RuntimeImpl *r);
 
-      virtual void print(std::ostream &os) const;
+    public:
+      UpmemModule *module;
+      DPUInfo *info;
+      DPUWorker *worker;
+      DPUProcessor *proc;
+      // DPUFBMemory *fbmem;
+      // DPUFBIBMemory *fb_ibmem;
 
-      IntrusiveListLink<DPUWorkFence> fence_list_link;
-      REALM_PMTA_DEFN(DPUWorkFence, IntrusiveListLink<DPUWorkFence>, fence_list_link);
-      typedef IntrusiveList<DPUWorkFence, REALM_PMTA_USE(DPUWorkFence, fence_list_link),
-                            DummyLock>
-          FenceList;
+      // upmemCtx_t context;
+      int device_id;
+      char *fbmem_base, *fb_ibmem_base;
+
+      DPUStream *find_stream(dpu_set_t *stream) const;
+      DPUStream *get_null_task_stream(void) const;
+      DPUStream *get_next_task_stream(bool create = false);
+
+      // which system memories have been registered and can be used for cuMemcpyAsync
+      // std::set<Memory> pinned_sysmems;
+
+      // which other FBs we have peer access to
+      // std::set<Memory> peer_fbs;
+
+      std::vector<DPUStream *> task_streams;
+      atomic<unsigned> next_task_stream, next_d2d_stream;
+
+      DPUEventPool event_pool;
+
+      struct UpmemIpcMapping {
+        NodeID owner;
+        Memory mem;
+        uintptr_t local_base;
+        uintptr_t address_offset; // add to convert from original to local base
+      };
+      std::vector<UpmemIpcMapping> upmemipc_mappings;
+      std::map<NodeID, DPUStream *> upmemipc_streams;
+      const UpmemIpcMapping *find_ipc_mapping(Memory mem) const;
+
+    }; // end class DPU
+
+    class DPUProcessor : public Realm::LocalTaskProcessor {
+    public:
+      DPUProcessor(DPU *_dpu, Processor _me, Realm::CoreReservationSet &crs,
+                   size_t _stack_size);
+      virtual ~DPUProcessor(void);
+
+    public:
+      virtual bool register_task(Processor::TaskFuncID func_id, CodeDescriptor &codedesc,
+                                 const ByteArrayRef &user_data);
+
+      virtual void shutdown(void);
 
     protected:
-      static void upmem_callback(dpu_set_t stream, uint32_t rank_id, void *data);
-    };
+      virtual void execute_task(Processor::TaskFuncID func_id,
+                                const ByteArrayRef &task_args);
 
-    class DPUWorkStart : public Realm::Operation::AsyncWorkItem {
     public:
-      DPUWorkStart(Realm::Operation *op);
+      static DPUProcessor *get_current_dpu_proc(void);
 
-      virtual void request_cancellation(void) { return; };
+      //   void stream_wait_on_event(dpu_set_t stream, upmemEvent_t event);
+      //   void stream_synchronize(dpu_set_t stream);
+      void device_synchronize(void);
 
-      void enqueue_on_stream(DPUStream *stream);
+      void dpu_memcpy(void *dst, const void *src, size_t size, DPUMemcpyKind kind);
+      //   void dpu_memcpy_async(void *dst, const void *src, size_t size,
+      // 		    DPUMemcpyKind kind, dpu_set_t stream);
+      void dpu_memset(void *dst, int value, size_t count);
+      //   void dpu_memset_async(void *dst, int value, size_t count, dpu_set_t
+      //   stream);
 
-      virtual void print(std::ostream &os) const;
+    public:
+      DPU *dpu;
 
-      void mark_dpu_work_start();
+      // data needed for kernel launches
+      struct LaunchConfig {
+        uint16_t tasklets;
+        uint16_t dpus;
+        size_t mram;
+        LaunchConfig(uint16_t tasklets, uint16_t dpus, size_t _mram);
+      };
+      struct CallConfig : public LaunchConfig {
+        dpu_set_t stream;
+        CallConfig(uint16_t tasklets, uint16_t dpus, size_t _mram, dpu_set_t _stream);
+      };
+      std::vector<CallConfig> launch_configs;
+      std::vector<char> kernel_args;
+      std::vector<CallConfig> call_configs;
+      bool block_on_synchronize;
+      ContextSynchronizer ctxsync;
 
     protected:
-      static void upmem_start_callback(dpu_set_t stream, uint32_t rank_id, void *data);
-    };
+      Realm::CoreReservation *core_rsrv;
+
+      struct DPUTaskTableEntry {
+        Processor::TaskFuncPtr fnptr;
+        Upmem::StreamAwareTaskFuncPtr stream_aware_fnptr;
+        ByteArray user_data;
+      };
+
+      // we're not using the parent's task table, but we can use the mutex
+      // RWLock task_table_mutex;
+      std::map<Processor::TaskFuncID, DPUTaskTableEntry> dpu_task_table;
+
+    }; // end class DPUProcessor
 
     // An abstract base class for all DPU memcpy operations
-    class DPUMemcpy { //: public DPUJob {
+    class DPUMemcpy {
     public:
       DPUMemcpy(DPU *_dpu, DPUMemcpyKind _kind);
       virtual ~DPUMemcpy(void) {}
@@ -392,7 +444,7 @@ namespace Realm {
 
     protected:
       DPUMemcpyKind kind;
-    };
+    }; // end class DPUMemcpy
 
     class DPUMemcpyFence : public DPUMemcpy {
     public:
@@ -402,110 +454,21 @@ namespace Realm {
 
     protected:
       DPUWorkFence *fence;
-    };
-
-    ////////////////////////////////////////////////////////////////////////
-    //
-    // class DPUEventPool
-
-    DPUEventPool::DPUEventPool(int _batch_size)
-      : batch_size(_batch_size)
-      , current_size(0)
-      , total_size(0)
-      , external_count(0)
-    {
-      // don't immediately fill the pool because we're not managing the context ourselves
-    }
-
-    // allocating the initial batch of events and cleaning up are done with
-    //  these methods instead of constructor/destructor because we don't
-    //  manage the DPU context in this helper class
-    void DPUEventPool::init_pool(int init_size /*= 0 -- default == batch size */)
-    {
-      assert(available_events.empty());
-
-      if(init_size == 0)
-        init_size = batch_size;
-
-      available_events.resize(init_size);
-
-      current_size = init_size;
-      total_size = init_size;
-
-      // TODO: measure how much benefit is derived from CU_EVENT_DISABLE_TIMING and
-      //  consider using them for completion callbacks
-      for(int i = 0; i < init_size; i++)
-        CHECK_HIP(hipEventCreateWithFlags(&available_events[i], hipEventDefault));
-    }
-
-    void DPUEventPool::empty_pool(void)
-    {
-      // shouldn't be any events running around still
-      assert((current_size + external_count) == total_size);
-      if(external_count)
-        log_stream.warning() << "Application leaking " << external_count
-                             << " cuda events";
-
-      for(int i = 0; i < current_size; i++)
-        CHECK_HIP(hipEventDestroy(available_events[i]));
-
-      current_size = 0;
-      total_size = 0;
-
-      // free internal vector storage
-      std::vector<hipEvent_t>().swap(available_events);
-    }
-
-    hipEvent_t DPUEventPool::get_event(bool external)
-    {
-      AutoLock<> al(mutex);
-
-      if(current_size == 0) {
-        // if we need to make an event, make a bunch
-        current_size = batch_size;
-        total_size += batch_size;
-
-        log_stream.info() << "event pool " << this << " depleted - adding " << batch_size
-                          << " events";
-
-        // resize the vector (considering all events that might come back)
-        available_events.resize(total_size);
-
-        for(int i = 0; i < batch_size; i++)
-          CHECK_HIP(hipEventCreateWithFlags(&available_events[i], hipEventDefault));
-      }
-
-      if(external)
-        external_count++;
-
-      return available_events[--current_size];
-    }
-
-    void DPUEventPool::return_event(hipEvent_t e, bool external)
-    {
-      AutoLock<> al(mutex);
-
-      assert(current_size < total_size);
-
-      if(external) {
-        assert(external_count);
-        external_count--;
-      }
-
-      available_events[current_size++] = e;
-    }
+    }; // end class DPUMemcpyFence
 
     class DPUReplHeapListener : public ReplicatedHeap::Listener {
     public:
-      DPUUReplHeapListener(UpmemModule *_module);
+      DPUReplHeapListener(UpmemModule *_module);
 
       virtual void chunk_created(void *base, size_t bytes);
       virtual void chunk_destroyed(void *base, size_t bytes);
 
     protected:
       UpmemModule *module;
-    };
+    }; // end class DPUReplHeapListener
 
   } // namespace Upmem
 
 } // namespace Realm
+
+#endif
