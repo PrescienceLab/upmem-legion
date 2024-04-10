@@ -14,8 +14,9 @@
  * limitations under the License.
  */
 
-#include "realm/upmem/upmem_internal.h"
 #include "realm/upmem/upmem_module.h"
+#include "realm/upmem/upmem_internal.h"
+#include "realm/upmem/upmem_access.h"
 
 namespace Realm {
 
@@ -26,6 +27,10 @@ namespace Realm {
     extern Logger log_dpu;
     extern Logger log_stream;
     extern Logger log_dpudma;
+
+    void upmemEventCreate(upmemEvent_t *e) {}
+
+    void upmemEventDestroy(upmemEvent_t *e) {}
 
     ////////////////////////////////////////////////////////////////////////
     //
@@ -99,6 +104,146 @@ namespace Realm {
           new DPUTaskScheduler<Realm::KernelThreadTaskScheduler>(me, *core_rsrv, this);
 #endif
       set_scheduler(sched);
+    }
+    ////////////////////////////////////////////////////////////////////////
+    //
+    // class DPUTaskScheduler<T>
+
+    template <typename T>
+    DPUTaskScheduler<T>::DPUTaskScheduler(Processor _proc,
+                                          Realm::CoreReservation &_core_rsrv,
+                                          DPUProcessor *_dpu_proc)
+      : T(_proc, _core_rsrv)
+      , dpu_proc(_dpu_proc)
+    {
+      // nothing else
+    }
+
+    template <typename T>
+    DPUTaskScheduler<T>::~DPUTaskScheduler(void)
+    {}
+
+    template <typename T>
+    bool DPUTaskScheduler<T>::execute_task(Task *task)
+    {
+      // use TLS to make sure that the task can find the current DPU processor when it
+      // makes
+      //  UPMEM RT calls
+      // TODO: either eliminate these asserts or do TLS swapping when using user threads
+      assert(ThreadLocal::current_dpu_proc == 0);
+      ThreadLocal::current_dpu_proc = dpu_proc;
+
+      // push the UPMEM context for this DPU onto this thread
+      dpu_proc->dpu->push_context();
+
+      // bump the current stream
+      // TODO: sanity-check whether this even works right when DPU tasks suspend
+      assert(ThreadLocal::current_dpu_stream == 0);
+      DPUStream *s = dpu_proc->dpu->get_next_task_stream();
+      ThreadLocal::current_dpu_stream = s;
+      assert(!ThreadLocal::created_dpu_streams);
+
+      // a task can force context sync on task completion either on or off during
+      //  execution, so use -1 as a "no preference" value
+      ThreadLocal::context_sync_required = -1;
+
+      // we'll use a "work fence" to track when the kernels launched by this task actually
+      //  finish - this must be added to the task _BEFORE_ we execute
+      DPUWorkFence *fence = new DPUWorkFence(task);
+      task->add_async_work_item(fence);
+
+      // event to record the DPU start time for the task, if requested
+      if(task->wants_gpu_work_start()) {
+        DPUWorkStart *start = new DPUWorkStart(task);
+        task->add_async_work_item(start);
+        start->enqueue_on_stream(s);
+      }
+
+      bool ok = T::execute_task(task);
+
+      // if the user could have put work on any other streams then make our
+      // stream wait on those streams as well
+      // TODO: update this so that it works when DPU tasks suspend
+      if(ThreadLocal::created_dpu_streams) {
+        s->wait_on_streams(*ThreadLocal::created_dpu_streams);
+        delete ThreadLocal::created_dpu_streams;
+        ThreadLocal::created_dpu_streams = 0;
+      }
+
+      // if this is our first task, we might need to decide whether
+      //  full context synchronization is required for a task to be
+      //  "complete"
+      if(dpu_proc->dpu->module->config->cfg_task_context_sync < 0) {
+        dpu_proc->dpu->module->config->cfg_task_context_sync = 1;
+      }
+
+      if((ThreadLocal::context_sync_required > 0) ||
+         ((ThreadLocal::context_sync_required < 0) &&
+          dpu_proc->dpu->module->config->cfg_task_context_sync))
+        dpu_proc->ctxsync.add_fence(fence);
+      else
+        fence->enqueue_on_stream(s);
+
+        // A useful debugging macro
+#ifdef FORCE_DPU_STREAM_SYNCHRONIZE
+      DPU_ASSERT(dpu_sync(*s->get_stream()));
+#endif
+
+      // pop the UPMEM context for this DPU back off
+      dpu_proc->dpu->pop_context();
+
+      assert(ThreadLocal::current_dpu_proc == dpu_proc);
+      ThreadLocal::current_dpu_proc = 0;
+      assert(ThreadLocal::current_dpu_stream == s);
+      ThreadLocal::current_dpu_stream = 0;
+
+      return ok;
+    }
+
+    template <typename T>
+    void DPUTaskScheduler<T>::execute_internal_task(InternalTask *task)
+    {
+      // use TLS to make sure that the task can find the current DPU processor when it
+      // makes
+      //  UPMEM RT calls
+      // TODO: either eliminate these asserts or do TLS swapping when using user threads
+      assert(ThreadLocal::current_dpu_proc == 0);
+      ThreadLocal::current_dpu_proc = dpu_proc;
+
+      // push the UPMEM context for this DPU onto this thread
+      dpu_proc->dpu->push_context();
+
+      assert(ThreadLocal::current_dpu_stream == 0);
+      DPUStream *s = dpu_proc->dpu->get_next_task_stream();
+      ThreadLocal::current_dpu_stream = s;
+      assert(!ThreadLocal::created_dpu_streams);
+
+      // internal tasks aren't allowed to wait on events, so any cuda synch
+      //  calls inside the call must be blocking
+      dpu_proc->block_on_synchronize = true;
+      // execute the internal task, whatever it is
+      T::execute_internal_task(task);
+
+      // if the user could have put work on any other streams then make our
+      // stream wait on those streams as well
+      // TODO: update this so that it works when DPU tasks suspend
+      if(ThreadLocal::created_dpu_streams) {
+        s->wait_on_streams(*ThreadLocal::created_dpu_streams);
+        delete ThreadLocal::created_dpu_streams;
+        ThreadLocal::created_dpu_streams = 0;
+      }
+
+      // we didn't use streams here, so synchronize the whole context
+      DPU_ASSERT(dpu_sync(*s->get_stream()));
+      dpu_proc->block_on_synchronize = false;
+
+      // pop the UPMEM context for this DPU back off
+      dpu_proc->dpu->pop_context();
+
+      assert(ThreadLocal::current_dpu_proc == dpu_proc);
+      ThreadLocal::current_dpu_proc = 0;
+      assert(ThreadLocal::current_dpu_stream == s);
+      ThreadLocal::current_dpu_stream = 0;
     }
 
     DPUProcessor::~DPUProcessor(void) { delete core_rsrv; }
@@ -189,7 +334,7 @@ namespace Realm {
       if(tte.stream_aware_fnptr) {
         // shouldn't be here without a valid stream
         assert(ThreadLocal::current_dpu_stream);
-        dpu_set_t *stream = ThreadLocal::current_dpu_stream->get_stream();
+        struct dpu_set_t *stream = ThreadLocal::current_dpu_stream->get_stream();
 
         log_taskreg.debug() << "task " << func_id << " executing on " << me << ": "
                             << ((void *)(tte.stream_aware_fnptr)) << " (stream aware)";
@@ -219,6 +364,8 @@ namespace Realm {
       //  this after shutting down the threads so that we know all work is done
       // {
       // AutoDPUContext agc(dpu);
+
+      // TODO: for each DPUSET // stream, dpu_sync(&stream);
 
       // CHECK_HIP( hipDeviceSynchronize() );
       // }
@@ -431,7 +578,7 @@ namespace Realm {
 
     DPU *DPUStream::get_dpu(void) const { return dpu; }
 
-    dpu_set_t *DPUStream::get_stream(void) const { return stream; }
+    struct dpu_set_t *DPUStream::get_stream(void) const { return stream; }
 
     // may be called by anybody to enqueue a copy or an event
     void DPUStream::add_copy(DPUMemcpy *copy)
@@ -457,7 +604,7 @@ namespace Realm {
     {
       upmemEvent_t e = dpu->event_pool.get_event();
 
-      DPU_ASSERT(upmemEventRecord(e, stream));
+      // DPU_ASSERT(upmemEventRecord(e, stream));
 
       log_stream.debug() << "UPMEM fence event " << e << " recorded on stream " << stream
                          << " (DPU " << dpu << ")";
@@ -469,7 +616,7 @@ namespace Realm {
     {
       upmemEvent_t e = dpu->event_pool.get_event();
 
-      DPU_ASSERT(upmemEventRecord(e, stream));
+      // DPU_ASSERT(upmemEventRecord(e, stream));
 
       log_stream.debug() << "UPMEM start event " << e << " recorded on stream " << stream
                          << " (DPU " << dpu << ")";
@@ -482,7 +629,7 @@ namespace Realm {
     {
       upmemEvent_t e = dpu->event_pool.get_event();
 
-      DPU_ASSERT(upmemEventRecord(e, stream));
+      // DPU_ASSERT(upmemEventRecord(e, stream));
 
       add_event(e, 0, notification, 0);
     }
@@ -522,12 +669,10 @@ namespace Realm {
           continue;
         upmemEvent_t e = dpu->event_pool.get_event();
 
-        DPU_ASSERT(upmemEventRecord(e, (*it)->get_stream()));
-
         log_stream.debug() << "UPMEM stream " << stream << " waiting on stream "
                            << (*it)->get_stream() << " (DPU " << dpu << ")";
-
-        DPU_ASSERT(upmemStreamWaitEvent(stream, e, 0));
+        // sync
+        DPU_ASSERT(dpu_sync(*(*it)->get_stream()));
 
         // record this event on our stream
         add_event(e, 0);
@@ -621,13 +766,13 @@ namespace Realm {
       // we'll keep looking at events until we find one that hasn't triggered
       bool work_left = true;
       while(event_valid) {
-        dpu_error_t res = upmemEventQuery(event);
+        //   dpu_error_t res = upmemEventQuery(event);
 
         //   if(res == upmemErrorNotReady)
         //     return true; // oldest event hasn't triggered - check again later
 
         //   // no other kind of error is expected
-        //   if(res != upmemSuccess) {
+        //   if(res != DPU_OK) {
         //     const char *ename = 0;
         //     const char *estr = 0;
         //     ename = upmemGetErrorName(res);
@@ -689,7 +834,6 @@ namespace Realm {
     ////////////////////////////////////////////////////////////////////////
     //
     // class DPUEventPool
-
     DPUEventPool::DPUEventPool(int _batch_size)
       : batch_size(_batch_size)
       , current_size(0)
@@ -702,7 +846,7 @@ namespace Realm {
     // allocating the initial batch of events and cleaning up are done with
     //  these methods instead of constructor/destructor because we don't
     //  manage the DPU context in this helper class
-    void DPUEventPool::init_pool(int init_size /*= 0 -- default == batch size */)
+    void DPUEventPool::init_pool(int init_size /* = 0 -- default == batch size */)
     {
       assert(available_events.empty());
 
@@ -716,8 +860,13 @@ namespace Realm {
 
       // TODO: measure how much benefit is derived from CU_EVENT_DISABLE_TIMING and
       //  consider using them for completion callbacks
-      for(int i = 0; i < init_size; i++)
-        CHECK_HIP(hipEventCreateWithFlags(&available_events[i], hipEventDefault));
+      for(int i = 0; i < init_size; i++) {
+        printf("DEBUGGING INIT POOL\n");
+        printf(" %d\n", i);
+        // create events
+        // CHECK_HIP(hipEventCreateWithFlags(&available_events[i], hipEventDefault));
+        upmemEventCreate(&available_events[i]);
+      }
     }
 
     void DPUEventPool::empty_pool(void)
@@ -728,9 +877,10 @@ namespace Realm {
         log_stream.warning() << "Application leaking " << external_count
                              << " cuda events";
 
-      for(int i = 0; i < current_size; i++)
-        CHECK_HIP(hipEventDestroy(available_events[i]));
-
+      for(int i = 0; i < current_size; i++) {
+        // destroy all events
+        upmemEventDestroy(&available_events[i]);
+      }
       current_size = 0;
       total_size = 0;
 
@@ -753,8 +903,10 @@ namespace Realm {
         // resize the vector (considering all events that might come back)
         available_events.resize(total_size);
 
-        for(int i = 0; i < batch_size; i++)
-          CHECK_HIP(hipEventCreateWithFlags(&available_events[i], hipEventDefault));
+        for(int i = 0; i < batch_size; i++) {
+          upmemEventCreate(&available_events[i]);
+          // CHECK_HIP(hipEventCreateWithFlags(&available_events[i], hipEventDefault));
+        }
       }
 
       if(external)
@@ -805,8 +957,8 @@ namespace Realm {
     {
 
       if(stream->get_dpu()->module->config->cfg_fences_use_callbacks) {
-        DPU_ASSERT(dpu_callback(stream->get_stream(), &upmem_start_callback, (void *)this,
-                                DPU_CALLBACK_NONBLOCKING));
+        DPU_ASSERT(dpu_callback(*stream->get_stream(), &upmem_start_callback,
+                                (void *)this, DPU_CALLBACK_NONBLOCKING));
       } else {
         stream->add_fence(this);
       }
@@ -814,13 +966,15 @@ namespace Realm {
 
     // callback this function when work is finished
     // mark finished on callback
-    /*static*/ void DPUWorkFence::dpu_callback(dpu_set_t stream, uint32_t rank_id,
-                                               void *data)
+    /*static*/ dpu_error_t DPUWorkFence::upmem_start_callback(struct dpu_set_t stream,
+                                                              uint32_t rank_id,
+                                                              void *data)
     {
       DPUWorkFence *me = (DPUWorkFence *)data;
 
-      // assert(res == upmemSuccess);
+      // assert(res == DPU_OK);
       me->mark_finished(true /*succesful*/);
+      return DPU_OK;
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -849,13 +1003,15 @@ namespace Realm {
       mark_finished(true);
     }
 
-    /*static*/ void DPUWorkStart::upmem_start_callback(dpu_set_t stream, uint32_t rank_id,
-                                                       void *data)
+    /*static*/ dpu_error_t DPUWorkStart::upmem_start_callback(struct dpu_set_t stream,
+                                                              uint32_t rank_id,
+                                                              void *data)
     {
       DPUWorkStart *me = (DPUWorkStart *)data;
-      // assert(res == upmemSuccess);
+      // assert(res == DPU_OK);
       // record the real start time for the operation
       me->mark_dpu_work_start();
+      return DPU_OK;
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -956,7 +1112,7 @@ namespace Realm {
         //                           upmemHostRegisterPortable |
         //                           upmemHostRegisterMapped);
         //   }
-        //   if(ret != upmemSuccess) {
+        //   if(ret != DPU_OK) {
         //     log_dpu.fatal() << "failed to register replicated heap chunk: base=" <<
         //     base
         //                     << " size=" << bytes << " ret=" << ret;
@@ -975,7 +1131,7 @@ namespace Realm {
         //     AutoDPUContext agc(module->dpus[0]);
         //     ret = upmemHostUnregister(base);
         //   }
-        //   if(ret != upmemSuccess)
+        //   if(ret != DPU_OK)
         //     log_dpu.warning() << "failed to unregister replicated heap chunk: base=" <<
         //     base
         //                       << " size=" << bytes << " ret=" << ret;
@@ -983,5 +1139,4 @@ namespace Realm {
     }
 
   }; // namespace Upmem
-
-}; // namespace Realm
+};   // namespace Realm

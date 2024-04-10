@@ -16,10 +16,9 @@
 #ifndef REALM_UPMEM_INT_H
 #define REALM_UPMEM_INT_H
 
-#include "dpu.h" // UPMEM rt syslib
+#include <dpu> // UPMEM rt syslib
 
-#include "realm/upmem/upmem_module.h"
-
+#include "realm/tasks.h"
 #include "realm/operation.h"
 #include "realm/threads.h"
 #include "realm/circ_queue.h"
@@ -30,14 +29,19 @@
 #include "realm/transfer/channel.h"
 #include "realm/transfer/ib_memory.h"
 
-#define upememSuccess 1
-
 namespace Realm {
 
   namespace Upmem {
 
+    typedef void (*StreamAwareTaskFuncPtr)(const void *args, size_t arglen,
+                                           const void *user_data, size_t user_data_len,
+                                           Processor proc, struct dpu_set_t *stream);
+
     typedef uint32_t upmemDevice_t;
     typedef std::string upmemEvent_t;
+
+    void upmemEventCreate(upmemEvent_t *e);
+    void upmemEventDestroy(upmemEvent_t *e);
 
     enum DPUMemcpyKind
     {
@@ -131,7 +135,8 @@ namespace Realm {
           FenceList;
 
     protected:
-      static void upmem_callback(dpu_set_t stream, uint32_t rank_id, void *data);
+      static dpu_error_t upmem_start_callback(struct dpu_set_t stream, uint32_t rank_id,
+                                              void *data);
     }; // end class DPUWorkFence
 
     class DPUWorkStart : public Realm::Operation::AsyncWorkItem {
@@ -147,7 +152,8 @@ namespace Realm {
       void mark_dpu_work_start();
 
     protected:
-      static void upmem_start_callback(dpu_set_t stream, uint32_t rank_id, void *data);
+      static dpu_error_t upmem_start_callback(struct dpu_set_t stream, uint32_t rank_id,
+                                              void *data);
     }; // end class DPUWorkStart
 
     class DPUStream {
@@ -156,7 +162,7 @@ namespace Realm {
       ~DPUStream(void);
 
       DPU *get_dpu(void) const;
-      dpu_set_t *get_stream(void) const;
+      struct dpu_set_t *get_stream(void) const;
 
       // may be called by anybody to enqueue a copy or an event
       void add_copy(DPUMemcpy *copy);
@@ -187,7 +193,7 @@ namespace Realm {
       DPU *dpu;
       DPUWorker *worker;
 
-      dpu_set_t *stream;
+      struct dpu_set_t *stream;
 
       Mutex mutex;
 
@@ -338,7 +344,7 @@ namespace Realm {
       int device_id;
       char *fbmem_base, *fb_ibmem_base;
 
-      DPUStream *find_stream(dpu_set_t *stream) const;
+      DPUStream *find_stream(struct dpu_set_t *stream) const;
       DPUStream *get_null_task_stream(void) const;
       DPUStream *get_next_task_stream(bool create = false);
 
@@ -406,8 +412,9 @@ namespace Realm {
         LaunchConfig(uint16_t tasklets, uint16_t dpus, size_t _mram);
       };
       struct CallConfig : public LaunchConfig {
-        dpu_set_t stream;
-        CallConfig(uint16_t tasklets, uint16_t dpus, size_t _mram, dpu_set_t _stream);
+        struct dpu_set_t stream;
+        CallConfig(uint16_t tasklets, uint16_t dpus, size_t _mram,
+                   struct dpu_set_t _stream);
       };
       std::vector<CallConfig> launch_configs;
       std::vector<char> kernel_args;
@@ -467,8 +474,31 @@ namespace Realm {
       UpmemModule *module;
     }; // end class DPUReplHeapListener
 
-  } // namespace Upmem
+    // we want to subclass the scheduler to replace the execute_task method, but we also
+    // want to
+    //  allow the use of user or kernel threads, so we apply a bit of template magic
+    //  (which only works because the constructors for the KernelThreadTaskScheduler and
+    //  UserThreadTaskScheduler classes have the same prototypes)
 
-} // namespace Realm
+    template <typename T>
+    class DPUTaskScheduler : public T {
+    public:
+      DPUTaskScheduler(Processor _proc, Realm::CoreReservation &_core_rsrv,
+                       DPUProcessor *_dpu_proc);
+
+      virtual ~DPUTaskScheduler(void);
+
+    protected:
+      virtual bool execute_task(Task *task);
+      virtual void execute_internal_task(InternalTask *task);
+
+      // might also need to override the thread-switching methods to keep TLS up to date
+
+      DPUProcessor *dpu_proc;
+    };
+
+  }; // namespace Upmem
+
+}; // namespace Realm
 
 #endif

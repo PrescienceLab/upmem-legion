@@ -20,7 +20,7 @@
 #define MEGABYTE (2 << 20)
 #define KILOBYTE (2 << 10)
 
-#include <dpu.h> // UPMEM rt syslib
+#include "realm/upmem/upmem_internal.h"
 
 #include "realm/realm_config.h"
 #include "realm/module.h"
@@ -34,7 +34,6 @@
 #include "realm/threads.h"
 #include "realm/runtime_impl.h"
 #include "realm/utils.h"
-#include "realm/tasks.h"
 #include "realm/event_impl.h"
 #include "realm/idx_impl.h"
 
@@ -45,13 +44,14 @@ namespace Realm {
 
     typedef void (*StreamAwareTaskFuncPtr)(const void *args, size_t arglen,
                                            const void *user_data, size_t user_data_len,
-                                           Processor proc, dpu_set_t *stream);
+                                           Processor proc, struct dpu_set_t *stream);
     class DPU;
     class DPUProcessor;
     class DPUWorker;
     struct DPUInfo;
     // class DPUZCMemory;
     class DPUReplHeapListener;
+    class DPUStream;
 
     class UpmemModuleConfig : public ModuleConfig {
       friend class UpmemModule;
@@ -128,7 +128,7 @@ namespace Realm {
       //  after all memories/processors/etc. have been shut down and destroyed
       virtual void cleanup(void);
 
-      dpu_set_t *get_task_upmem_stream();
+      struct dpu_set_t *get_task_upmem_stream();
       void set_task_ctxsync_required(bool is_required);
 
     public:
@@ -152,28 +152,12 @@ namespace Realm {
       atomic<int> upmemipc_exports_remaining;
     };
 
-    // we want to subclass the scheduler to replace the execute_task method, but we also
-    // want to
-    //  allow the use of user or kernel threads, so we apply a bit of template magic
-    //  (which only works because the constructors for the KernelThreadTaskScheduler and
-    //  UserThreadTaskScheduler classes have the same prototypes)
-
-    template <typename T>
-    class DPUTaskScheduler : public T {
-    public:
-      DPUTaskScheduler(Processor _proc, Realm::CoreReservation &_core_rsrv,
-                       DPUProcessor *_dpu_proc);
-
-      virtual ~DPUTaskScheduler(void);
-
-    protected:
-      virtual bool execute_task(Task *task);
-      virtual void execute_internal_task(InternalTask *task);
-
-      // might also need to override the thread-switching methods to keep TLS up to date
-
-      DPUProcessor *dpu_proc;
-    };
+    namespace ThreadLocal {
+      static REALM_THREAD_LOCAL DPUProcessor *current_dpu_proc = 0;
+      static REALM_THREAD_LOCAL DPUStream *current_dpu_stream = 0;
+      static REALM_THREAD_LOCAL std::set<DPUStream *> *created_dpu_streams = 0;
+      static REALM_THREAD_LOCAL int context_sync_required = 0;
+    }; // namespace ThreadLocal
 
   }; // namespace Upmem
 
