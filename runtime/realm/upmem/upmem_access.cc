@@ -23,12 +23,12 @@ namespace Realm {
     extern Logger log_upmem;
     REALM_PUBLIC_API void upmem()
     {
-      // struct dpu_set_t dpus;
-      // dpu_alloc(1, dpus, NULL);
-      // dpu_sync(); // test
-
       Upmem::UpmemModule *mod = get_runtime()->get_module<Upmem::UpmemModule>("upmem");
       assert(mod);
+
+      // test create compute units
+      mod->create_processors(get_runtime());
+      
     }
   }; // namespace Upmem
   using Upmem::log_upmem;

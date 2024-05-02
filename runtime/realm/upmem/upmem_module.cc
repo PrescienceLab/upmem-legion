@@ -56,6 +56,7 @@ namespace Realm {
       CommandLineParser cp;
 
       cp.add_option_int("-ll:tasklets", cfg_tasklets);
+      cp.add_option_int("-ll:num_dpus", cfg_num_dpus);
 
       bool ok = cp.parse_command_line(cmdline);
       if(!ok) {
@@ -128,6 +129,8 @@ namespace Realm {
       std::vector<unsigned> fixed_indices;
 
       dpus.resize(config->cfg_num_dpus);
+      dpu_info.resize(config->cfg_num_dpus);
+
       unsigned dpu_count = 0;
       // try to get cfg_num_dpus, working through the list in order
       for(size_t i = config->cfg_skip_dpu_count;
@@ -142,6 +145,7 @@ namespace Realm {
         dpus[dpu_count++] = g;
       }
 
+      std::cout << "Requested DPUs \n" << std::endl;
       if(static_cast<int>(dpu_count) < config->cfg_num_dpus) {
         log_dpu.fatal() << config->cfg_num_dpus << " DPUs requested, but only "
                         << dpu_count << " available!";

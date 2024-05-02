@@ -568,9 +568,16 @@ namespace Realm {
       , worker(_worker)
       , issuing_copies(false)
     {
-      assert(worker != 0);
+      assert(worker != 0);  
+      struct dpu_set_t dpus;
+      stream = &dpus;
+
+      uint n = 1;
+
       // AT THE MOMENT, STREAMS ARE JUST DPU SETS WITH 64 DPUS
-      DPU_ASSERT(dpu_alloc(64, NULL, stream));
+      std::cout << "Allocated N DPU(s)\n" << std::endl;
+      DPU_ASSERT(dpu_alloc(n, "backend=simulator", stream));
+
       log_stream.info() << "stream created: dpu=" << dpu << " stream=" << stream;
     }
 
@@ -860,11 +867,9 @@ namespace Realm {
 
       // TODO: measure how much benefit is derived from CU_EVENT_DISABLE_TIMING and
       //  consider using them for completion callbacks
+      printf("DEBUGGING INIT POOL\n");
       for(int i = 0; i < init_size; i++) {
-        printf("DEBUGGING INIT POOL\n");
-        printf(" %d\n", i);
         // create events
-        // CHECK_HIP(hipEventCreateWithFlags(&available_events[i], hipEventDefault));
         upmemEventCreate(&available_events[i]);
       }
     }
@@ -905,7 +910,6 @@ namespace Realm {
 
         for(int i = 0; i < batch_size; i++) {
           upmemEventCreate(&available_events[i]);
-          // CHECK_HIP(hipEventCreateWithFlags(&available_events[i], hipEventDefault));
         }
       }
 
@@ -972,7 +976,6 @@ namespace Realm {
     {
       DPUWorkFence *me = (DPUWorkFence *)data;
 
-      // assert(res == DPU_OK);
       me->mark_finished(true /*succesful*/);
       return DPU_OK;
     }
@@ -1008,7 +1011,6 @@ namespace Realm {
                                                               void *data)
     {
       DPUWorkStart *me = (DPUWorkStart *)data;
-      // assert(res == DPU_OK);
       // record the real start time for the operation
       me->mark_dpu_work_start();
       return DPU_OK;

@@ -52,6 +52,7 @@ namespace Realm {
 
     struct DPUInfo {
       int index;
+      uint16_t size = 128;
       upmemDevice_t device;
       static const size_t MAX_NAME_LEN = 64;
       std::set<upmemDevice_t> peers;
