@@ -215,7 +215,7 @@ namespace Realm {
       params.set_alu_usage(params.CORE_USAGE_SHARED);
       params.set_fpu_usage(params.CORE_USAGE_MINIMAL);
       params.set_ldst_usage(params.CORE_USAGE_MINIMAL);
-      params.set_max_stack_size(1 << 20);
+      params.set_max_stack_size(64 * MEGABYTE);
 
       std::string name = stringbuilder() << "DPU ctxsync " << device_id;
 

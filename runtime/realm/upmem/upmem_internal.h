@@ -343,6 +343,8 @@ namespace Realm {
 
       // upmemCtx_t context;
       int device_id;
+      struct dpu_set_t *device;
+
       char *fbmem_base, *fb_ibmem_base;
 
       DPUStream *find_stream(struct dpu_set_t *stream) const;

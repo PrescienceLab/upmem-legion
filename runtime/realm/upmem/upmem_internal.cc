@@ -78,7 +78,7 @@ namespace Realm {
     //
     // class DPUProcessor
 
-    DPUProcessor::DPUProcessor(DPU *_dpu, Processor _me, Realm::CoreReservationSet &crs,
+    DPUProcessor::DPUProcessor(DPU *_d, Realm::CoreReservationSet &crs,
                                size_t _stack_size)
       : LocalTaskProcessor(_me, Processor::TOC_PROC)
       , dpu(_dpu)
@@ -93,6 +93,12 @@ namespace Realm {
       params.set_max_stack_size(_stack_size);
 
       std::string name = stringbuilder() << "DPU proc " << _me;
+
+      // struct dpu_set_t single_dpu;
+      // dpu->device = &single_dpu;
+      
+      // std::cout << "Allocated N DPU(s)\n" << std::endl;
+      // DPU_ASSERT(dpu_alloc(1, "backend=simulator", single_dpu));
 
       core_rsrv = new Realm::CoreReservation(name, crs, params);
 
@@ -569,14 +575,6 @@ namespace Realm {
       , issuing_copies(false)
     {
       assert(worker != 0);  
-      struct dpu_set_t dpus;
-      stream = &dpus;
-
-      uint n = 1;
-
-      // AT THE MOMENT, STREAMS ARE JUST DPU SETS WITH 64 DPUS
-      std::cout << "Allocated N DPU(s)\n" << std::endl;
-      DPU_ASSERT(dpu_alloc(n, "backend=simulator", stream));
 
       log_stream.info() << "stream created: dpu=" << dpu << " stream=" << stream;
     }
