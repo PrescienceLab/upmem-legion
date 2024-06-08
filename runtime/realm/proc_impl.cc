@@ -357,6 +357,8 @@ namespace Realm {
           return "PROC_GROUP";
         case PROC_SET:
           return "PROC_SET";
+        case DPU_PROC:
+          return "DPU_PROC";
         default:
           assert(0);
       }

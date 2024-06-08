@@ -80,7 +80,7 @@ namespace Realm {
 
     DPUProcessor::DPUProcessor(DPU *_d, Realm::CoreReservationSet &crs,
                                size_t _stack_size)
-      : LocalTaskProcessor(_me, Processor::TOC_PROC)
+      : LocalTaskProcessor(_me, Processor::DPU_PROC)
       , dpu(_dpu)
       , block_on_synchronize(false)
       , ctxsync(_dpu, _dpu->device_id, crs, _dpu->module->config->cfg_max_ctxsync_threads)
@@ -90,7 +90,7 @@ namespace Realm {
       params.set_alu_usage(params.CORE_USAGE_SHARED);
       params.set_fpu_usage(params.CORE_USAGE_SHARED);
       params.set_ldst_usage(params.CORE_USAGE_SHARED);
-      params.set_max_stack_size(_stack_size);
+      params.set_max_stack_size(_stack_size); // 64 MB for each DPU
 
       std::string name = stringbuilder() << "DPU proc " << _me;
 
@@ -100,6 +100,8 @@ namespace Realm {
       // std::cout << "Allocated N DPU(s)\n" << std::endl;
       // DPU_ASSERT(dpu_alloc(1, "backend=simulator", single_dpu));
 
+
+      // Each DPU gets a new Realm core reservation
       core_rsrv = new Realm::CoreReservation(name, crs, params);
 
 #ifdef REALM_USE_USER_THREADS_FOR_DPU
@@ -132,8 +134,7 @@ namespace Realm {
     template <typename T>
     bool DPUTaskScheduler<T>::execute_task(Task *task)
     {
-      // use TLS to make sure that the task can find the current DPU processor when it
-      // makes
+      // use TLS to make sure that the task can find the current DPU processor 
       //  UPMEM RT calls
       // TODO: either eliminate these asserts or do TLS swapping when using user threads
       assert(ThreadLocal::current_dpu_proc == 0);

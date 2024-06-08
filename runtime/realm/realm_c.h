@@ -51,7 +51,8 @@ typedef unsigned long long realm_barrier_timestamp_t;
   __op__(PROC_GROUP, "Processor group") \
   __op__(PROC_SET, "Set of Processors for OpenMP/Kokkos etc.") \
   __op__(OMP_PROC, "OpenMP (or similar) thread pool") \
-  __op__(PY_PROC, "Python interpreter")
+  __op__(PY_PROC, "Python interpreter") \
+  __op__(DPU_PROC, "UPMEM PIM DPU Processor")
 
 typedef enum realm_processor_kind_t {
 #define C_ENUMS(name, desc) name,
@@ -75,7 +76,8 @@ typedef enum realm_processor_kind_t {
   __op__(LEVEL2_CACHE, "CPU L2 Visible to all processors on the node, better performance to one processor") \
   __op__(LEVEL1_CACHE, "CPU L1 Visible to all processors on the node, better performance to one processor") \
   __op__(GPU_MANAGED_MEM, "Managed memory that can be cached by either host or GPU") \
-  __op__(GPU_DYNAMIC_MEM, "Dynamically-allocated framebuffer memory for one GPU and all its SMs")
+  __op__(GPU_DYNAMIC_MEM, "Dynamically-allocated framebuffer memory for one GPU and all its SMs") \
+  __op__(DPU_MRAM_MEM, "Managed memory local to a DPU processor. Not accessible by other DPUs") \
 
 typedef enum realm_memory_kind_t {
 #define C_ENUMS(name, desc) name,

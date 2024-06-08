@@ -128,6 +128,9 @@ namespace Realm {
 
       std::vector<unsigned> fixed_indices;
 
+      // each DPU has 64MB of MRAM and 64KB of cache
+      // we need to add each DPU to the core reservation in Realm
+
       dpus.resize(config->cfg_num_dpus);
       dpu_info.resize(config->cfg_num_dpus);
 
@@ -159,6 +162,12 @@ namespace Realm {
     void UpmemModule::create_memories(RuntimeImpl *runtime)
     {
       Module::create_memories(runtime);
+
+      /* TODO: Create some memory */
+
+      /* This is a shit ton of work */
+
+
     }
 
     void DPU::create_processor(RuntimeImpl *runtime, size_t stack_size)
@@ -173,8 +182,10 @@ namespace Realm {
     void UpmemModule::create_processors(RuntimeImpl *runtime)
     {
       Module::create_processors(runtime);
-      // each DPU needs a processor
+      // each DPU has 64MB of MRAM and 64KB of cache
+      // we can load a MAX of 64MB per DPU. This is the stack size limit here.
       for(std::vector<DPU *>::iterator it = dpus.begin(); it != dpus.end(); it++) {
+        // each dpu in the dpu iterator is a processor in Realm.
         (*it)->create_processor(runtime, 64 * MEGABYTE);
       }
     }
