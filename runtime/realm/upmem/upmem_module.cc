@@ -162,12 +162,57 @@ namespace Realm {
     void UpmemModule::create_memories(RuntimeImpl *runtime)
     {
       Module::create_memories(runtime);
+      // each DPU has its own memory
+      if(config->cfg_mram_mem_size > 0) {
+        for(std::vector<DPU *>::iterator it = dpus.begin();
+            it != dpus.end();
+            it++) {
+          (*it)->create_mram_memory(runtime, config->cfg_mram_mem_size);
+        }
+      }
+    }
 
-      /* TODO: Create some memory */
 
-      /* This is a shit ton of work */
+    void DPU::create_mram_memory(RuntimeImpl *runtime, size_t size)
+    {
+      Memory m = runtime->next_local_memory_id();
+      mram = new DPUMRAMMemory(m, this, stream, static_cast<char*>(mram_base), size);
+      runtime->add_memory(mram);
+    }
 
 
+    DPUMRAMMemory::DPUMRAMMemory(Memory _me, DPU *_dpu, DPUStream *_stream, char *_base, size_t _size)
+      : LocalManagedMemory(_me, _size, MKIND_MRAM, 512, Memory::DPU_MRAM_MEM, 0)
+      , dpu(_dpu), base(_base), stream(_stream)
+    {}
+
+
+    DPUMRAMMemory::~DPUMRAMMemory(void) {}
+
+    // these work, but they are SLOW
+    void DPUMRAMMemory::get_bytes(off_t offset, void *dst, size_t size)
+    {
+      // use a blocking copy - host memory probably isn't pinned anyway
+      {
+        // we need to get the dpu_set_t stream
+        CHECK_UPMEM( dpu_copy_from
+                   (*stream->get_stream(), "data", offset, dst, size) );
+      }
+    }
+
+    void DPUMRAMMemory::put_bytes(off_t offset, const void *src, size_t size)
+    {
+      // use a blocking copy - host memory probably isn't pinned anyway
+      {
+        // we need to get the dpu_set_t stream
+        CHECK_UPMEM( dpu_broadcast_to
+                   (*stream->get_stream(), "data", offset, src, size, DPU_XFER_DEFAULT) );
+      }
+    }
+
+    void *DPUMRAMMemory::get_direct_ptr(off_t offset, size_t size)
+    {
+      return (void *)(base + offset);
     }
 
     void DPU::create_processor(RuntimeImpl *runtime, size_t stack_size)
@@ -206,6 +251,8 @@ namespace Realm {
     //  after all memories/processors/etc. have been shut down and destroyed
     void UpmemModule::cleanup(void) { Module::cleanup(); }
 
+
+    
     ////////////////////////////////////////////////////////////////////////
     //
     // class ContextSynchronizer
@@ -338,14 +385,6 @@ namespace Realm {
         // shouldn't get here with an empty list
         assert(!my_fences.empty());
 
-        log_stream.debug() << "starting ctx sync: ctx=" << device_id;
-
-        {
-          AutoDPUContext agc(dpu);
-        }
-
-        log_stream.debug() << "finished ctx sync: ctx=" << device_id;
-
         // mark all the fences complete
         while(!my_fences.empty()) {
           DPUWorkFence *fence = my_fences.pop_front();
@@ -395,12 +434,6 @@ namespace Realm {
         return ThreadLocal::current_dpu_stream->get_stream();
       else
         return 0;
-    }
-
-    void UpmemModule::set_task_ctxsync_required(bool is_required)
-    {
-      // if we're not in a dpu task, setting this will have no effect
-      ThreadLocal::context_sync_required = (is_required ? 1 : 0);
     }
 
   }; // namespace Upmem

@@ -43,42 +43,33 @@ namespace Realm {
       , proc(0)
       , device_id(_device_id)
     {
-      push_context(); // currently doesn't do anything. we have one device atm
       event_pool.init_pool();
 
-      // DPUstreams are just DPU_sets
+      stream = new DPUStream(this, worker);
+
+      struct dpu_set_t single_dpu;
+ 
+      DPU_ASSERT(dpu_alloc(1, "backend=simulator", &single_dpu));
+
+      printf("DPU ALLOCATED\n");
+
+      stream->set_stream(&single_dpu);
 
       task_streams.resize(module->config->cfg_task_streams);
       for(unsigned i = 0; i < module->config->cfg_task_streams; i++)
         task_streams[i] = new DPUStream(this, worker);
-
-      pop_context();
     }
 
     DPU::~DPU(void)
     {
-      push_context();
       event_pool.empty_pool();
-    }
-
-    void DPU::push_context(void)
-    {
-      // CHECK_HIP( hipSetDevice(device_id) );
-    }
-
-    void DPU::pop_context(void)
-    {
-      // the context we pop had better be ours...
-      // hipCtx_t popped;
-      // CHECK_HIP( hipCtxPopCurrent(&popped) );
-      // assert(popped == context);
     }
 
     ///////////////////////////////////////////////////////////////////////
     //
     // class DPUProcessor
 
-    DPUProcessor::DPUProcessor(DPU *_d, Realm::CoreReservationSet &crs,
+    DPUProcessor::DPUProcessor(DPU *_dpu, Processor _me, Realm::CoreReservationSet &crs,
                                size_t _stack_size)
       : LocalTaskProcessor(_me, Processor::DPU_PROC)
       , dpu(_dpu)
@@ -94,23 +85,12 @@ namespace Realm {
 
       std::string name = stringbuilder() << "DPU proc " << _me;
 
-      // struct dpu_set_t single_dpu;
-      // dpu->device = &single_dpu;
-      
-      // std::cout << "Allocated N DPU(s)\n" << std::endl;
-      // DPU_ASSERT(dpu_alloc(1, "backend=simulator", single_dpu));
-
-
       // Each DPU gets a new Realm core reservation
       core_rsrv = new Realm::CoreReservation(name, crs, params);
 
-#ifdef REALM_USE_USER_THREADS_FOR_DPU
-      Realm::UserThreadTaskScheduler *sched =
-          new DPUTaskScheduler<Realm::UserThreadTaskScheduler>(me, *core_rsrv, this);
-#else
       Realm::KernelThreadTaskScheduler *sched =
           new DPUTaskScheduler<Realm::KernelThreadTaskScheduler>(me, *core_rsrv, this);
-#endif
+
       set_scheduler(sched);
     }
     ////////////////////////////////////////////////////////////////////////
@@ -140,19 +120,12 @@ namespace Realm {
       assert(ThreadLocal::current_dpu_proc == 0);
       ThreadLocal::current_dpu_proc = dpu_proc;
 
-      // push the UPMEM context for this DPU onto this thread
-      dpu_proc->dpu->push_context();
-
       // bump the current stream
       // TODO: sanity-check whether this even works right when DPU tasks suspend
       assert(ThreadLocal::current_dpu_stream == 0);
       DPUStream *s = dpu_proc->dpu->get_next_task_stream();
       ThreadLocal::current_dpu_stream = s;
       assert(!ThreadLocal::created_dpu_streams);
-
-      // a task can force context sync on task completion either on or off during
-      //  execution, so use -1 as a "no preference" value
-      ThreadLocal::context_sync_required = -1;
 
       // we'll use a "work fence" to track when the kernels launched by this task actually
       //  finish - this must be added to the task _BEFORE_ we execute
@@ -196,9 +169,6 @@ namespace Realm {
       DPU_ASSERT(dpu_sync(*s->get_stream()));
 #endif
 
-      // pop the UPMEM context for this DPU back off
-      dpu_proc->dpu->pop_context();
-
       assert(ThreadLocal::current_dpu_proc == dpu_proc);
       ThreadLocal::current_dpu_proc = 0;
       assert(ThreadLocal::current_dpu_stream == s);
@@ -216,9 +186,6 @@ namespace Realm {
       // TODO: either eliminate these asserts or do TLS swapping when using user threads
       assert(ThreadLocal::current_dpu_proc == 0);
       ThreadLocal::current_dpu_proc = dpu_proc;
-
-      // push the UPMEM context for this DPU onto this thread
-      dpu_proc->dpu->push_context();
 
       assert(ThreadLocal::current_dpu_stream == 0);
       DPUStream *s = dpu_proc->dpu->get_next_task_stream();
@@ -243,9 +210,6 @@ namespace Realm {
       // we didn't use streams here, so synchronize the whole context
       DPU_ASSERT(dpu_sync(*s->get_stream()));
       dpu_proc->block_on_synchronize = false;
-
-      // pop the UPMEM context for this DPU back off
-      dpu_proc->dpu->pop_context();
 
       assert(ThreadLocal::current_dpu_proc == dpu_proc);
       ThreadLocal::current_dpu_proc = 0;
@@ -367,15 +331,7 @@ namespace Realm {
 
       ctxsync.shutdown_threads();
 
-      // synchronize the device so we can flush any printf buffers - do
-      //  this after shutting down the threads so that we know all work is done
-      // {
-      // AutoDPUContext agc(dpu);
-
-      // TODO: for each DPUSET // stream, dpu_sync(&stream);
-
-      // CHECK_HIP( hipDeviceSynchronize() );
-      // }
+      CHECK_UPMEM(dpu_sync(dpu->stream->get_stream()));
     }
 
     DPUWorker::DPUWorker(void)
@@ -586,6 +542,8 @@ namespace Realm {
 
     struct dpu_set_t *DPUStream::get_stream(void) const { return stream; }
 
+    void DPUStream::set_stream(struct dpu_set_t *_stream) {stream = _stream};
+
     // may be called by anybody to enqueue a copy or an event
     void DPUStream::add_copy(DPUMemcpy *copy)
     {
@@ -720,7 +678,6 @@ namespace Realm {
 
       while(true) {
         {
-          AutoDPUContext agc(dpu);
           copy->execute(this);
         }
 
@@ -864,9 +821,6 @@ namespace Realm {
       current_size = init_size;
       total_size = init_size;
 
-      // TODO: measure how much benefit is derived from CU_EVENT_DISABLE_TIMING and
-      //  consider using them for completion callbacks
-      printf("DEBUGGING INIT POOL\n");
       for(int i = 0; i < init_size; i++) {
         // create events
         upmemEventCreate(&available_events[i]);
@@ -1029,8 +983,6 @@ namespace Realm {
 
     void DPUMemcpyFence::execute(DPUStream *stream)
     {
-      // log_stream.info() << "dpu memcpy fence " << this << " (fence = " << fence << ")
-      // executed";
       fence->enqueue_on_stream(stream);
 #ifdef FORCE_DPU_STREAM_SYNCHRONIZE
       DPU_ASSERT(dpu_sync(*stream->get_stream()));
@@ -1052,11 +1004,7 @@ namespace Realm {
     void DPUPreemptionWaiter::preempt(void)
     {
       // Realm threads don't obey a stack discipline for
-      // preemption so we can't leave our context on the stack
-      dpu->pop_context();
       wait_event.wait();
-      // When we wake back up, we have to push our context again
-      dpu->push_context();
     }
     ////////////////////////////////////////////////////////////////////////
     //
@@ -1066,77 +1014,6 @@ namespace Realm {
     {
       req->xd->notify_request_read_done(req);
       req->xd->notify_request_write_done(req);
-    }
-
-    ////////////////////////////////////////////////////////////////////////
-    //
-    // class AutoDPUContext
-
-    AutoDPUContext::AutoDPUContext(DPU &_dpu)
-      : dpu(&_dpu)
-    {
-      dpu->push_context();
-    }
-
-    AutoDPUContext::AutoDPUContext(DPU *_dpu)
-      : dpu(_dpu)
-    {
-      if(dpu)
-        dpu->push_context();
-    }
-
-    AutoDPUContext::~AutoDPUContext(void)
-    {
-      if(dpu)
-        dpu->pop_context();
-    }
-
-    ////////////////////////////////////////////////////////////////////////
-    //
-    // class DPUReplHeapListener
-    //
-
-    DPUReplHeapListener::DPUReplHeapListener(UpmemModule *_module)
-      : module(_module)
-    {}
-
-    void DPUReplHeapListener::chunk_created(void *base, size_t bytes)
-    {
-      if(!module->dpus.empty()) {
-        log_dpu.info() << "registering replicated heap chunk: base=" << base
-                       << " size=" << bytes;
-
-        //   dpu_error_t ret;
-        //   {
-        //     AutoDPUContext agc(module->dpus[0]);
-        //     ret = upmemHostRegister(base, bytes,
-        //                           upmemHostRegisterPortable |
-        //                           upmemHostRegisterMapped);
-        //   }
-        //   if(ret != DPU_OK) {
-        //     log_dpu.fatal() << "failed to register replicated heap chunk: base=" <<
-        //     base
-        //                     << " size=" << bytes << " ret=" << ret;
-        //     abort();
-      }
-    }
-
-    void DPUReplHeapListener::chunk_destroyed(void *base, size_t bytes)
-    {
-      if(!module->dpus.empty()) {
-        log_dpu.info() << "unregistering replicated heap chunk: base=" << base
-                       << " size=" << bytes;
-
-        //   dpu_error_t ret;
-        //   {
-        //     AutoDPUContext agc(module->dpus[0]);
-        //     ret = upmemHostUnregister(base);
-        //   }
-        //   if(ret != DPU_OK)
-        //     log_dpu.warning() << "failed to unregister replicated heap chunk: base=" <<
-        //     base
-        //                       << " size=" << bytes << " ret=" << ret;
-      }
     }
 
   }; // namespace Upmem

@@ -49,7 +49,6 @@ namespace Realm {
     class DPUProcessor;
     class DPUWorker;
     struct DPUInfo;
-    // class DPUZCMemory;
     class DPUReplHeapListener;
     class DPUStream;
 
@@ -66,14 +65,11 @@ namespace Realm {
       // configurations
       int cfg_num_dpus = 8;
       int cfg_tasklets = 16;
-      // size_t cfg_zc_mem_size = 64 << 20, cfg_zc_ib_size = 256 << 20;
-      // size_t cfg_fb_mem_size = 256 << 20, cfg_fb_ib_size = 128 << 20;
-      // bool cfg_use_dynamic_fb = true;
-      // size_t cfg_dynfb_max_size = ~size_t(0);
-      std::string cfg_dpu_idxs;
-      unsigned cfg_task_streams = 12, cfg_d2d_streams = 4;
-      bool cfg_use_worker_threads = false, cfg_use_shared_worker = true,
-           cfg_pin_sysmem = true;
+      int cfg_mram_mem_size = 64 * MEGABYTE;
+
+      int cfg_task_streams = 16;
+  
+
       bool cfg_fences_use_callbacks = false;
       bool cfg_suppress_hijack_warning = false;
       unsigned cfg_skip_dpu_count = 0;
@@ -89,8 +85,6 @@ namespace Realm {
       // resources
       bool resource_discovered = false;
       int res_num_dpus = 0;
-      // size_t res_min_fbmem_size = 0;
-      // std::vector<size_t> res_fbmem_sizes;
     };
 
     // our interface to the rest of the runtime
@@ -129,7 +123,6 @@ namespace Realm {
       virtual void cleanup(void);
 
       struct dpu_set_t *get_task_upmem_stream();
-      void set_task_ctxsync_required(bool is_required);
 
     public:
       UpmemModuleConfig *config;
@@ -140,8 +133,7 @@ namespace Realm {
       std::map<DPU *, DPUWorker *> dedicated_workers;
       std::vector<DPUInfo *> dpu_info;
       std::vector<DPU *> dpus;
-      // void *zcmem_cpu_base, *zcib_cpu_base;
-      // DPUZCMemory *zcmem;
+
       std::vector<void *> registered_host_ptrs;
       DPUReplHeapListener *rh_listener;
 

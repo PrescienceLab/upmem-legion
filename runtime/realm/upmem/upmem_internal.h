@@ -29,6 +29,8 @@
 #include "realm/transfer/channel.h"
 #include "realm/transfer/ib_memory.h"
 
+#define CHECK_UPMEM(x) DPU_ASSERT(x)
+
 namespace Realm {
 
   namespace Upmem {
@@ -47,7 +49,7 @@ namespace Realm {
     {
       DPU_MEMCPY_HOST_TO_DEVICE,
       DPU_MEMCPY_DEVICE_TO_HOST,
-      DPU_MEMCPY_DEVIC2E_TO_DEVICE,
+      DPU_MEMCPY_DEVICE_TO_DEVICE,
     };
 
     struct DPUInfo {
@@ -70,10 +72,7 @@ namespace Realm {
     class DPUMemcpy;
     class DPUWorkStart;
     class DPUWorkFence;
-
-    // class DPUFBMemory;
-    // class DPUZCMemory;
-    // class DPUFBIBMemory;
+    class DPUMRAMMemory;
     class UpmemModule;
 
     extern UpmemModule *upmem_module_singleton;
@@ -164,6 +163,7 @@ namespace Realm {
 
       DPU *get_dpu(void) const;
       struct dpu_set_t *get_stream(void) const;
+      void set_stream(struct dpu_set_t *stream);
 
       // may be called by anybody to enqueue a copy or an event
       void add_copy(DPUMemcpy *copy);
@@ -242,6 +242,26 @@ namespace Realm {
 
     }; // end class DPUEventPool
 
+
+    class DPUMRAMMemory : public LocalManagedMemory {
+      public:
+        DPUMRAMMemory(Memory _me, DPU *_dpu, DPUStream *_stream, char *_base, size_t _size);
+
+        virtual ~DPUMRAMMemory(void);
+
+        // these work, but they are SLOW
+        virtual void get_bytes(off_t offset, void *dst, size_t size);
+        virtual void put_bytes(off_t offset, const void *src, size_t size);
+
+        virtual void *get_direct_ptr(off_t offset, size_t size);
+
+      public:
+        DPU *dpu;
+        char *base;
+        DPUStream *stream;
+    }; // end class DPUMRAMMemory
+
+
     class ContextSynchronizer {
     public:
       ContextSynchronizer(DPU *_dpu, int _device_id, CoreReservationSet &crs,
@@ -268,17 +288,7 @@ namespace Realm {
       CoreReservation *core_rsrv;
     }; // end class ContextSynchronizer
 
-    // helper to push/pop a DPU's context by scope
-    class AutoDPUContext {
-    public:
-      AutoDPUContext(DPU &_dpu);
-      AutoDPUContext(DPU *_dpu);
-      ~AutoDPUContext(void);
-
-    protected:
-      DPU *dpu;
-    }; // end class AutoDPUContext
-
+    
     // an interface for receiving completion notification for a DPU operation
     //  (right now, just copies)
     class DPUCompletionNotification {
@@ -315,7 +325,6 @@ namespace Realm {
     public:
       const void *src_base;
       void *dst_base;
-      // off_t src_dpu_off, dst_dpu_off;
       DPU *dst_dpu;
       DPUCompletionEvent event;
     }; // end class DPURequest
@@ -329,36 +338,26 @@ namespace Realm {
       void pop_context(void);
 
       void create_processor(RuntimeImpl *runtime, size_t stack_size);
-      // void create_fb_memory(RuntimeImpl *runtime, size_t size, size_t ib_size);
-      // void create_dynamic_fb_memory(RuntimeImpl *runtime, size_t max_size);
-      // void create_dma_channels(Realm::RuntimeImpl *r);
+      void create_mram_memory(RuntimeImpl *runtime, size_t size);
 
     public:
       UpmemModule *module;
       DPUInfo *info;
       DPUWorker *worker;
       DPUProcessor *proc;
-      // DPUFBMemory *fbmem;
-      // DPUFBIBMemory *fb_ibmem;
+      DPUMRAMMemory *mram;
+      DPUStream *stream;
 
       // upmemCtx_t context;
       int device_id;
-      struct dpu_set_t *device;
-
-      char *fbmem_base, *fb_ibmem_base;
+      char *mram_base;
 
       DPUStream *find_stream(struct dpu_set_t *stream) const;
       DPUStream *get_null_task_stream(void) const;
       DPUStream *get_next_task_stream(bool create = false);
 
-      // which system memories have been registered and can be used for cuMemcpyAsync
-      // std::set<Memory> pinned_sysmems;
-
-      // which other FBs we have peer access to
-      // std::set<Memory> peer_fbs;
-
       std::vector<DPUStream *> task_streams;
-      atomic<unsigned> next_task_stream, next_d2d_stream;
+      atomic<unsigned> next_task_stream;
 
       DPUEventPool event_pool;
 
@@ -398,15 +397,13 @@ namespace Realm {
       void device_synchronize(void);
 
       void dpu_memcpy(void *dst, const void *src, size_t size, DPUMemcpyKind kind);
-      //   void dpu_memcpy_async(void *dst, const void *src, size_t size,
-      // 		    DPUMemcpyKind kind, dpu_set_t stream);
+      void dpu_memcpy_async(void *dst, const void *src, size_t size,
+            DPUMemcpyKind kind, dpu_set_t stream);
       void dpu_memset(void *dst, int value, size_t count);
-      //   void dpu_memset_async(void *dst, int value, size_t count, dpu_set_t
-      //   stream);
+      void dpu_memset_async(void *dst, int value, size_t count, dpu_set_t stream);
 
     public:
       DPU *dpu;
-
       // data needed for kernel launches
       struct LaunchConfig {
         uint16_t tasklets;
