@@ -62,6 +62,10 @@ namespace Realm {
 #ifdef REALM_USE_HDF5
       MKIND_HDF,     // HDF memory accessible by owner node
 #endif
+
+#ifdef REALM_USE_UPMEM
+      MKIND_MRAM,    // UPMEM DPU memory (accessible via dpu_push_xfer)
+#endif
     };
 
     MemoryImpl(Memory _me, size_t _size,

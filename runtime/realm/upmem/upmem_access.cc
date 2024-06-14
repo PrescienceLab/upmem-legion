@@ -28,6 +28,7 @@ namespace Realm {
 
       // test create compute units
       mod->create_processors(get_runtime());
+      mod->create_memories(get_runtime());
       
     }
   }; // namespace Upmem

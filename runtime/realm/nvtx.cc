@@ -58,6 +58,9 @@ namespace Realm {
 #ifdef REALM_USE_PYTHON
       {"python", {106, nvtx_color::magenta}},
 #endif
+#ifdef REALM_USE_UPMEM
+      {"upmem", {107, nvtx_color::teal}},
+#endif 
   };
 
   REALM_THREAD_LOCAL std::map<std::string, NvtxCategory *> *nvtx_categories;

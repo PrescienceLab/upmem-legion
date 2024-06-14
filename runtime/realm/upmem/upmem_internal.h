@@ -242,25 +242,23 @@ namespace Realm {
 
     }; // end class DPUEventPool
 
-
     class DPUMRAMMemory : public LocalManagedMemory {
-      public:
-        DPUMRAMMemory(Memory _me, DPU *_dpu, DPUStream *_stream, char *_base, size_t _size);
+    public:
+      DPUMRAMMemory(Memory _me, DPU *_dpu, DPUStream *_stream, char *_base, size_t _size);
 
-        virtual ~DPUMRAMMemory(void);
+      virtual ~DPUMRAMMemory(void);
 
-        // these work, but they are SLOW
-        virtual void get_bytes(off_t offset, void *dst, size_t size);
-        virtual void put_bytes(off_t offset, const void *src, size_t size);
+      // these work, but they are SLOW
+      virtual void get_bytes(off_t offset, void *dst, size_t size);
+      virtual void put_bytes(off_t offset, const void *src, size_t size);
 
-        virtual void *get_direct_ptr(off_t offset, size_t size);
+      virtual void *get_direct_ptr(off_t offset, size_t size);
 
-      public:
-        DPU *dpu;
-        char *base;
-        DPUStream *stream;
+    public:
+      DPU *dpu;
+      char *base;
+      DPUStream *stream;
     }; // end class DPUMRAMMemory
-
 
     class ContextSynchronizer {
     public:
@@ -288,7 +286,6 @@ namespace Realm {
       CoreReservation *core_rsrv;
     }; // end class ContextSynchronizer
 
-    
     // an interface for receiving completion notification for a DPU operation
     //  (right now, just copies)
     class DPUCompletionNotification {
@@ -397,8 +394,8 @@ namespace Realm {
       void device_synchronize(void);
 
       void dpu_memcpy(void *dst, const void *src, size_t size, DPUMemcpyKind kind);
-      void dpu_memcpy_async(void *dst, const void *src, size_t size,
-            DPUMemcpyKind kind, dpu_set_t stream);
+      void dpu_memcpy_async(void *dst, const void *src, size_t size, DPUMemcpyKind kind,
+                            dpu_set_t stream);
       void dpu_memset(void *dst, int value, size_t count);
       void dpu_memset_async(void *dst, int value, size_t count, dpu_set_t stream);
 

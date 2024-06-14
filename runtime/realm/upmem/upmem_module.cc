@@ -124,8 +124,6 @@ namespace Realm {
     void UpmemModule::initialize(RuntimeImpl *runtime)
     {
       Module::initialize(runtime);
-      printf("Hello wolrd\n");
-
       std::vector<unsigned> fixed_indices;
 
       // each DPU has 64MB of MRAM and 64KB of cache
@@ -148,7 +146,6 @@ namespace Realm {
         dpus[dpu_count++] = g;
       }
 
-      std::cout << "Requested DPUs \n" << std::endl;
       if(static_cast<int>(dpu_count) < config->cfg_num_dpus) {
         log_dpu.fatal() << config->cfg_num_dpus << " DPUs requested, but only "
                         << dpu_count << " available!";
@@ -164,28 +161,26 @@ namespace Realm {
       Module::create_memories(runtime);
       // each DPU has its own memory
       if(config->cfg_mram_mem_size > 0) {
-        for(std::vector<DPU *>::iterator it = dpus.begin();
-            it != dpus.end();
-            it++) {
+        for(std::vector<DPU *>::iterator it = dpus.begin(); it != dpus.end(); it++) {
           (*it)->create_mram_memory(runtime, config->cfg_mram_mem_size);
         }
       }
     }
 
-
     void DPU::create_mram_memory(RuntimeImpl *runtime, size_t size)
     {
       Memory m = runtime->next_local_memory_id();
-      mram = new DPUMRAMMemory(m, this, stream, static_cast<char*>(mram_base), size);
+      mram = new DPUMRAMMemory(m, this, stream, static_cast<char *>(mram_base), size);
       runtime->add_memory(mram);
     }
 
-
-    DPUMRAMMemory::DPUMRAMMemory(Memory _me, DPU *_dpu, DPUStream *_stream, char *_base, size_t _size)
+    DPUMRAMMemory::DPUMRAMMemory(Memory _me, DPU *_dpu, DPUStream *_stream, char *_base,
+                                 size_t _size)
       : LocalManagedMemory(_me, _size, MKIND_MRAM, 512, Memory::DPU_MRAM_MEM, 0)
-      , dpu(_dpu), base(_base), stream(_stream)
+      , dpu(_dpu)
+      , base(_base)
+      , stream(_stream)
     {}
-
 
     DPUMRAMMemory::~DPUMRAMMemory(void) {}
 
@@ -195,8 +190,7 @@ namespace Realm {
       // use a blocking copy - host memory probably isn't pinned anyway
       {
         // we need to get the dpu_set_t stream
-        CHECK_UPMEM( dpu_copy_from
-                   (*stream->get_stream(), "data", offset, dst, size) );
+        CHECK_UPMEM(dpu_copy_from(*stream->get_stream(), "data", offset, dst, size));
       }
     }
 
@@ -205,8 +199,8 @@ namespace Realm {
       // use a blocking copy - host memory probably isn't pinned anyway
       {
         // we need to get the dpu_set_t stream
-        CHECK_UPMEM( dpu_broadcast_to
-                   (*stream->get_stream(), "data", offset, src, size, DPU_XFER_DEFAULT) );
+        CHECK_UPMEM(dpu_broadcast_to(*stream->get_stream(), "data", offset, src, size,
+                                     DPU_XFER_DEFAULT));
       }
     }
 
@@ -251,8 +245,6 @@ namespace Realm {
     //  after all memories/processors/etc. have been shut down and destroyed
     void UpmemModule::cleanup(void) { Module::cleanup(); }
 
-
-    
     ////////////////////////////////////////////////////////////////////////
     //
     // class ContextSynchronizer

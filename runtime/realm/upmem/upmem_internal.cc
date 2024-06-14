@@ -48,7 +48,7 @@ namespace Realm {
       stream = new DPUStream(this, worker);
 
       struct dpu_set_t single_dpu;
- 
+
       DPU_ASSERT(dpu_alloc(1, "backend=simulator", &single_dpu));
 
       printf("DPU ALLOCATED\n");
@@ -60,9 +60,10 @@ namespace Realm {
         task_streams[i] = new DPUStream(this, worker);
     }
 
-    DPU::~DPU(void)
-    {
-      event_pool.empty_pool();
+    DPU::~DPU(void) { 
+      event_pool.empty_pool(); 
+
+      DPU_ASSERT(dpu_free(* stream->get_stream()));  
     }
 
     ///////////////////////////////////////////////////////////////////////
@@ -114,7 +115,7 @@ namespace Realm {
     template <typename T>
     bool DPUTaskScheduler<T>::execute_task(Task *task)
     {
-      // use TLS to make sure that the task can find the current DPU processor 
+      // use TLS to make sure that the task can find the current DPU processor
       //  UPMEM RT calls
       // TODO: either eliminate these asserts or do TLS swapping when using user threads
       assert(ThreadLocal::current_dpu_proc == 0);
@@ -331,7 +332,7 @@ namespace Realm {
 
       ctxsync.shutdown_threads();
 
-      CHECK_UPMEM(dpu_sync(dpu->stream->get_stream()));
+      CHECK_UPMEM(dpu_sync(* dpu->stream->get_stream()));
     }
 
     DPUWorker::DPUWorker(void)
@@ -531,7 +532,7 @@ namespace Realm {
       , worker(_worker)
       , issuing_copies(false)
     {
-      assert(worker != 0);  
+      assert(worker != 0);
 
       log_stream.info() << "stream created: dpu=" << dpu << " stream=" << stream;
     }
@@ -542,7 +543,7 @@ namespace Realm {
 
     struct dpu_set_t *DPUStream::get_stream(void) const { return stream; }
 
-    void DPUStream::set_stream(struct dpu_set_t *_stream) {stream = _stream};
+    void DPUStream::set_stream(struct dpu_set_t *_stream) { stream = _stream; }
 
     // may be called by anybody to enqueue a copy or an event
     void DPUStream::add_copy(DPUMemcpy *copy)
@@ -1014,6 +1015,39 @@ namespace Realm {
     {
       req->xd->notify_request_read_done(req);
       req->xd->notify_request_write_done(req);
+    }
+
+ ////////////////////////////////////////////////////////////////////////
+    //
+    // class DPUReplHeapListener
+    //
+
+    DPUReplHeapListener::DPUReplHeapListener(UpmemModule *_module)
+      : module(_module)
+    {}
+
+    void DPUReplHeapListener::chunk_created(void *base, size_t bytes)
+    {
+      if(!module->dpus.empty()) {
+        log_dpu.info() << "registering replicated heap chunk: base=" << base
+                       << " size=" << bytes;
+
+        base = malloc(bytes);
+        if(base == NULL) {
+          log_dpu.fatal() << "failed to register replicated heap chunk: base=" << base
+                          << " size=" << bytes;
+          abort();
+        }
+      }
+    }
+
+    void DPUReplHeapListener::chunk_destroyed(void *base, size_t bytes)
+    {
+      if(!module->dpus.empty()) {
+	        log_dpu.info() << "unregistering replicated heap chunk: base=" << base
+                       << " size=" << bytes;
+          free(base);
+      }
     }
 
   }; // namespace Upmem

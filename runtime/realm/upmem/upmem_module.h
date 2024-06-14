@@ -63,12 +63,11 @@ namespace Realm {
 
     public:
       // configurations
-      int cfg_num_dpus = 8;
+      int cfg_num_dpus = 64;
       int cfg_tasklets = 16;
       int cfg_mram_mem_size = 64 * MEGABYTE;
 
       int cfg_task_streams = 16;
-  
 
       bool cfg_fences_use_callbacks = false;
       bool cfg_suppress_hijack_warning = false;
