@@ -421,6 +421,7 @@ namespace Realm {
     case Memory::DISK_MEM:
     case Memory::HDF_MEM:
     case Memory::FILE_MEM:
+    case Memory::DPU_MRAM_MEM:
       {
 	recv_ok = true;
 	break;

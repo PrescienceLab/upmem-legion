@@ -50,9 +50,7 @@ namespace Realm {
       struct dpu_set_t single_dpu;
 
       DPU_ASSERT(dpu_alloc(1, "backend=simulator", &single_dpu));
-
-      printf("DPU ALLOCATED\n");
-
+      // printf("DPU ALLOCATED\n");
       stream->set_stream(&single_dpu);
 
       task_streams.resize(module->config->cfg_task_streams);

@@ -214,6 +214,14 @@ namespace Realm {
       Processor p = runtime->next_local_processor_id();
       proc = new DPUProcessor(this, p, runtime->core_reservation_set(), stack_size);
       runtime->add_processor(proc);
+
+      // this processor is able to access its own FB and the ZC mem (if any)
+      Machine::ProcessorMemoryAffinity pma;
+      pma.p = p;
+      pma.m = mram->me;
+      // pma.bandwidth = info->logical_peer_bandwidth[info->index];
+      // pma.latency   = info->logical_peer_latency[info->index];
+      runtime->add_proc_mem_affinity(pma);
     }
     // create any processors provided by the module (default == do nothing)
     //  (each new ProcessorImpl should use a Processor from

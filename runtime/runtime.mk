@@ -363,16 +363,16 @@ ifeq ($(strip $(USE_UPMEM)),1)
   UPMEM_CC	      ?= $(UPMEM_HOME)/bin/dpu-upmem-dpurte-clang
   REALM_CC_FLAGS  += -DREALM_USE_UPMEM
   # LEGION_CC_FLAGS += -DLEGION_USE_HIP
-  CC_FLAGS        += -DNR_TASKLETS=16 -DNR_DPUS=128
+  CC_FLAGS        += 
   LD_FLAGS        += -L$(UPMEM_HOME)/lib -ldpu
-  UPMEM_CC_FLAGS  += 
+  UPMEMCC_FLAGS  += 
   INC_FLAGS       += -I$(UPMEM_HOME)/include/dpu
   ifeq ($(strip $(DEBUG)),1)
-    UPMEM_CC_FLAGS	+= -g
+    UPMEMCC_FLAGS	+= -g
   else
-    UPMEM_CC_FLAGS	+= -O2
+    UPMEMCC_FLAGS	+= -O2
   endif
-  # LEGION_LD_FLAGS	+= -lm -L$(UPMEM_PATH)/lib
+  # LEGION_LD_FLAGS	+= -L$(UPMEM_PATH)/lib -ldpu
 endif
 
 ifeq ($(strip $(USE_OPENMP)),1)
@@ -947,6 +947,7 @@ HIP_SRC         ?=
 GEN_GPU_SRC	?= 
 CUDA_SRC	+= $(GEN_GPU_SRC)
 HIP_SRC         += $(GEN_GPU_SRC)
+UPMEM_SRC += $(GEN_UPMEM_SRC)
 REALM_SRC	?=
 REALM_CUHOOK_CUDA_SRC	?=
 LEGION_SRC	?=
@@ -1293,6 +1294,10 @@ APP_OBJS	+= $(HIP_SRC:.cu=.cu.o)
 LEGION_OBJS     += $(LEGION_HIP_SRC:.cu=.cu.o)
 endif
 
+ifeq ($(strip $(USE_UPMEM)),1)
+UPMEM_OBJS	+= $(UPMEM_SRC:.c=.up.o)
+endif
+
 USE_FORTRAN ?= 0
 LEGION_USE_FORTRAN ?= 0
 # For backwards compatibility
@@ -1357,9 +1362,9 @@ DEP_FILES += $(LEGION_INST_OBJS:.o=.d)
 DEP_FILES += $(MAPPER_OBJS:.o=.d)
 -include $(DEP_FILES)
 
-$(OUTFILE) : $(APP_OBJS) $(SLIB_LEGION) $(SLIB_REALM)
+$(OUTFILE) : $(APP_OBJS) $(SLIB_LEGION) $(SLIB_REALM) $(UPMEM_OBJS)
 	@echo "---> Linking objects into one binary: $(OUTFILE)"
-	$(CXX) -o $(OUTFILE) $(APP_OBJS) $(LD_FLAGS) $(LEGION_LIBS) $(LEGION_LD_FLAGS)
+	$(CXX) -o $(OUTFILE) $(APP_OBJS) $(LEGION_LIBS) $(LEGION_LD_FLAGS) $(LD_FLAGS) 
 
 ifeq ($(strip $(SHARED_OBJECTS)),0)
 $(SLIB_LEGION) : $(LEGION_OBJS) $(LEGION_INST_OBJS) $(MAPPER_OBJS)
@@ -1462,6 +1467,12 @@ $(filter %.cc.o,$(LEGION_OBJS)) : %.cc.o : %.cc $(LEGION_DEFINES_HEADER) $(REALM
 $(MAPPER_OBJS) : %.cc.o : %.cc $(LEGION_DEFINES_HEADER) $(REALM_DEFINES_HEADER)
 	$(CXX) -MMD -o $@ -c $< $(CC_FLAGS) $(INC_FLAGS)
 
+
+ifeq ($(strip $(USE_UPMEM)),1)
+$(filter %.up.o,$(UPMEM_OBJS)) : %.up.o : %.c $(LEGION_DEFINES_HEADER) $(REALM_DEFINES_HEADER)
+	$(UPMEM_CC) -o $@ $< $(UPMEMCC_FLAGS) $(INC_FLAGS)
+endif
+
 # GPU compilation rules; We can't use -MMD for dependency generation because
 # it's not supported by old versions of nvcc.
 
@@ -1508,7 +1519,7 @@ endif
 % : %.o
 
 clean::
-	$(RM) -f $(OUTFILE) $(SLIB_LEGION) $(SLIB_REALM) $(APP_OBJS) $(REALM_OBJS) $(REALM_INST_OBJS) $(LEGION_OBJS) $(LEGION_INST_OBJS) $(MAPPER_OBJS) $(LG_RT_DIR)/*mod *.mod $(LEGION_DEFINES_HEADER) $(REALM_DEFINES_HEADER) $(DEP_FILES) $(REALM_FATBIN_SRC) $(REALM_FATBIN) $(SLIB_REALM_CUHOOK) $(REALM_CUHOOK_OBJS)
+	$(RM) -f $(OUTFILE) $(SLIB_LEGION) $(SLIB_REALM) $(APP_OBJS) $(REALM_OBJS) $(REALM_INST_OBJS) $(LEGION_OBJS) $(LEGION_INST_OBJS) $(MAPPER_OBJS) $(LG_RT_DIR)/*mod *.mod $(LEGION_DEFINES_HEADER) $(REALM_DEFINES_HEADER) $(DEP_FILES) $(REALM_FATBIN_SRC) $(REALM_FATBIN) $(SLIB_REALM_CUHOOK) $(REALM_CUHOOK_OBJS) $(UPMEM_OBJS)
 
 ifeq ($(strip $(USE_LLVM)),1)
 llvmjit_internal.cc.o : CC_FLAGS += $(LLVM_CXXFLAGS)

@@ -11997,7 +11997,7 @@ namespace Legion {
       local_procs.local_address_space();
 #define COUNTER(X,Y) +1
       constexpr size_t num_procs = REALM_PROCESSOR_KINDS(COUNTER);
-      static_assert(num_procs == 9, "Add new processor kinds"); 
+      static_assert(num_procs == 10, "Add new processor kinds"); 
 #undef COUNTER
       // Log processors
       for (Machine::ProcessorQuery::iterator it = local_procs.begin();
@@ -12066,7 +12066,7 @@ namespace Legion {
       local_mems.local_address_space();
 #define COUNTER(X,Y) +1
       constexpr size_t num_mems = REALM_MEMORY_KINDS(COUNTER);
-      static_assert(num_mems == 15, "Add new memory kinds"); 
+      static_assert(num_mems == 16, "Add new memory kinds"); 
 #undef COUNTER
       for (Machine::MemoryQuery::iterator it = local_mems.begin();
             it != local_mems.end(); it++)
