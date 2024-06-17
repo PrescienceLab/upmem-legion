@@ -58,10 +58,11 @@ namespace Realm {
         task_streams[i] = new DPUStream(this, worker);
     }
 
-    DPU::~DPU(void) { 
-      event_pool.empty_pool(); 
+    DPU::~DPU(void)
+    {
+      event_pool.empty_pool();
 
-      DPU_ASSERT(dpu_free(* stream->get_stream()));  
+      DPU_ASSERT(dpu_free(*stream->get_stream()));
     }
 
     ///////////////////////////////////////////////////////////////////////
@@ -330,7 +331,7 @@ namespace Realm {
 
       ctxsync.shutdown_threads();
 
-      CHECK_UPMEM(dpu_sync(* dpu->stream->get_stream()));
+      CHECK_UPMEM(dpu_sync(*dpu->stream->get_stream()));
     }
 
     DPUWorker::DPUWorker(void)
@@ -1015,7 +1016,7 @@ namespace Realm {
       req->xd->notify_request_write_done(req);
     }
 
- ////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////
     //
     // class DPUReplHeapListener
     //
@@ -1042,9 +1043,9 @@ namespace Realm {
     void DPUReplHeapListener::chunk_destroyed(void *base, size_t bytes)
     {
       if(!module->dpus.empty()) {
-	        log_dpu.info() << "unregistering replicated heap chunk: base=" << base
+        log_dpu.info() << "unregistering replicated heap chunk: base=" << base
                        << " size=" << bytes;
-          free(base);
+        free(base);
       }
     }
 
