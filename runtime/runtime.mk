@@ -365,14 +365,16 @@ ifeq ($(strip $(USE_UPMEM)),1)
   # LEGION_CC_FLAGS += -DLEGION_USE_HIP
   CC_FLAGS        += 
   LD_FLAGS        += -L$(UPMEM_HOME)/lib -ldpu
-  UPMEMCC_FLAGS  += 
+  UPMEMCC_FLAGS   +=  -fno-exceptions
+  # this is currently experimentaly below
+  UPMEM_INC_FLAGS +=  -I/home/david/tools/upmem/bin/../share/upmem/include/stdlib/ -I/usr/include/x86_64-linux-gnu/c++/12/ -I/usr/include/c++/12/ -I/usr/include/c++/12/parallel/
   INC_FLAGS       += -I$(UPMEM_HOME)/include/dpu
   ifeq ($(strip $(DEBUG)),1)
     UPMEMCC_FLAGS	+= -g
   else
     UPMEMCC_FLAGS	+= -O2
   endif
-  # LEGION_LD_FLAGS	+= -L$(UPMEM_PATH)/lib -ldpu
+  # LEGION_LD_FLAGS	+= 
 endif
 
 ifeq ($(strip $(USE_OPENMP)),1)
@@ -1243,7 +1245,8 @@ ifeq ($(strip $(USE_SIMPLETEST)),1)
 INSTALL_HEADERS += realm/simpletest/simpletest_access.h
 endif
 ifeq ($(strip $(USE_UPMEM)),1)
-INSTALL_HEADERS += realm/upmem/upmem_access.h
+INSTALL_HEADERS += realm/upmem/upmem_access.h \
+                   realm/upmem/realm_upmem.h
 endif
 # General shell commands
 SHELL	:= /bin/sh
@@ -1469,8 +1472,17 @@ $(MAPPER_OBJS) : %.cc.o : %.cc $(LEGION_DEFINES_HEADER) $(REALM_DEFINES_HEADER)
 
 
 ifeq ($(strip $(USE_UPMEM)),1)
-$(filter %.up.o,$(UPMEM_OBJS)) : %.up.o : %.c $(LEGION_DEFINES_HEADER) $(REALM_DEFINES_HEADER)
-	$(UPMEM_CC) -o $@ $< $(UPMEMCC_FLAGS) $(INC_FLAGS)
+UPMEM_FATBIN = fatbin.up.o
+REALM_UPMEM_SRC += $(LG_RT_DIR)/realm/upmem/realm_upmem.cc
+
+$(filter %.up.o, $(UPMEM_OBJS)) : %.up.o : %.c $(LEGION_DEFINES_HEADER) $(REALM_DEFINES_HEADER) $(UPMEM_FATBIN) $(SLIB_REALM)
+	$(UPMEM_CC) -o $@ $< $(UPMEM_FATBIN) $(UPMEMCC_FLAGS) $(INC_FLAGS) $(UPMEM_INC_FLAGS) $(SLIB_REALM)
+
+$(REALM_UPMEM_SRC) : $(REALM_DEFINES_HEADER)
+
+$(UPMEM_FATBIN): $(REALM_UPMEM_SRC)
+	$(UPMEM_CC) $^ -o $(UPMEM_FATBIN) -c $(UPMEMCC_FLAGS) $(INC_FLAGS) $(UPMEM_INC_FLAGS) 
+
 endif
 
 # GPU compilation rules; We can't use -MMD for dependency generation because
