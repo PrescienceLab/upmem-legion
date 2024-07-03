@@ -4,9 +4,10 @@
 
 /*
     https://github.com/CMU-SAFARI/prim-benchmarks/tree/main
-    Juan Gómez-Luna, Izzat El Hajj, Ivan Fernandez, Christina Giannoula, Geraldo F. Oliveira, and Onur Mutlu, 
-    "Benchmarking Memory-centric Computing Systems: Analysis of Real Processing-in-Memory Hardware". 
-    2021 12th International Green and Sustainable Computing Conference (IGSC). IEEE, 2021.
+    Juan Gómez-Luna, Izzat El Hajj, Ivan Fernandez, Christina Giannoula, Geraldo F.
+   Oliveira, and Onur Mutlu, "Benchmarking Memory-centric Computing Systems: Analysis of
+   Real Processing-in-Memory Hardware". 2021 12th International Green and Sustainable
+   Computing Conference (IGSC). IEEE, 2021.
 */
 
 #ifndef _UPMEM_COMMON_H_
@@ -21,8 +22,8 @@ extern "C" {
 
 // Structures used by both the host and the dpu to communicate information
 typedef struct {
-    uint32_t size;
-    uint32_t transfer_size;
+  uint32_t size;
+  uint32_t transfer_size;
 } dpu_arguments_t;
 
 // Transfer size between MRAM and WRAM

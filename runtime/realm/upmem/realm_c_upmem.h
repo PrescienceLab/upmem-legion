@@ -28,9 +28,9 @@
 
 EXTERNC int access_point(int x, int y);
 
-EXTERNC void* make_vector_of_int(int n);
-EXTERNC void set_vector_of_int(void* v, int pos, int val);
-EXTERNC int get_vector_of_int(void* v, int pos);
-EXTERNC void* add_vectors_of_ints(void* left, void* right);
+EXTERNC void *make_vector_of_int(int n);
+EXTERNC void set_vector_of_int(void *v, int pos, int val);
+EXTERNC int get_vector_of_int(void *v, int pos);
+EXTERNC void *add_vectors_of_ints(void *left, void *right);
 
 #endif

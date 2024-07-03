@@ -29,7 +29,7 @@
 #include "realm/upmem/upmem_stream.h"
 
 namespace Realm {
-namespace Upmem {
+  namespace Upmem {
     // forward declaration
     // stream.h
     class DPUStream;
@@ -39,39 +39,39 @@ namespace Upmem {
     //  spawned for the purpose
     class DPUWorker : public BackgroundWorkItem {
     public:
-        DPUWorker(void);
-        virtual ~DPUWorker(void);
+      DPUWorker(void);
+      virtual ~DPUWorker(void);
 
-        // adds a stream that has work to be done
-        void add_stream(DPUStream* s);
+      // adds a stream that has work to be done
+      void add_stream(DPUStream *s);
 
-        // used to start a dedicate thread (mutually exclusive with being
-        //  registered with a background work manager)
-        void start_background_thread(Realm::CoreReservationSet& crs, size_t stack_size);
-        void shutdown_background_thread(void);
+      // used to start a dedicate thread (mutually exclusive with being
+      //  registered with a background work manager)
+      void start_background_thread(Realm::CoreReservationSet &crs, size_t stack_size);
+      void shutdown_background_thread(void);
 
-        bool do_work(TimeLimit work_until);
+      bool do_work(TimeLimit work_until);
 
     public:
-        void thread_main(void);
+      void thread_main(void);
 
     protected:
-        // used by the background thread
-        // processes work on streams, optionally sleeping for work to show up
-        // returns true if work remains to be done
-        bool process_streams(bool sleep_on_empty);
+      // used by the background thread
+      // processes work on streams, optionally sleeping for work to show up
+      // returns true if work remains to be done
+      bool process_streams(bool sleep_on_empty);
 
-        Mutex lock;
-        Mutex::CondVar condvar;
+      Mutex lock;
+      Mutex::CondVar condvar;
 
-        typedef CircularQueue<DPUStream*, 16> ActiveStreamQueue;
-        ActiveStreamQueue active_streams;
+      typedef CircularQueue<DPUStream *, 16> ActiveStreamQueue;
+      ActiveStreamQueue active_streams;
 
-        // used by the background thread (if any)
-        Realm::CoreReservation* core_rsrv;
-        Realm::Thread* worker_thread;
-        bool thread_sleeping;
-        atomic<bool> worker_shutdown_requested;
+      // used by the background thread (if any)
+      Realm::CoreReservation *core_rsrv;
+      Realm::Thread *worker_thread;
+      bool thread_sleeping;
+      atomic<bool> worker_shutdown_requested;
 
     }; // end class DPUWorker
 
@@ -79,44 +79,44 @@ namespace Upmem {
 #define DPUWORKFENCE
     class DPUWorkFence : public Realm::Operation::AsyncWorkItem {
     public:
-        DPUWorkFence(Realm::Operation* op);
+      DPUWorkFence(Realm::Operation *op);
 
-        virtual void request_cancellation(void);
+      virtual void request_cancellation(void);
 
-        void enqueue_on_stream(DPUStream* stream);
+      void enqueue_on_stream(DPUStream *stream);
 
-        virtual void print(std::ostream& os) const;
+      virtual void print(std::ostream &os) const;
 
-        IntrusiveListLink<DPUWorkFence> fence_list_link;
-        REALM_PMTA_DEFN(DPUWorkFence, IntrusiveListLink<DPUWorkFence>, fence_list_link);
-        typedef IntrusiveList<DPUWorkFence, REALM_PMTA_USE(DPUWorkFence, fence_list_link),
-            DummyLock>
-            FenceList;
+      IntrusiveListLink<DPUWorkFence> fence_list_link;
+      REALM_PMTA_DEFN(DPUWorkFence, IntrusiveListLink<DPUWorkFence>, fence_list_link);
+      typedef IntrusiveList<DPUWorkFence, REALM_PMTA_USE(DPUWorkFence, fence_list_link),
+                            DummyLock>
+          FenceList;
 
     protected:
-        static dpu_error_t upmem_start_callback(struct dpu_set_t stream, uint32_t rank_id,
-            void* data);
+      static dpu_error_t upmem_start_callback(struct dpu_set_t stream, uint32_t rank_id,
+                                              void *data);
     }; // end class DPUWorkFence
 #endif
 
     class DPUWorkStart : public Realm::Operation::AsyncWorkItem {
     public:
-        DPUWorkStart(Realm::Operation* op);
+      DPUWorkStart(Realm::Operation *op);
 
-        virtual void request_cancellation(void) { return; };
+      virtual void request_cancellation(void) { return; };
 
-        void enqueue_on_stream(DPUStream* stream);
+      void enqueue_on_stream(DPUStream *stream);
 
-        virtual void print(std::ostream& os) const;
+      virtual void print(std::ostream &os) const;
 
-        void mark_dpu_work_start();
+      void mark_dpu_work_start();
 
     protected:
-        static dpu_error_t upmem_start_callback(struct dpu_set_t stream, uint32_t rank_id,
-            void* data);
+      static dpu_error_t upmem_start_callback(struct dpu_set_t stream, uint32_t rank_id,
+                                              void *data);
     }; // end class DPUWorkStart
 
-}; // namespace Upmem
-}; // namespace Realm
+  }; // namespace Upmem
+};   // namespace Realm
 
 #endif

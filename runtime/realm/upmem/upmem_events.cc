@@ -18,28 +18,28 @@
 
 namespace Realm {
 
-extern Logger log_xd;
-extern Logger log_taskreg;
+  extern Logger log_xd;
+  extern Logger log_taskreg;
 
-namespace Upmem {
+  namespace Upmem {
     extern Logger log_dpu;
     extern Logger log_stream;
     extern Logger log_dpudma;
 
-    void upmemEventCreate(upmemEvent_t* e) { }
+    void upmemEventCreate(upmemEvent_t *e) {}
 
-    void upmemEventDestroy(upmemEvent_t* e) { }
+    void upmemEventDestroy(upmemEvent_t *e) {}
 
     ////////////////////////////////////////////////////////////////////////
     //
     // class DPUEventPool
     DPUEventPool::DPUEventPool(int _batch_size)
-        : batch_size(_batch_size)
-        , current_size(0)
-        , total_size(0)
-        , external_count(0)
+      : batch_size(_batch_size)
+      , current_size(0)
+      , total_size(0)
+      , external_count(0)
     {
-        // don't immediately fill the pool because we're not managing the context ourselves
+      // don't immediately fill the pool because we're not managing the context ourselves
     }
 
     // allocating the initial batch of events and cleaning up are done with
@@ -47,97 +47,97 @@ namespace Upmem {
     //  manage the DPU context in this helper class
     void DPUEventPool::init_pool(int init_size /* = 0 -- default == batch size */)
     {
-        assert(available_events.empty());
+      assert(available_events.empty());
 
-        if (init_size == 0)
-            init_size = batch_size;
+      if(init_size == 0)
+        init_size = batch_size;
 
-        available_events.resize(init_size);
+      available_events.resize(init_size);
 
-        current_size = init_size;
-        total_size = init_size;
+      current_size = init_size;
+      total_size = init_size;
 
-        for (int i = 0; i < init_size; i++) {
-            // create events
-            upmemEventCreate(&available_events[i]);
-        }
+      for(int i = 0; i < init_size; i++) {
+        // create events
+        upmemEventCreate(&available_events[i]);
+      }
     }
 
     void DPUEventPool::empty_pool(void)
     {
-        // shouldn't be any events running around still
-        assert((current_size + external_count) == total_size);
-        if (external_count)
-            log_stream.warning() << "Application leaking " << external_count
-                                 << " cuda events";
+      // shouldn't be any events running around still
+      assert((current_size + external_count) == total_size);
+      if(external_count)
+        log_stream.warning() << "Application leaking " << external_count
+                             << " cuda events";
 
-        for (int i = 0; i < current_size; i++) {
-            // destroy all events
-            upmemEventDestroy(&available_events[i]);
-        }
-        current_size = 0;
-        total_size = 0;
+      for(int i = 0; i < current_size; i++) {
+        // destroy all events
+        upmemEventDestroy(&available_events[i]);
+      }
+      current_size = 0;
+      total_size = 0;
 
-        // free internal vector storage
-        std::vector<upmemEvent_t>().swap(available_events);
+      // free internal vector storage
+      std::vector<upmemEvent_t>().swap(available_events);
     }
 
     upmemEvent_t DPUEventPool::get_event(bool external)
     {
-        AutoLock<> al(mutex);
+      AutoLock<> al(mutex);
 
-        if (current_size == 0) {
-            // if we need to make an event, make a bunch
-            current_size = batch_size;
-            total_size += batch_size;
+      if(current_size == 0) {
+        // if we need to make an event, make a bunch
+        current_size = batch_size;
+        total_size += batch_size;
 
-            log_stream.info() << "event pool " << this << " depleted - adding " << batch_size
-                              << " events";
+        log_stream.info() << "event pool " << this << " depleted - adding " << batch_size
+                          << " events";
 
-            // resize the vector (considering all events that might come back)
-            available_events.resize(total_size);
+        // resize the vector (considering all events that might come back)
+        available_events.resize(total_size);
 
-            for (int i = 0; i < batch_size; i++) {
-                upmemEventCreate(&available_events[i]);
-            }
+        for(int i = 0; i < batch_size; i++) {
+          upmemEventCreate(&available_events[i]);
         }
+      }
 
-        if (external)
-            external_count++;
+      if(external)
+        external_count++;
 
-        return available_events[--current_size];
+      return available_events[--current_size];
     }
 
     void DPUEventPool::return_event(upmemEvent_t e, bool external)
     {
-        AutoLock<> al(mutex);
+      AutoLock<> al(mutex);
 
-        assert(current_size < total_size);
+      assert(current_size < total_size);
 
-        if (external) {
-            assert(external_count);
-            external_count--;
-        }
+      if(external) {
+        assert(external_count);
+        external_count--;
+      }
 
-        available_events[current_size++] = e;
+      available_events[current_size++] = e;
     }
 
-    DPUPreemptionWaiter::DPUPreemptionWaiter(DPU* g)
-        : dpu(g)
+    DPUPreemptionWaiter::DPUPreemptionWaiter(DPU *g)
+      : dpu(g)
     {
-        GenEventImpl* impl = GenEventImpl::create_genevent();
-        wait_event = impl->current_event();
+      GenEventImpl *impl = GenEventImpl::create_genevent();
+      wait_event = impl->current_event();
     }
 
     void DPUPreemptionWaiter::request_completed(void)
     {
-        GenEventImpl::trigger(wait_event, false /*poisoned*/);
+      GenEventImpl::trigger(wait_event, false /*poisoned*/);
     }
 
     void DPUPreemptionWaiter::preempt(void)
     {
-        // Realm threads don't obey a stack discipline for
-        wait_event.wait();
+      // Realm threads don't obey a stack discipline for
+      wait_event.wait();
     }
     ////////////////////////////////////////////////////////////////////////
     //
@@ -145,9 +145,9 @@ namespace Upmem {
 
     void DPUCompletionEvent::request_completed(void)
     {
-        req->xd->notify_request_read_done(req);
-        req->xd->notify_request_write_done(req);
+      req->xd->notify_request_read_done(req);
+      req->xd->notify_request_write_done(req);
     }
 
-}; // namespace Upmem
-}; // namespace Realm
+  }; // namespace Upmem
+};   // namespace Realm

@@ -17,10 +17,11 @@
 #ifndef REALM_UPMEM_MEMORY_H
 #define REALM_UPMEM_MEMORY_H
 
-enum DPUMemcpyKind {
-    DPU_MEMCPY_HOST_TO_DEVICE,
-    DPU_MEMCPY_DEVICE_TO_HOST,
-    DPU_MEMCPY_DEVICE_TO_DEVICE,
+enum DPUMemcpyKind
+{
+  DPU_MEMCPY_HOST_TO_DEVICE,
+  DPU_MEMCPY_DEVICE_TO_HOST,
+  DPU_MEMCPY_DEVICE_TO_DEVICE,
 };
 
 #include "realm/mem_impl.h"
@@ -31,7 +32,7 @@ enum DPUMemcpyKind {
 #include "realm/upmem/upmem_workers.h"
 
 namespace Realm {
-namespace Upmem {
+  namespace Upmem {
     // forward declaration
     // internal.h
     class DPU;
@@ -42,49 +43,49 @@ namespace Upmem {
 
     class DPUMRAMMemory : public LocalManagedMemory {
     public:
-        DPUMRAMMemory(Memory _me, DPU* _dpu, DPUStream* _stream, char* _base, size_t _size);
+      DPUMRAMMemory(Memory _me, DPU *_dpu, DPUStream *_stream, char *_base, size_t _size);
 
-        virtual ~DPUMRAMMemory(void);
+      virtual ~DPUMRAMMemory(void);
 
-        // these work, but they are SLOW
-        virtual void get_bytes(off_t offset, void* dst, size_t size);
-        virtual void put_bytes(off_t offset, const void* src, size_t size);
+      // these work, but they are SLOW
+      virtual void get_bytes(off_t offset, void *dst, size_t size);
+      virtual void put_bytes(off_t offset, const void *src, size_t size);
 
-        virtual void* get_direct_ptr(off_t offset, size_t size);
+      virtual void *get_direct_ptr(off_t offset, size_t size);
 
     public:
-        DPU* dpu;
-        char* base;
-        DPUStream* stream;
+      DPU *dpu;
+      char *base;
+      DPUStream *stream;
     }; // end class DPUMRAMMemory
 
     // An abstract base class for all DPU memcpy operations
     class DPUMemcpy {
     public:
-        DPUMemcpy(DPU* _dpu, DPUMemcpyKind _kind);
-        virtual ~DPUMemcpy(void) { }
+      DPUMemcpy(DPU *_dpu, DPUMemcpyKind _kind);
+      virtual ~DPUMemcpy(void) {}
 
     public:
-        virtual void execute(DPUStream* stream) = 0;
+      virtual void execute(DPUStream *stream) = 0;
 
     public:
-        DPU* const dpu;
+      DPU *const dpu;
 
     protected:
-        DPUMemcpyKind kind;
+      DPUMemcpyKind kind;
     }; // end class DPUMemcpy
 
     class DPUMemcpyFence : public DPUMemcpy {
     public:
-        DPUMemcpyFence(DPU* _dpu, DPUMemcpyKind _kind, DPUWorkFence* _fence);
+      DPUMemcpyFence(DPU *_dpu, DPUMemcpyKind _kind, DPUWorkFence *_fence);
 
-        virtual void execute(DPUStream* stream);
+      virtual void execute(DPUStream *stream);
 
     protected:
-        DPUWorkFence* fence;
+      DPUWorkFence *fence;
     }; // end class DPUMemcpyFence
 
-}; // namespace Upmem
-}; // namespace Realm
+  }; // namespace Upmem
+};   // namespace Realm
 
 #endif
