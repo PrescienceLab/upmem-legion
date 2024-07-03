@@ -24,17 +24,13 @@
 
 #include "realm/realm_config.h"
 #include "realm/module.h"
-#include "realm/processor.h"
 #include "realm/network.h"
 #include "realm/atomics.h"
 
 #include "realm/logging.h"
 #include "realm/cmdline.h"
-#include "realm/proc_impl.h"
-#include "realm/threads.h"
 #include "realm/runtime_impl.h"
 #include "realm/utils.h"
-#include "realm/event_impl.h"
 #include "realm/idx_impl.h"
 
 namespace Realm {
@@ -42,15 +38,18 @@ namespace Realm {
     // REALM_PUBLIC_API dpu_set_t *get_task_upmem_stream();
     // REALM_PUBLIC_API void set_task_ctxsync_required(bool is_required);
 
-    typedef void (*StreamAwareTaskFuncPtr)(const void *args, size_t arglen,
-                                           const void *user_data, size_t user_data_len,
-                                           Processor proc, struct dpu_set_t *stream);
+    // forward declaration 
+    // internal.h
     class DPU;
-    class DPUProcessor;
-    class DPUWorker;
-    struct DPUInfo;
     class DPUReplHeapListener;
+    struct DPUInfo;
+    // worker.h
+    class DPUWorker;
+    // stream.h
     class DPUStream;
+    // proc.h
+    class DPUProcessor;
+
 
     class UpmemModuleConfig : public ModuleConfig {
       friend class UpmemModule;
@@ -143,15 +142,7 @@ namespace Realm {
       atomic<int> upmemipc_exports_remaining;
     };
 
-    namespace ThreadLocal {
-      static REALM_THREAD_LOCAL DPUProcessor *current_dpu_proc = 0;
-      static REALM_THREAD_LOCAL DPUStream *current_dpu_stream = 0;
-      static REALM_THREAD_LOCAL std::set<DPUStream *> *created_dpu_streams = 0;
-      static REALM_THREAD_LOCAL int context_sync_required = 0;
-    }; // namespace ThreadLocal
-
   }; // namespace Upmem
-
 }; // namespace Realm
 
 #endif

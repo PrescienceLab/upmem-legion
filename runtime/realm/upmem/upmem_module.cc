@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 #include "realm/upmem/upmem_module.h"
-#include "realm/upmem/upmem_internal.h"
-// #include "realm/upmem/upmem_access.h"
 
 #include "realm/tasks.h"
 #include "realm/logging.h"
@@ -23,9 +21,6 @@
 #include "realm/event_impl.h"
 #include "realm/idx_impl.h"
 
-#include "realm/transfer/lowlevel_dma.h"
-#include "realm/transfer/channel.h"
-#include "realm/transfer/ib_memory.h"
 
 #include "realm/mutex.h"
 #include "realm/utils.h"
@@ -167,63 +162,6 @@ namespace Realm {
       }
     }
 
-    void DPU::create_mram_memory(RuntimeImpl *runtime, size_t size)
-    {
-      mram_base = (char*)0x8; // physical addressing but realm breaks at 0x0
-      Memory m = runtime->next_local_memory_id();
-      mram = new DPUMRAMMemory(m, this, stream, static_cast<char *>(mram_base), size);
-      runtime->add_memory(mram);
-    }
-
-    DPUMRAMMemory::DPUMRAMMemory(Memory _me, DPU *_dpu, DPUStream *_stream, char *_base,
-                                 size_t _size)
-      : LocalManagedMemory(_me, _size, MKIND_MRAM, 512, Memory::DPU_MRAM_MEM, 0)
-      , dpu(_dpu)
-      , base(_base)
-      , stream(_stream)
-    {}
-
-    DPUMRAMMemory::~DPUMRAMMemory(void) {}
-
-    // these work, but they are SLOW
-    void DPUMRAMMemory::get_bytes(off_t offset, void *dst, size_t size)
-    {
-      // use a blocking copy - host memory probably isn't pinned anyway
-      {
-        // we need to get the dpu_set_t stream
-        CHECK_UPMEM(dpu_copy_from(*stream->get_stream(), "data", offset, dst, size));
-      }
-    }
-
-    void DPUMRAMMemory::put_bytes(off_t offset, const void *src, size_t size)
-    {
-      // use a blocking copy - host memory probably isn't pinned anyway
-      {
-        // we need to get the dpu_set_t stream
-        CHECK_UPMEM(dpu_broadcast_to(*stream->get_stream(), "data", offset, src, size,
-                                     DPU_XFER_DEFAULT));
-      }
-    }
-
-    void *DPUMRAMMemory::get_direct_ptr(off_t offset, size_t size)
-    {
-      return (void *)(base + offset);
-    }
-
-    void DPU::create_processor(RuntimeImpl *runtime, size_t stack_size)
-    {
-      Processor p = runtime->next_local_processor_id();
-      proc = new DPUProcessor(this, p, runtime->core_reservation_set(), stack_size);
-      runtime->add_processor(proc);
-
-      // this processor is able to access its own FB and the ZC mem (if any)
-      Machine::ProcessorMemoryAffinity pma;
-      pma.p = p;
-      pma.m = mram->me;
-      // pma.bandwidth = info->logical_peer_bandwidth[info->index];
-      // pma.latency   = info->logical_peer_latency[info->index];
-      runtime->add_proc_mem_affinity(pma);
-    }
     // create any processors provided by the module (default == do nothing)
     //  (each new ProcessorImpl should use a Processor from
     //   RuntimeImpl::next_local_processor_id)
@@ -242,27 +180,25 @@ namespace Realm {
     void UpmemModule::create_dma_channels(RuntimeImpl *runtime)
     {
       Module::create_dma_channels(runtime);
-/*
 
       // if we don't have any mram memory, we can't do any DMAs
-      if(!mram)
-	      return;
+      // if(!mram)
+	    //   return;
       
-      r->add_dma_channel(new DPUChannel(this, XFER_DPU_IN_MRAM, &r->bgwork));
-      r->add_dma_channel(new DPUfillChannel(this, &r->bgwork));
-      // r->add_dma_channel(new DPUreduceChannel(this, &r->bgwork));
+      // r->add_dma_channel(new DPUChannel(this, XFER_DPU_IN_MRAM, &r->bgwork));
+      // r->add_dma_channel(new DPUfillChannel(this, &r->bgwork));
+      // // r->add_dma_channel(new DPUreduceChannel(this, &r->bgwork));
 
-      if(!pinned_sysmems.empty()) {
-        r->add_dma_channel(new DPUChannel(this, XFER_DPU_TO_MRAM, &r->bgwork));
-        r->add_dma_channel(new DPUChannel(this, XFER_DPU_FROM_MRAM, &r->bgwork));
-      } else {
-        log_dpu.warning() << "DPU " << proc->me << " has no accessible system memories!?";
-      }
-      // only create a p2p channel if we have peers (and an fb)
-      if(!peer_fbs.empty() || !upmemipc_mappings.empty()) {
-        r->add_dma_channel(new DPUChannel(this, XFER_DPU_PEER_MRAM, &r->bgwork));
-      }
-*/
+      // if(!pinned_sysmems.empty()) {
+      //   r->add_dma_channel(new DPUChannel(this, XFER_DPU_TO_MRAM, &r->bgwork));
+      //   r->add_dma_channel(new DPUChannel(this, XFER_DPU_FROM_MRAM, &r->bgwork));
+      // } else {
+      //   log_dpu.warning() << "DPU " << proc->me << " has no accessible system memories!?";
+      // }
+      // // only create a p2p channel if we have peers (and an fb)
+      // if(!peer_fbs.empty() || !upmemipc_mappings.empty()) {
+      //   r->add_dma_channel(new DPUChannel(this, XFER_DPU_PEER_MRAM, &r->bgwork));
+      // }
     }
 
     // create any code translators provided by the module (default == do nothing)
@@ -275,179 +211,6 @@ namespace Realm {
     //  after all memories/processors/etc. have been shut down and destroyed
     void UpmemModule::cleanup(void) { Module::cleanup(); }
 
-    ////////////////////////////////////////////////////////////////////////
-    //
-    // class ContextSynchronizer
-
-    ContextSynchronizer::ContextSynchronizer(DPU *_dpu, int _device_id,
-                                             CoreReservationSet &crs, int _max_threads)
-      : dpu(_dpu)
-      , device_id(_device_id)
-      , max_threads(_max_threads)
-      , condvar(mutex)
-      , shutdown_flag(false)
-      , total_threads(0)
-      , sleeping_threads(0)
-      , syncing_threads(0)
-    {
-      Realm::CoreReservationParameters params;
-      params.set_num_cores(1);
-      params.set_alu_usage(params.CORE_USAGE_SHARED);
-      params.set_fpu_usage(params.CORE_USAGE_MINIMAL);
-      params.set_ldst_usage(params.CORE_USAGE_MINIMAL);
-      params.set_max_stack_size(64 * MEGABYTE);
-
-      std::string name = stringbuilder() << "DPU ctxsync " << device_id;
-
-      core_rsrv = new Realm::CoreReservation(name, crs, params);
-    }
-
-    ContextSynchronizer::~ContextSynchronizer()
-    {
-      assert(total_threads == 0);
-      delete core_rsrv;
-    }
-
-    void ContextSynchronizer::shutdown_threads()
-    {
-      // set the shutdown flag and wake up everybody
-      {
-        AutoLock<> al(mutex);
-        shutdown_flag = true;
-        if(sleeping_threads > 0)
-          condvar.broadcast();
-      }
-
-      for(int i = 0; i < total_threads; i++) {
-        worker_threads[i]->join();
-        delete worker_threads[i];
-      }
-
-      worker_threads.clear();
-      total_threads = false;
-      sleeping_threads = false;
-      syncing_threads = false;
-      shutdown_flag = false;
-    }
-
-    void ContextSynchronizer::add_fence(DPUWorkFence *fence)
-    {
-      bool start_new_thread = false;
-      {
-        AutoLock<> al(mutex);
-
-        fences.push_back(fence);
-
-        // if all the current threads are asleep or busy syncing, we
-        //  need to do something
-        if((sleeping_threads + syncing_threads) == total_threads) {
-          // is there a sleeping thread we can wake up to handle this?
-          if(sleeping_threads > 0) {
-            // just poke one of them
-            condvar.signal();
-          } else {
-            // can we start a new thread?  (if not, we'll just have to
-            //  be patient)
-            if(total_threads < max_threads) {
-              total_threads++;
-              syncing_threads++; // threads starts as if it's syncing
-              start_new_thread = true;
-            }
-          }
-        }
-      }
-
-      if(start_new_thread) {
-        Realm::ThreadLaunchParameters tlp;
-
-        Thread *t =
-            Realm::Thread::create_kernel_thread<ContextSynchronizer,
-                                                &ContextSynchronizer::thread_main>(
-                this, tlp, *core_rsrv, 0);
-        // need the mutex to put this thread in the list
-        {
-          AutoLock<> al(mutex);
-          worker_threads.push_back(t);
-        }
-      }
-    }
-
-    void ContextSynchronizer::thread_main()
-    {
-      while(true) {
-        DPUWorkFence::FenceList my_fences;
-
-        // attempt to get a non-empty list of fences to synchronize,
-        //  sleeping when needed and paying attention to the shutdown
-        //  flag
-        {
-          AutoLock<> al(mutex);
-
-          syncing_threads--;
-
-          while(true) {
-            if(shutdown_flag)
-              return;
-
-            if(fences.empty()) {
-              // sleep until somebody tells us there's stuff to do
-              sleeping_threads++;
-              condvar.wait();
-              sleeping_threads--;
-            } else {
-              // grab everything (a single sync covers however much stuff
-              //  was pushed ahead of it)
-              syncing_threads++;
-              my_fences.swap(fences);
-              break;
-            }
-          }
-        }
-
-        // shouldn't get here with an empty list
-        assert(!my_fences.empty());
-
-        // mark all the fences complete
-        while(!my_fences.empty()) {
-          DPUWorkFence *fence = my_fences.pop_front();
-          fence->mark_finished(true /*successful*/);
-        }
-
-        // and go back around for more...
-      }
-    }
-
-    DPUStream *DPU::find_stream(struct dpu_set_t *stream) const
-    {
-      for(std::vector<DPUStream *>::const_iterator it = task_streams.begin();
-          it != task_streams.end(); it++)
-        if((*it)->get_stream() == stream)
-          return *it;
-      return NULL;
-    }
-
-    DPUStream *DPU::get_null_task_stream(void) const
-    {
-      DPUStream *stream = ThreadLocal::current_dpu_stream;
-      assert(stream != NULL);
-      return stream;
-    }
-
-    DPUStream *DPU::get_next_task_stream(bool create)
-    {
-      if(create && !ThreadLocal::created_dpu_streams) {
-        // First time we get asked to create, user our current stream
-        ThreadLocal::created_dpu_streams = new std::set<DPUStream *>();
-        assert(ThreadLocal::current_dpu_stream);
-        ThreadLocal::created_dpu_streams->insert(ThreadLocal::current_dpu_stream);
-        return ThreadLocal::current_dpu_stream;
-      }
-      unsigned index = next_task_stream.fetch_add(1) % task_streams.size();
-      DPUStream *result = task_streams[index];
-      if(create)
-        ThreadLocal::created_dpu_streams->insert(result);
-      return result;
-    }
 
     struct dpu_set_t *UpmemModule::get_task_upmem_stream()
     {
