@@ -1,6 +1,6 @@
 
-// This common header file is meant to be an "intermediate" between host and 
-// dpu device code. 
+// This common header file is meant to be an "intermediate" between host and
+// dpu device code.
 
 /*
     https://github.com/CMU-SAFARI/prim-benchmarks/tree/main
@@ -17,7 +17,7 @@ extern "C" {
 
 #include <stdint.h>
 
-#endif 
+#endif
 
 // Structures used by both the host and the dpu to communicate information
 typedef struct {
@@ -67,6 +67,6 @@ typedef struct {
 
 #ifdef __cplusplus
 }
-#endif 
+#endif
 
 #endif

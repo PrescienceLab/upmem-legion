@@ -16,32 +16,31 @@
 #ifndef REALM_UPMEM_INT_H
 #define REALM_UPMEM_INT_H
 
-#ifndef DPURT 
+#ifndef DPURT
 #define DPURT
-#include <dpu> // UPMEM rt syslib 
+#include <dpu> // UPMEM rt syslib
 #define CHECK_UPMEM(x) DPU_ASSERT(x)
-#endif 
+#endif
 
 #include "realm/upmem/upmem_module.h"
 
-#include "realm/upmem/upmem_proc.h"
-#include "realm/upmem/upmem_memory.h"
-#include "realm/upmem/upmem_workers.h"
 #include "realm/upmem/upmem_events.h"
+#include "realm/upmem/upmem_memory.h"
+#include "realm/upmem/upmem_proc.h"
 #include "realm/upmem/upmem_stream.h"
-
+#include "realm/upmem/upmem_workers.h"
 
 namespace Realm {
-  namespace Upmem {
+namespace Upmem {
 
     typedef uint32_t upmemDevice_t;
-    
+
     struct DPUInfo {
-      int index;
-      uint16_t size = 128;
-      upmemDevice_t device;
-      static const size_t MAX_NAME_LEN = 64;
-      std::set<upmemDevice_t> peers;
+        int index;
+        uint16_t size = 128;
+        upmemDevice_t device;
+        static const size_t MAX_NAME_LEN = 64;
+        std::set<upmemDevice_t> peers;
     };
 
     // Forard declaration
@@ -54,61 +53,59 @@ namespace Realm {
     // module.h
     class UpmemModule;
 
-    extern UpmemModule *upmem_module_singleton;
+    extern UpmemModule* upmem_module_singleton;
 
-    class UpmemDeviceMemoryInfo : public ModuleSpecificInfo
-    {
+    class UpmemDeviceMemoryInfo : public ModuleSpecificInfo {
     public:
-      UpmemDeviceMemoryInfo(int _device_id);
+        UpmemDeviceMemoryInfo(int _device_id);
 
-      int device_id;
-      DPU *dpu;
+        int device_id;
+        DPU* dpu;
     };
 
     class DPU {
     public:
-      DPU(UpmemModule *_module, DPUInfo *_info, DPUWorker *worker, int _device_id);
-      ~DPU(void);
+        DPU(UpmemModule* _module, DPUInfo* _info, DPUWorker* worker, int _device_id);
+        ~DPU(void);
 
-      void push_context(void);
-      void pop_context(void);
+        void push_context(void);
+        void pop_context(void);
 
-      void create_processor(RuntimeImpl *runtime, size_t stack_size);
-      void create_mram_memory(RuntimeImpl *runtime, size_t size);
+        void create_processor(RuntimeImpl* runtime, size_t stack_size);
+        void create_mram_memory(RuntimeImpl* runtime, size_t size);
 
     public:
-      UpmemModule *module;
-      DPUInfo *info;
-      DPUWorker *worker;
-      DPUProcessor *proc;
-      DPUMRAMMemory *mram;
-      DPUStream *stream;
+        UpmemModule* module;
+        DPUInfo* info;
+        DPUWorker* worker;
+        DPUProcessor* proc;
+        DPUMRAMMemory* mram;
+        DPUStream* stream;
 
-      // upmemCtx_t context;
-      int device_id;
-      char *mram_base;
+        // upmemCtx_t context;
+        int device_id;
+        char* mram_base;
 
-      DPUStream *find_stream(struct dpu_set_t *stream) const;
-      DPUStream *get_null_task_stream(void) const;
-      DPUStream *get_next_task_stream(bool create = false);
+        DPUStream* find_stream(struct dpu_set_t* stream) const;
+        DPUStream* get_null_task_stream(void) const;
+        DPUStream* get_next_task_stream(bool create = false);
 
-      std::vector<DPUStream *> task_streams;
-      atomic<unsigned> next_task_stream;
+        std::vector<DPUStream*> task_streams;
+        atomic<unsigned> next_task_stream;
 
-      DPUEventPool event_pool;
+        DPUEventPool event_pool;
 
-      struct UpmemIpcMapping {
-        NodeID owner;
-        Memory mem;
-        uintptr_t local_base;
-        uintptr_t address_offset; // add to convert from original to local base
-      };
-      std::vector<UpmemIpcMapping> upmemipc_mappings;
-      std::map<NodeID, DPUStream *> upmemipc_streams;
-      const UpmemIpcMapping *find_ipc_mapping(Memory mem) const;
+        struct UpmemIpcMapping {
+            NodeID owner;
+            Memory mem;
+            uintptr_t local_base;
+            uintptr_t address_offset; // add to convert from original to local base
+        };
+        std::vector<UpmemIpcMapping> upmemipc_mappings;
+        std::map<NodeID, DPUStream*> upmemipc_streams;
+        const UpmemIpcMapping* find_ipc_mapping(Memory mem) const;
 
     }; // end class DPU
-
 
     // class ContextSynchronizer {
     // public:
@@ -138,23 +135,23 @@ namespace Realm {
 
     class DPUReplHeapListener : public ReplicatedHeap::Listener {
     public:
-      DPUReplHeapListener(UpmemModule *_module);
+        DPUReplHeapListener(UpmemModule* _module);
 
-      virtual void chunk_created(void *base, size_t bytes);
-      virtual void chunk_destroyed(void *base, size_t bytes);
+        virtual void chunk_created(void* base, size_t bytes);
+        virtual void chunk_destroyed(void* base, size_t bytes);
 
     protected:
-      UpmemModule *module;
+        UpmemModule* module;
     }; // end class DPUReplHeapListener
 
     namespace ThreadLocal {
-      static REALM_THREAD_LOCAL DPUProcessor *current_dpu_proc = 0;
-      static REALM_THREAD_LOCAL DPUStream *current_dpu_stream = 0;
-      static REALM_THREAD_LOCAL std::set<DPUStream *> *created_dpu_streams = 0;
-      static REALM_THREAD_LOCAL int context_sync_required = 0;
+        static REALM_THREAD_LOCAL DPUProcessor* current_dpu_proc = 0;
+        static REALM_THREAD_LOCAL DPUStream* current_dpu_stream = 0;
+        static REALM_THREAD_LOCAL std::set<DPUStream*>* created_dpu_streams = 0;
+        static REALM_THREAD_LOCAL int context_sync_required = 0;
     }; // namespace ThreadLocal
 
-  }; // namespace Upmem
+}; // namespace Upmem
 
 }; // namespace Realm
 

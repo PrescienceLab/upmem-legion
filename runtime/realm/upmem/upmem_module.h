@@ -22,23 +22,23 @@
 
 #include "realm/upmem/upmem_internal.h"
 
-#include "realm/realm_config.h"
+#include "realm/atomics.h"
 #include "realm/module.h"
 #include "realm/network.h"
-#include "realm/atomics.h"
+#include "realm/realm_config.h"
 
-#include "realm/logging.h"
 #include "realm/cmdline.h"
+#include "realm/idx_impl.h"
+#include "realm/logging.h"
 #include "realm/runtime_impl.h"
 #include "realm/utils.h"
-#include "realm/idx_impl.h"
 
 namespace Realm {
-  namespace Upmem {
+namespace Upmem {
     // REALM_PUBLIC_API dpu_set_t *get_task_upmem_stream();
     // REALM_PUBLIC_API void set_task_ctxsync_required(bool is_required);
 
-    // forward declaration 
+    // forward declaration
     // internal.h
     class DPU;
     class DPUReplHeapListener;
@@ -50,99 +50,98 @@ namespace Realm {
     // proc.h
     class DPUProcessor;
 
-
     class UpmemModuleConfig : public ModuleConfig {
-      friend class UpmemModule;
+        friend class UpmemModule;
 
     protected:
-      UpmemModuleConfig(void);
+        UpmemModuleConfig(void);
 
     public:
-      virtual void configure_from_cmdline(std::vector<std::string> &cmdline);
+        virtual void configure_from_cmdline(std::vector<std::string>& cmdline);
 
     public:
-      // configurations
-      int cfg_num_dpus = 64;
-      int cfg_tasklets = 16;
-      int cfg_mram_mem_size = 64 * MEGABYTE;
+        // configurations
+        int cfg_num_dpus = 64;
+        int cfg_tasklets = 16;
+        int cfg_mram_mem_size = 64 * MEGABYTE;
 
-      int cfg_task_streams = 16;
+        int cfg_task_streams = 16;
 
-      bool cfg_fences_use_callbacks = false;
-      bool cfg_suppress_hijack_warning = false;
-      unsigned cfg_skip_dpu_count = 0;
-      bool cfg_skip_busy_dpus = false;
-      size_t cfg_min_avail_mem = 0;
-      int cfg_task_context_sync = -1; // 0 = no, 1 = yes, -1 = default (based on hijack)
-      int cfg_max_ctxsync_threads = 4;
-      bool cfg_multithread_dma = false;
-      size_t cfg_hostreg_limit = 1 << 30;
-      int cfg_d2d_stream_priority = -1;
-      bool cfg_use_upmem_ipc = true;
+        bool cfg_fences_use_callbacks = false;
+        bool cfg_suppress_hijack_warning = false;
+        unsigned cfg_skip_dpu_count = 0;
+        bool cfg_skip_busy_dpus = false;
+        size_t cfg_min_avail_mem = 0;
+        int cfg_task_context_sync = -1; // 0 = no, 1 = yes, -1 = default (based on hijack)
+        int cfg_max_ctxsync_threads = 4;
+        bool cfg_multithread_dma = false;
+        size_t cfg_hostreg_limit = 1 << 30;
+        int cfg_d2d_stream_priority = -1;
+        bool cfg_use_upmem_ipc = true;
 
-      // resources
-      bool resource_discovered = false;
-      int res_num_dpus = 0;
+        // resources
+        bool resource_discovered = false;
+        int res_num_dpus = 0;
     };
 
     // our interface to the rest of the runtime
     class REALM_PUBLIC_API UpmemModule : public Module {
     protected:
-      UpmemModule(RuntimeImpl *_runtime);
+        UpmemModule(RuntimeImpl* _runtime);
 
     public:
-      virtual ~UpmemModule(void);
+        virtual ~UpmemModule(void);
 
-      static ModuleConfig *create_module_config(RuntimeImpl *runtime);
+        static ModuleConfig* create_module_config(RuntimeImpl* runtime);
 
-      static Module *create_module(RuntimeImpl *runtime);
+        static Module* create_module(RuntimeImpl* runtime);
 
-      // do any general initialization - this is called after all configuration is
-      //  complete
-      virtual void initialize(RuntimeImpl *runtime);
+        // do any general initialization - this is called after all configuration is
+        //  complete
+        virtual void initialize(RuntimeImpl* runtime);
 
-      // create any memories provided by this module (default == do nothing)
-      //  (each new MemoryImpl should use a Memory from RuntimeImpl::next_local_memory_id)
-      virtual void create_memories(RuntimeImpl *runtime);
+        // create any memories provided by this module (default == do nothing)
+        //  (each new MemoryImpl should use a Memory from RuntimeImpl::next_local_memory_id)
+        virtual void create_memories(RuntimeImpl* runtime);
 
-      // create any processors provided by the module (default == do nothing)
-      //  (each new ProcessorImpl should use a Processor from
-      //   RuntimeImpl::next_local_processor_id)
-      virtual void create_processors(RuntimeImpl *runtime);
+        // create any processors provided by the module (default == do nothing)
+        //  (each new ProcessorImpl should use a Processor from
+        //   RuntimeImpl::next_local_processor_id)
+        virtual void create_processors(RuntimeImpl* runtime);
 
-      // create any DMA channels provided by the module (default == do nothing)
-      virtual void create_dma_channels(RuntimeImpl *runtime);
+        // create any DMA channels provided by the module (default == do nothing)
+        virtual void create_dma_channels(RuntimeImpl* runtime);
 
-      // create any code translators provided by the module (default == do nothing)
-      virtual void create_code_translators(RuntimeImpl *runtime);
+        // create any code translators provided by the module (default == do nothing)
+        virtual void create_code_translators(RuntimeImpl* runtime);
 
-      // clean up any common resources created by the module - this will be called
-      //  after all memories/processors/etc. have been shut down and destroyed
-      virtual void cleanup(void);
+        // clean up any common resources created by the module - this will be called
+        //  after all memories/processors/etc. have been shut down and destroyed
+        virtual void cleanup(void);
 
-      struct dpu_set_t *get_task_upmem_stream();
+        struct dpu_set_t* get_task_upmem_stream();
 
     public:
-      UpmemModuleConfig *config;
-      RuntimeImpl *runtime;
+        UpmemModuleConfig* config;
+        RuntimeImpl* runtime;
 
-      // "global" variables live here too
-      DPUWorker *shared_worker;
-      std::map<DPU *, DPUWorker *> dedicated_workers;
-      std::vector<DPUInfo *> dpu_info;
-      std::vector<DPU *> dpus;
+        // "global" variables live here too
+        DPUWorker* shared_worker;
+        std::map<DPU*, DPUWorker*> dedicated_workers;
+        std::vector<DPUInfo*> dpu_info;
+        std::vector<DPU*> dpus;
 
-      std::vector<void *> registered_host_ptrs;
-      DPUReplHeapListener *rh_listener;
+        std::vector<void*> registered_host_ptrs;
+        DPUReplHeapListener* rh_listener;
 
-      Mutex upmemipc_mutex;
-      Mutex::CondVar upmemipc_condvar;
-      atomic<int> upmemipc_responses_needed;
-      atomic<int> upmemipc_releases_needed;
-      atomic<int> upmemipc_exports_remaining;
+        Mutex upmemipc_mutex;
+        Mutex::CondVar upmemipc_condvar;
+        atomic<int> upmemipc_responses_needed;
+        atomic<int> upmemipc_releases_needed;
+        atomic<int> upmemipc_exports_remaining;
     };
 
-  }; // namespace Upmem
+}; // namespace Upmem
 }; // namespace Realm
 
 #endif
