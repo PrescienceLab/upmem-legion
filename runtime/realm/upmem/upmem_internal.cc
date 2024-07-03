@@ -16,7 +16,7 @@
 
 #include "realm/upmem/upmem_module.h"
 #include "realm/upmem/upmem_internal.h"
-#include "realm/upmem/upmem_access.h"
+// #include "realm/upmem/upmem_access.h"
 
 namespace Realm {
 
@@ -31,6 +31,30 @@ namespace Realm {
     void upmemEventCreate(upmemEvent_t *e) {}
 
     void upmemEventDestroy(upmemEvent_t *e) {}
+
+
+    // ////////////////////////////////////////////////////////////////////////
+    // //
+    // // class UpmemDeviceMemoryInfo
+
+    // UpmemDeviceMemoryInfo::UpmemDeviceMemoryInfo(int _device_id)
+    //   : device_id(_device_id)
+    //   , dpu(0)
+    // {
+    //   // see if we can match this context to one of our DPU objects - handle
+    //   //  the case where the hip module didn't load though
+    //   UpmemModule *mod = get_runtime()->get_module<UpmemModule>("upmem");
+    //   if(mod) {
+    //     for(std::vector<DPU *>::const_iterator it = mod->dpus.begin();
+    //         it != mod->dpus.end();
+    //         ++it)
+    //       if((*it)->device_id == _device_id) {
+    //         dpu = *it;
+    //         break;
+    //       }
+    //   }
+    // }
+
 
     ////////////////////////////////////////////////////////////////////////
     //
@@ -912,7 +936,6 @@ namespace Realm {
 
     void DPUWorkFence::enqueue_on_stream(DPUStream *stream)
     {
-
       if(stream->get_dpu()->module->config->cfg_fences_use_callbacks) {
         DPU_ASSERT(dpu_callback(*stream->get_stream(), &upmem_start_callback,
                                 (void *)this, DPU_CALLBACK_NONBLOCKING));
@@ -1015,6 +1038,74 @@ namespace Realm {
       req->xd->notify_request_read_done(req);
       req->xd->notify_request_write_done(req);
     }
+
+
+
+  /*
+
+
+
+    ////////////////////////////////////////////////////////////////////////
+    //
+    // class DPUfillChannel
+
+      DPUfillChannel::DPUfillChannel(DPU *_dpu, BackgroundWorkManager *bgwork)
+        : SingleXDQChannel<DPUfillChannel,DPUfillXferDes>(bgwork,
+                                                          XFER_DPU_IN_MRAM,
+                                                          stringbuilder() << "upmem fill channel (dpu=" << _dpu->info->index << ")")
+        , dpu(_dpu)
+      {
+        std::vector<Memory> local_dpu_mems;
+        local_dpu_mems.push_back(dpu->fbmem->me);
+
+        // look for any other local memories that belong to our context
+        const Node& n = get_runtime()->nodes[Network::my_node_id];
+        for(std::vector<MemoryImpl *>::const_iterator it = n.memories.begin();
+            it != n.memories.end();
+            ++it) {
+          UpmemDeviceMemoryInfo *cdm = (*it)->find_module_specific<UpmemDeviceMemoryInfo>();
+          if(!cdm) continue;
+          if(cdm->device_id != dpu->device_id) continue;
+          local_dpu_mems.push_back((*it)->me);
+        }
+
+        unsigned bw = 300000;  // HACK - estimate at 300 GB/s
+        unsigned latency = 250;  // HACK - estimate at 250 ns
+        unsigned frag_overhead = 2000;  // HACK - estimate at 2 us
+
+        add_path(Memory::NO_MEMORY, local_dpu_mems,
+                 bw, latency, frag_overhead, XFER_DPU_IN_FB)
+          .set_max_dim(2);
+
+        xdq.add_to_manager(bgwork);
+      }
+
+      XferDes *DPUfillChannel::create_xfer_des(uintptr_t dma_op,
+                                               NodeID launch_node,
+                                               XferDesID guid,
+                                               const std::vector<XferDesPortInfo>& inputs_info,
+                                               const std::vector<XferDesPortInfo>& outputs_info,
+                                               int priority,
+                                               XferDesRedopInfo redop_info,
+                                               const void *fill_data,
+                                               size_t fill_size,
+                                               size_t fill_total)
+      {
+        assert(redop_info.id == 0);
+        return new DPUfillXferDes(dma_op, this, launch_node, guid,
+                                  inputs_info, outputs_info,
+                                  priority,
+                                  fill_data, fill_size, fill_total);
+      }
+
+      long DPUfillChannel::submit(Request** requests, long nr)
+      {
+        // unused
+        assert(0);
+        return 0;
+      }
+      
+    */
 
     ////////////////////////////////////////////////////////////////////////
     //

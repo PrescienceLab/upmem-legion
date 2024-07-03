@@ -18,16 +18,16 @@
 #define REALM_UPMEM_H
 
 
+#include <realm/realm_c.h>
+#include "upmem_common.h"
+
 #ifdef __cplusplus
 #define EXTERNC extern "C"
 #else
 #define EXTERNC
 #endif
 
-
-#define __GLIBC_PREREQ(x, y) 0
-#define malloc(x) mem_alloc(x)
-
+EXTERNC int access_point( int x,  int y);
 
 
 EXTERNC void *make_vector_of_int(int n);

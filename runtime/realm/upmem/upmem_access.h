@@ -18,10 +18,13 @@
 #define REALM_UPMEM_ACCESS_H
 
 #include "realm/inst_layout.h"
+#include <dpu>
+
 
 namespace Realm {
   namespace Upmem {
-    REALM_PUBLIC_API void upmem();
+    REALM_PUBLIC_API void LaunchKernel(const char* bin, void * args[], size_t arg_size, dpu_set_t *stream);
+
   }
 } // namespace Realm
 

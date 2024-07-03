@@ -15,7 +15,7 @@
  */
 #include "realm/upmem/upmem_module.h"
 #include "realm/upmem/upmem_internal.h"
-#include "realm/upmem/upmem_access.h"
+// #include "realm/upmem/upmem_access.h"
 
 #include "realm/tasks.h"
 #include "realm/logging.h"
@@ -169,6 +169,7 @@ namespace Realm {
 
     void DPU::create_mram_memory(RuntimeImpl *runtime, size_t size)
     {
+      mram_base = (char*)0x8; // physical addressing but realm breaks at 0x0
       Memory m = runtime->next_local_memory_id();
       mram = new DPUMRAMMemory(m, this, stream, static_cast<char *>(mram_base), size);
       runtime->add_memory(mram);
@@ -241,6 +242,27 @@ namespace Realm {
     void UpmemModule::create_dma_channels(RuntimeImpl *runtime)
     {
       Module::create_dma_channels(runtime);
+/*
+
+      // if we don't have any mram memory, we can't do any DMAs
+      if(!mram)
+	      return;
+      
+      r->add_dma_channel(new DPUChannel(this, XFER_DPU_IN_MRAM, &r->bgwork));
+      r->add_dma_channel(new DPUfillChannel(this, &r->bgwork));
+      // r->add_dma_channel(new DPUreduceChannel(this, &r->bgwork));
+
+      if(!pinned_sysmems.empty()) {
+        r->add_dma_channel(new DPUChannel(this, XFER_DPU_TO_MRAM, &r->bgwork));
+        r->add_dma_channel(new DPUChannel(this, XFER_DPU_FROM_MRAM, &r->bgwork));
+      } else {
+        log_dpu.warning() << "DPU " << proc->me << " has no accessible system memories!?";
+      }
+      // only create a p2p channel if we have peers (and an fb)
+      if(!peer_fbs.empty() || !upmemipc_mappings.empty()) {
+        r->add_dma_channel(new DPUChannel(this, XFER_DPU_PEER_MRAM, &r->bgwork));
+      }
+*/
     }
 
     // create any code translators provided by the module (default == do nothing)
