@@ -20,12 +20,6 @@ extern "C" {
 
 #endif
 
-// Structures used by both the host and the dpu to communicate information
-typedef struct {
-  uint32_t size;
-  uint32_t transfer_size;
-} dpu_arguments_t;
-
 // Transfer size between MRAM and WRAM
 #ifdef BL
 #define BLOCK_SIZE_LOG2 BL

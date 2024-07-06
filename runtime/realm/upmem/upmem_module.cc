@@ -178,27 +178,110 @@ namespace Realm {
     // create any DMA channels provided by the module (default == do nothing)
     void UpmemModule::create_dma_channels(RuntimeImpl *runtime)
     {
+      // before we create dma channels, see how many of the system memory ranges
+      //  we can register with Upmem
+      if(config->cfg_pin_sysmem && !dpus.empty()) {
+        const std::vector<MemoryImpl *> &local_mems =
+            runtime->nodes[Network::my_node_id].memories;
+        std::vector<MemoryImpl *> all_local_mems;
+        all_local_mems.insert(all_local_mems.end(), local_mems.begin(), local_mems.end());
+        // </NEW_DMA>
+        for(std::vector<MemoryImpl *>::iterator it = all_local_mems.begin();
+            it != all_local_mems.end(); it++) {
+          // ignore MRAM memories or anything that doesn't have a "direct" pointer
+          if(((*it)->kind == MemoryImpl::MKIND_MRAM))
+            continue;
+
+          // skip any memory that's over the max size limit for host
+          //  registration
+          if((config->cfg_hostreg_limit > 0) &&
+             ((*it)->size > config->cfg_hostreg_limit)) {
+            log_dpu.info() << "memory " << (*it)->me << " is larger than hostreg limit ("
+                           << (*it)->size << " > " << config->cfg_hostreg_limit
+                           << ") - skipping registration";
+            continue;
+          }
+
+          void *base = (*it)->get_direct_ptr(0, (*it)->size);
+          if(base == 0)
+            continue;
+
+          // // using GPU 0's context, attempt a portable registration
+          // hipError_t ret;
+          // {
+          //   ret = hipHostRegister(base, (*it)->size,
+          //         hipHostRegisterPortable |
+          //         hipHostRegisterMapped);
+          // }
+          // if(ret != hipSuccess) {
+          //   log_dpu.info() << "failed to register mem " << (*it)->me << " (" << base <<
+          //   " + " << (*it)->size << ") : "
+          //       << ret;
+          //   continue;
+          // }
+
+          registered_host_ptrs.push_back(base);
+
+          // now go through each GPU and verify that it got a GPU pointer (it may not
+          // match the CPU
+          //  pointer, but that's ok because we'll never refer to it directly)
+          for(unsigned i = 0; i < dpus.size(); i++) {
+            log_dpu.info() << "memory " << (*it)->me
+                           << " successfully registered with GPU " << dpus[i]->proc->me;
+            dpus[i]->pinned_sysmems.insert((*it)->me);
+
+            // char *gpuptr;
+            // hipError_t ret;
+            // {
+            //   AutoGPUContext agc(dpus[i]);
+            //   ret = hipHostGetDevicePointer((void **)&gpuptr, base, 0);
+            // }
+            // if(ret == hipSuccess) {
+            //   // no test for && ((void *)gpuptr == base)) {
+            //   log_dpu.info() << "memory " << (*it)->me << " successfully registered
+            //   with GPU " << dpus[i]->proc->me;
+            //   dpus[i]->pinned_sysmems.insert((*it)->me);
+            // } else {
+            //   log_dpu.warning() << "GPU #" << i << " has no mapping for registered
+            //   memory (" << (*it)->me << " at " << base << ") !?";
+            // }
+          }
+        }
+      }
+
+      // ask any ipc-able nodes to share handles with us
+      if(config->cfg_use_upmem_ipc) {
+        NodeSet ipc_peers = Network::all_peers;
+
+        // #ifdef REALM_ON_LINUX
+        //         if(!ipc_peers.empty()) {
+        //           log_upmemipc.info() << "requesting upmem ipc handles from "
+        //                              << ipc_peers.size() << " peers";
+
+        //           // we'll need a reponse (and ultimately, a release) from each peer
+        //           upmemipc_responses_needed.fetch_add(ipc_peers.size());
+        //           upmemipc_releases_needed.fetch_add(ipc_peers.size());
+
+        //           ActiveMessage<UpmemIpcRequest> amsg(ipc_peers);
+        //           amsg->hostid = gethostid();
+        //           amsg.commit();
+
+        //           // wait for responses
+        //           {
+        //             AutoLock<> al(upmemipc_mutex);
+        //             while(upmemipc_responses_needed.load_acquire() > 0)
+        //               upmemipc_condvar.wait();
+        //           }
+        //           log_upmemipc.info() << "responses complete";
+        //         }
+        // #endif
+      }
+
+      // for(std::vector<DPU *>::iterator it = dpus.begin(); it != dpus.end(); it++) {
+      //   (*it)->create_dma_channels(runtime);
+      // }
+
       Module::create_dma_channels(runtime);
-
-      // if we don't have any mram memory, we can't do any DMAs
-      // if(!mram)
-      //   return;
-
-      // r->add_dma_channel(new DPUChannel(this, XFER_DPU_IN_MRAM, &r->bgwork));
-      // r->add_dma_channel(new DPUfillChannel(this, &r->bgwork));
-      // // r->add_dma_channel(new DPUreduceChannel(this, &r->bgwork));
-
-      // if(!pinned_sysmems.empty()) {
-      //   r->add_dma_channel(new DPUChannel(this, XFER_DPU_TO_MRAM, &r->bgwork));
-      //   r->add_dma_channel(new DPUChannel(this, XFER_DPU_FROM_MRAM, &r->bgwork));
-      // } else {
-      //   log_dpu.warning() << "DPU " << proc->me << " has no accessible system
-      //   memories!?";
-      // }
-      // // only create a p2p channel if we have peers (and an fb)
-      // if(!peer_fbs.empty() || !upmemipc_mappings.empty()) {
-      //   r->add_dma_channel(new DPUChannel(this, XFER_DPU_PEER_MRAM, &r->bgwork));
-      // }
     }
 
     // create any code translators provided by the module (default == do nothing)
@@ -209,7 +292,16 @@ namespace Realm {
 
     // clean up any common resources created by the module - this will be called
     //  after all memories/processors/etc. have been shut down and destroyed
-    void UpmemModule::cleanup(void) { Module::cleanup(); }
+    void UpmemModule::cleanup(void)
+    {
+      Module::cleanup();
+      size_t dpu_count = 0;
+      for(size_t i = config->cfg_skip_dpu_count;
+          (i < dpu_info.size()) && (static_cast<int>(dpu_count) < config->cfg_num_dpus);
+          i++) {
+        delete dpus[++dpu_count];
+      }
+    }
 
     struct dpu_set_t *UpmemModule::get_task_upmem_stream()
     {

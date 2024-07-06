@@ -65,7 +65,7 @@ namespace Realm {
       struct dpu_set_t single_dpu;
 
       DPU_ASSERT(dpu_alloc(1, "backend=simulator", &single_dpu));
-      // printf("DPU ALLOCATED\n");
+      printf("DPU ALLOCATED with id %d\n", _device_id);
       stream->set_stream(&single_dpu);
 
       task_streams.resize(module->config->cfg_task_streams);
@@ -102,6 +102,33 @@ namespace Realm {
       // pma.bandwidth = info->logical_peer_bandwidth[info->index];
       // pma.latency   = info->logical_peer_latency[info->index];
       runtime->add_proc_mem_affinity(pma);
+    }
+    const DPU::UpmemIpcMapping *DPU::find_ipc_mapping(Memory mem) const
+    {
+      for(std::vector<UpmemIpcMapping>::const_iterator it = upmemipc_mappings.begin();
+          it != upmemipc_mappings.end(); ++it)
+        if(it->mem == mem)
+          return &*it;
+
+      return 0;
+    }
+
+    void DPU::create_dma_channels(RuntimeImpl *r)
+    {
+      r->add_dma_channel(new DPUChannel(this, XFER_DPU_IN_MRAM, &r->bgwork));
+      r->add_dma_channel(new DPUfillChannel(this, &r->bgwork));
+      // r->add_dma_channel(new DPUreduceChannel(this, &r->bgwork));
+
+      if(!pinned_sysmems.empty()) {
+        r->add_dma_channel(new DPUChannel(this, XFER_DPU_TO_MRAM, &r->bgwork));
+        r->add_dma_channel(new DPUChannel(this, XFER_DPU_FROM_MRAM, &r->bgwork));
+      } else {
+        log_dpu.warning() << "DPU " << proc->me << " has no accessible system memories!?";
+      }
+      // only create a p2p channel if we have peers (and an mram)
+      if(!peer_mram.empty() || !upmemipc_mappings.empty()) {
+        r->add_dma_channel(new DPUChannel(this, XFER_DPU_PEER_MRAM, &r->bgwork));
+      }
     }
 
     DPUStream *DPU::find_stream(struct dpu_set_t *stream) const

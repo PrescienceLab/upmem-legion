@@ -26,6 +26,32 @@ namespace Realm {
     extern Logger log_stream;
     extern Logger log_dpudma;
 
+    ////////////////////////////////////////////////////////////////////////
+    //
+    // class DPUXferDes
+
+    static DPU *mem_to_dpu(const MemoryImpl *mem)
+    {
+      if(ID(mem->me).is_memory()) {
+        // might not be a DPUFBMemory...
+        const DPUMRAMMemory *mram = dynamic_cast<const DPUMRAMMemory *>(mem);
+        if(mram)
+          return mram->dpu;
+
+        // see if it has UpmemDeviceMemoryInfo with a valid dpu
+        const UpmemDeviceMemoryInfo *cdm =
+            mem->find_module_specific<UpmemDeviceMemoryInfo>();
+        if(cdm && cdm->dpu)
+          return cdm->dpu;
+
+        // not a dpu-associated memory
+        return 0;
+      } else {
+        // not a dpu-associated memory
+        return 0;
+      }
+    }
+
     DPUXferDes::DPUXferDes(uintptr_t _dma_op, Channel *_channel, NodeID _launch_node,
                            XferDesID _guid,
                            const std::vector<XferDesPortInfo> &inputs_info,
@@ -102,13 +128,13 @@ namespace Realm {
         if(in_port != 0) {
           if(out_port != 0) {
             // input and output both exist - transfer what we can
-            log_xd.info() << "hip memcpy chunk: min=" << min_xfer_size
+            log_xd.info() << "upmem memcpy chunk: min=" << min_xfer_size
                           << " max=" << max_bytes;
 
             uintptr_t in_base =
                 reinterpret_cast<uintptr_t>(in_port->mem->get_direct_ptr(0, 0));
             uintptr_t out_base;
-            const DPU::HipIpcMapping *out_mapping = 0;
+            const DPU::UpmemIpcMapping *out_mapping = 0;
             if(out_is_ipc) {
               out_mapping = in_dpu->find_ipc_mapping(out_port->mem->me);
               assert(out_mapping);
@@ -116,30 +142,21 @@ namespace Realm {
             } else
               out_base = reinterpret_cast<uintptr_t>(out_port->mem->get_direct_ptr(0, 0));
 
-            // pick the correct stream for any memcpy's we generate
-            DPUStream *stream;
+            DPUStream *stream = in_dpu->stream;
             if(in_dpu) {
               if(out_dpu == in_dpu) {
-                stream = in_dpu->get_next_d2d_stream();
                 memcpy_kind = "d2d";
               } else if(out_mapping) {
-                stream = in_dpu->hipipc_streams[out_mapping->owner];
                 memcpy_kind = "ipc";
               } else if(!out_dpu) {
-                stream = in_dpu->device_to_host_stream;
                 memcpy_kind = "d2h";
               } else {
-                stream = in_dpu->peer_to_peer_streams[out_dpu->info->index];
-                assert(stream);
                 memcpy_kind = "p2p";
               }
             } else {
               assert(out_dpu);
-              stream = out_dpu->host_to_device_stream;
               memcpy_kind = "h2d";
             }
-
-            AutoDPUContext agc(stream->get_dpu());
 
             size_t bytes_to_fence = 0;
 
@@ -183,22 +200,29 @@ namespace Realm {
                   break;
 
                 // grr...  prototypes of these differ slightly...
-                hipMemcpyKind copy_type;
+                DPUMemcpyKind copy_type;
                 if(in_dpu) {
                   if(out_dpu == in_dpu || (out_ipc_index >= 0)) {
-                    copy_type = hipMemcpyDeviceToDevice;
+                    printf("device to device not currently supported\n");
                   } else if(!out_dpu) {
-                    copy_type = hipMemcpyDeviceToHost;
-                  } else {
-                    copy_type = hipMemcpyDefault;
+                    copy_type = DPU_XFER_FROM_DPU;
                   }
                 } else {
-                  copy_type = hipMemcpyHostToDevice;
+                  copy_type = DPU_XFER_TO_DPU;
                 }
-                CHECK_HIP(
-                    hipMemcpyAsync(reinterpret_cast<void *>(out_base + out_offset),
-                                   reinterpret_cast<const void *>(in_base + in_offset),
-                                   bytes, copy_type, stream->get_stream()));
+
+                CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()),
+                                             (void *)(in_base + in_offset)));
+                CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), copy_type,
+                                          DPU_MRAM_HEAP_POINTER_NAME,
+                                          out_base + out_offset, bytes, DPU_XFER_ASYNC));
+
+                // CHECK_HIP(
+                //     hipMemcpyAsync(reinterpret_cast<void *>(out_base + out_offset),
+                //                      reinterpret_cast<const void *>(in_base +
+                //                      in_offset), bytes, copy_type,
+                //                      (stream->get_stream())));
+
                 log_dpudma.info()
                     << "dpu memcpy: dst=" << std::hex << (out_base + out_offset)
                     << " src=" << (in_base + in_offset) << std::dec << " bytes=" << bytes
@@ -264,21 +288,19 @@ namespace Realm {
                   if(!stream->ok_to_submit_copy(bytes, this))
                     break;
 
-                  hipMemcpyKind copy_type;
+                  DPUMemcpyKind copy_type;
                   if(in_dpu) {
                     if(out_dpu == in_dpu || (out_ipc_index >= 0)) {
-                      copy_type = hipMemcpyDeviceToDevice;
+                      printf("device to device not currently supported\n");
                     } else if(!out_dpu) {
-                      copy_type = hipMemcpyDeviceToHost;
-                    } else {
-                      copy_type = hipMemcpyDefault;
+                      copy_type = DPU_XFER_FROM_DPU;
                     }
                   } else {
-                    copy_type = hipMemcpyHostToDevice;
+                    copy_type = DPU_XFER_TO_DPU;
                   }
 
                   const void *src = reinterpret_cast<const void *>(in_base + in_offset);
-                  void *dst = reinterpret_cast<void *>(out_base + out_offset);
+                  size_t dst = (out_base + out_offset);
 
                   log_dpudma.info()
                       << "dpu memcpy 2d: dst=" << std::hex << (out_base + out_offset)
@@ -287,9 +309,14 @@ namespace Realm {
                       << " bytes=" << bytes << " lines=" << lines << " stream=" << stream
                       << " kind=" << memcpy_kind;
 
-                  CHECK_HIP(hipMemcpy2DAsync(dst, out_lstride, src, in_lstride,
-                                             contig_bytes, lines, copy_type,
-                                             stream->get_stream()));
+                  CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()), (void *)src));
+                  CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), copy_type,
+                                            DPU_MRAM_HEAP_POINTER_NAME, dst,
+                                            lines * contig_bytes, DPU_XFER_ASYNC));
+
+                  // CHECK_HIP(hipMemcpy2DAsync(dst, out_lstride, src, in_lstride,
+                  //                                contig_bytes, lines, copy_type,
+                  //                                (stream->get_stream())));
 
                   in_alc.advance(id, lines * iscale);
                   out_alc.advance(od, lines * oscale);
@@ -336,17 +363,15 @@ namespace Realm {
                   //  driver, so we'll do the unrolling into 2D copies ourselves,
                   //  allowing us to stop early if we hit the rate limit or a
                   //  timeout
-                  hipMemcpyKind copy_type;
+                  DPUMemcpyKind copy_type;
                   if(in_dpu) {
                     if(out_dpu == in_dpu || (out_ipc_index >= 0)) {
-                      copy_type = hipMemcpyDeviceToDevice;
+                      printf("device to device not currently supported\n");
                     } else if(!out_dpu) {
-                      copy_type = hipMemcpyDeviceToHost;
-                    } else {
-                      copy_type = hipMemcpyDefault;
+                      copy_type = DPU_XFER_FROM_DPU;
                     }
                   } else {
-                    copy_type = hipMemcpyHostToDevice;
+                    copy_type = DPU_XFER_TO_DPU;
                   }
 
                   size_t act_planes = 0;
@@ -357,12 +382,16 @@ namespace Realm {
 
                     const void *src = reinterpret_cast<const void *>(
                         in_base + in_offset + (act_planes * in_pstride));
-                    void *dst = reinterpret_cast<void *>(out_base + out_offset +
-                                                         (act_planes * out_pstride));
+                    size_t dst = (out_base + out_offset + (act_planes * out_pstride));
 
-                    CHECK_HIP(hipMemcpy2DAsync(dst, out_lstride, src, in_lstride,
-                                               contig_bytes, lines, copy_type,
-                                               stream->get_stream()));
+                    CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()), (void *)src));
+                    CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), copy_type,
+                                              DPU_MRAM_HEAP_POINTER_NAME, dst,
+                                              lines * contig_bytes, DPU_XFER_ASYNC));
+
+                    // CHECK_HIP(hipMemcpy2DAsync(dst, out_lstride, src, in_lstride,
+                    //                                contig_bytes, lines, copy_type,
+                    //                                (stream->get_stream())));
                     act_planes++;
 
                     if(work_until.is_expired())
@@ -458,10 +487,10 @@ namespace Realm {
 
     DPUChannel::DPUChannel(DPU *_src_dpu, XferDesKind _kind,
                            BackgroundWorkManager *bgwork)
-      : SingleXDQChannel<DPUChannel, DPUXferDes>(
-            bgwork, _kind,
-            stringbuilder() << "hip channel (dpu=" << _src_dpu->info->index
-                            << " kind=" << (int)_kind << ")")
+      : SingleXDQChannel<DPUChannel, DPUXferDes>(bgwork, _kind, "help")
+    // stringbuilder() << "upmem channel (dpu=" << _src_dpu->info->index
+    //                 << " kind=" << (int)_kind << ")")
+
     {
       src_dpu = _src_dpu;
 
@@ -470,16 +499,14 @@ namespace Realm {
         xdq.ordered_mode = false;
 
       std::vector<Memory> local_dpu_mems;
-      local_dpu_mems.push_back(src_dpu->fbmem->me);
-      if(src_dpu->fb_ibmem)
-        local_dpu_mems.push_back(src_dpu->fb_ibmem->me);
+      local_dpu_mems.push_back(src_dpu->mram->me);
 
       std::vector<Memory> peer_dpu_mems;
-      peer_dpu_mems.insert(peer_dpu_mems.end(), src_dpu->peer_fbs.begin(),
-                           src_dpu->peer_fbs.end());
-      for(std::vector<DPU::HipIpcMapping>::const_iterator it =
-              src_dpu->hipipc_mappings.begin();
-          it != src_dpu->hipipc_mappings.end(); ++it)
+      peer_dpu_mems.insert(peer_dpu_mems.end(), src_dpu->peer_mram.begin(),
+                           src_dpu->peer_mram.end());
+      for(std::vector<DPU::UpmemIpcMapping>::const_iterator it =
+              src_dpu->upmemipc_mappings.begin();
+          it != src_dpu->upmemipc_mappings.end(); ++it)
         peer_dpu_mems.push_back(it->mem);
 
       // look for any other local memories that belong to our context or
@@ -487,7 +514,7 @@ namespace Realm {
       const Node &n = get_runtime()->nodes[Network::my_node_id];
       for(std::vector<MemoryImpl *>::const_iterator it = n.memories.begin();
           it != n.memories.end(); ++it) {
-        HipDeviceMemoryInfo *cdm = (*it)->find_module_specific<HipDeviceMemoryInfo>();
+        UpmemDeviceMemoryInfo *cdm = (*it)->find_module_specific<UpmemDeviceMemoryInfo>();
         if(!cdm)
           continue;
         if(cdm->device_id == src_dpu->device_id) {
@@ -596,16 +623,6 @@ namespace Realm {
 
     ////////////////////////////////////////////////////////////////////////
     //
-    // class DPUCompletionEvent
-
-    void DPUCompletionEvent::request_completed(void)
-    {
-      req->xd->notify_request_read_done(req);
-      req->xd->notify_request_write_done(req);
-    }
-
-    ////////////////////////////////////////////////////////////////////////
-    //
     // class DPUTransfercompletion
 
     DPUTransferCompletion::DPUTransferCompletion(XferDes *_xd, int _read_port_idx,
@@ -708,8 +725,9 @@ namespace Realm {
           uintptr_t out_base =
               reinterpret_cast<uintptr_t>(out_port->mem->get_direct_ptr(0, 0));
 
-          AutoDPUContext agc(channel->dpu);
-          DPUStream *stream = channel->dpu->get_next_d2d_stream();
+          // DPUStream *stream = channel->dpu->get_next_d2d_stream();
+          // TODO: not correct just want compile
+          DPUStream *stream = channel->dpu->stream;
 
           while(total_bytes < max_bytes) {
             AddressListCursor &out_alc = out_port->addrcursor;
@@ -720,228 +738,101 @@ namespace Realm {
             //  ranges - whatever we get can be assumed to be regular
             int out_dim = out_alc.get_dim();
 
+            // more general approach - use strided 2d copies to fill the first
+            //  line, and then we can use logarithmic doublings to deal with
+            //  multiple lines and/or planes
+            size_t bytes = out_alc.remaining(0);
+            size_t elems = bytes / reduced_fill_size;
+
 #ifdef DEBUG_REALM
-            // since HIP does not support 12/32 bit 2D memset, we need to
-            //  use the default path for them
-            int memset2d_flag = 0;
+            assert((bytes % reduced_fill_size) == 0);
 #endif
 
-            // fast paths for 8/16/32 bit memsets exist for 1-D and 2-D
-            switch(reduced_fill_size) {
-            case 1:
-            {
-              // memset8
+            size_t partial_bytes = 0;
+
+            void *buffer = (void *)malloc(elems * reduced_fill_size);
+
+            // leftover or unaligned bytes are done 8 bits at a time
+            while(partial_bytes < reduced_fill_size) {
+
+              // TODO: NOT CORRECT
               uint8_t fill_u8;
-              memcpy(&fill_u8, fill_data, 1);
-              if(out_dim == 1) {
-                size_t bytes = out_alc.remaining(0);
-                CHECK_HIP(hipMemsetD8Async((hipDeviceptr_t)(out_base + out_offset),
-                                           fill_u8, bytes, stream->get_stream()));
-                out_alc.advance(0, bytes);
-                total_bytes += bytes;
-              } else {
-                size_t bytes = out_alc.remaining(0);
-                size_t lines = out_alc.remaining(1);
-                CHECK_HIP(hipMemset2DAsync((void *)(out_base + out_offset),
-                                           out_alc.get_stride(1),
-                                           *reinterpret_cast<const uint8_t *>(fill_data),
-                                           bytes, lines, stream->get_stream()));
+              memcpy(&fill_u8,
+                     reinterpret_cast<const uint8_t *>(fill_data) + partial_bytes, 1);
+
+              memset(buffer, (int)fill_u8, elems * reduced_fill_size);
+
+              {
+                // TODO fix this. Should not be allocating here
+                DPU_ASSERT(dpu_alloc(1, NULL, stream->get_stream()));
+                DPU_ASSERT(dpu_load(*(stream->get_stream()),
+                                    "./dpu/dpu_mem_transfer.up.o", NULL));
+
+                CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()), buffer));
+                CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), DPU_XFER_TO_DPU,
+                                          DPU_MRAM_HEAP_POINTER_NAME,
+                                          out_base + out_offset + partial_bytes,
+                                          elems * reduced_fill_size, DPU_XFER_ASYNC));
+              }
+
+              // CHECK_HIP(hipMemset2DAsync(
+              //     (void *)(out_base + out_offset + partial_bytes), reduced_fill_size,
+              //     fill_u8, 1 /*"width"*/, elems /*"height"*/, (stream->get_stream())));
+
+              partial_bytes += 1;
+            }
+
+            // need to make sure the async transfer is done before we free the buffer
+            CHECK_UPMEM(dpu_free(*(stream->get_stream())));
+            free(buffer);
+
+            if(out_dim == 1) {
+              // all done
+              out_alc.advance(0, bytes);
+              total_bytes += bytes;
+            } else {
+              size_t lines = out_alc.remaining(1);
+              size_t lstride = out_alc.get_stride(1);
+
+              void *srcDevice = (void *)(out_base + out_offset);
+
+              size_t lines_done = 1; // first line already valid
+              while(lines_done < lines) {
+                size_t todo = std::min(lines_done, lines - lines_done);
+                size_t dstDevice = (out_base + out_offset + (lines_done * lstride));
+
+                CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()), (void *)srcDevice));
+                CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), DPU_XFER_TO_DPU,
+                                          DPU_MRAM_HEAP_POINTER_NAME, dstDevice,
+                                          bytes * todo, DPU_XFER_ASYNC));
+
+                // CHECK_HIP(hipMemcpy2DAsync(dstDevice, lstride, srcDevice, lstride,
+                //                                bytes, todo, , (stream->get_stream())));
+                lines_done += todo;
+              }
+
+              if(out_dim == 2) {
                 out_alc.advance(1, lines);
                 total_bytes += bytes * lines;
-              }
-              break;
-            }
-
-            case 2:
-            {
-              // memset16
-              uint16_t fill_u16;
-              memcpy(&fill_u16, fill_data, 2);
-              if(out_dim == 1) {
-                size_t bytes = out_alc.remaining(0);
-#ifdef DEBUG_REALM
-                assert((bytes & 1) == 0);
-#endif
-                CHECK_HIP(hipMemsetD16Async((hipDeviceptr_t)(out_base + out_offset),
-                                            fill_u16, bytes >> 1, stream->get_stream()));
-                out_alc.advance(0, bytes);
-                total_bytes += bytes;
               } else {
-#ifdef DEBUG_REALM
-                memset2d_flag = 2;
-#endif
-                goto default_memset;
-              }
-              break;
-            }
+                size_t planes = out_alc.remaining(2);
+                size_t pstride = out_alc.get_stride(2);
 
-            case 4:
-            {
-              // memset32
-              uint32_t fill_u32;
-              memcpy(&fill_u32, fill_data, 4);
-              if(out_dim == 1) {
-                size_t bytes = out_alc.remaining(0);
-#ifdef DEBUG_REALM
-                assert((bytes & 3) == 0);
-#endif
-                CHECK_HIP(hipMemsetD32Async((hipDeviceptr_t)(out_base + out_offset),
-                                            fill_u32, bytes >> 2, stream->get_stream()));
-                out_alc.advance(0, bytes);
-                total_bytes += bytes;
-              } else {
-#ifdef DEBUG_REALM
-                memset2d_flag = 4;
-#endif
-                goto default_memset;
-              }
-              break;
-            }
+                for(size_t p = 1; p < planes; p++) {
+                  size_t dstDevice = (out_base + out_offset + (p * pstride));
 
-            default:
-            {
-              // more general approach - use strided 2d copies to fill the first
-              //  line, and then we can use logarithmic doublings to deal with
-              //  multiple lines and/or planes
-            default_memset:
-              size_t bytes = out_alc.remaining(0);
-              size_t elems = bytes / reduced_fill_size;
-#ifdef DEBUG_REALM
-              switch(memset2d_flag) {
-              case 2:
-              {
-                assert((bytes & 1) == 0);
-                assert((out_alc.get_stride(1) & 1) == 0);
-                break;
-              }
-              case 4:
-              {
-                assert((bytes & 3) == 0);
-                assert((out_alc.get_stride(1) & 3) == 0);
-                break;
-              }
-              default:
-              {
-                assert((bytes % reduced_fill_size) == 0);
-              }
-              }
-#endif
-              size_t partial_bytes = 0;
-              // if((reduced_fill_size & 3) == 0) {
-              //   // 32-bit partial fills allowed
-              //   while(partial_bytes <= (reduced_fill_size - 4)) {
-              //     uint32_t fill_u32;
-              //     memcpy(&fill_u32,
-              //            reinterpret_cast<const uint8_t *>(fill_data) + partial_bytes,
-              //            4);
-              //     CHECK_HIP( hipMemset2DAsync((void*)(out_base + out_offset +
-              //     partial_bytes),
-              //                                  reduced_fill_size,
-              //                                  fill_u32,
-              //                                  1 /*"width"*/, elems /*"height"*/,
-              //                                  stream->get_stream()) );
-              //     partial_bytes += 4;
-              //   }
-              // }
-              // if((reduced_fill_size & 1) == 0) {
-              //   // 16-bit partial fills allowed
-              //   while(partial_bytes <= (reduced_fill_size - 2)) {
-              //     uint16_t fill_u16;
-              //     memcpy(&fill_u16,
-              //            reinterpret_cast<const uint8_t *>(fill_data) + partial_bytes,
-              //            2);
-              //     CHECK_HIP( hipMemset2DAsync((void*)(out_base + out_offset +
-              //     partial_bytes),
-              //                                  reduced_fill_size,
-              //                                  fill_u16,
-              //                                  1 /*"width"*/, elems /*"height"*/,
-              //                                  stream->get_stream()) );
-              //     partial_bytes += 2;
-              //   }
-              // }
-              // leftover or unaligned bytes are done 8 bits at a time
-              while(partial_bytes < reduced_fill_size) {
-                uint8_t fill_u8;
-                memcpy(&fill_u8,
-                       reinterpret_cast<const uint8_t *>(fill_data) + partial_bytes, 1);
-                CHECK_HIP(hipMemset2DAsync(
-                    (void *)(out_base + out_offset + partial_bytes), reduced_fill_size,
-                    fill_u8, 1 /*"width"*/, elems /*"height"*/, stream->get_stream()));
-                partial_bytes += 1;
-              }
+                  CHECK_UPMEM(
+                      dpu_prepare_xfer(*(stream->get_stream()), (void *)srcDevice));
+                  CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), DPU_XFER_TO_DPU,
+                                            DPU_MRAM_HEAP_POINTER_NAME, dstDevice,
+                                            bytes * lines, DPU_XFER_ASYNC));
 
-              if(out_dim == 1) {
-                // all done
-                out_alc.advance(0, bytes);
-                total_bytes += bytes;
-              } else {
-                size_t lines = out_alc.remaining(1);
-                size_t lstride = out_alc.get_stride(1);
-
-                void *srcDevice = (void *)(out_base + out_offset);
-
-                size_t lines_done = 1; // first line already valid
-                while(lines_done < lines) {
-                  size_t todo = std::min(lines_done, lines - lines_done);
-                  void *dstDevice =
-                      (void *)(out_base + out_offset + (lines_done * lstride));
-                  CHECK_HIP(hipMemcpy2DAsync(dstDevice, lstride, srcDevice, lstride,
-                                             bytes, todo, hipMemcpyDeviceToDevice,
-                                             stream->get_stream()));
-                  lines_done += todo;
-                }
-
-                if(out_dim == 2) {
-                  out_alc.advance(1, lines);
-                  total_bytes += bytes * lines;
-                } else {
-                  size_t planes = out_alc.remaining(2);
-                  size_t pstride = out_alc.get_stride(2);
-
-                  // logarithmic version requires that pstride be a multiple of
-                  //  lstride
-                  if((pstride % lstride) == 0) {
-                    hipMemcpy3DParms copy3d = {0};
-                    void *srcDevice = (void *)(out_base + out_offset);
-                    copy3d.srcPtr = make_hipPitchedPtr((void *)srcDevice, lstride, bytes,
-                                                       pstride / lstride);
-                    copy3d.srcPos = make_hipPos(0, 0, 0);
-                    copy3d.dstPos = make_hipPos(0, 0, 0);
-#ifdef __HIP_PLATFORM_NVIDIA__
-                    copy3d.kind = cudaMemcpyDeviceToDevice;
-#else
-                    copy3d.kind = hipMemcpyDeviceToDevice;
-#endif
-
-                    size_t planes_done = 1; // first plane already valid
-                    while(planes_done < planes) {
-                      size_t todo = std::min(planes_done, planes - planes_done);
-                      void *dstDevice =
-                          (void *)(out_base + out_offset + (planes_done * pstride));
-                      copy3d.dstPtr = make_hipPitchedPtr(dstDevice, lstride, bytes,
-                                                         pstride / lstride);
-                      copy3d.extent = make_hipExtent(bytes, lines, todo);
-                      CHECK_HIP(hipMemcpy3DAsync(&copy3d, stream->get_stream()));
-                      planes_done += todo;
-                    }
-
-                    out_alc.advance(2, planes);
-                    total_bytes += bytes * lines * planes;
-                  } else {
-                    // plane-at-a-time fallback - can reuse most of copy2d
-                    //  setup above
-
-                    for(size_t p = 1; p < planes; p++) {
-                      void *dstDevice = (void *)(out_base + out_offset + (p * pstride));
-                      CHECK_HIP(hipMemcpy2DAsync(dstDevice, lstride, srcDevice, lstride,
-                                                 bytes, lines, hipMemcpyDeviceToDevice,
-                                                 stream->get_stream()));
-                    }
-                  }
+                  // CHECK_HIP(hipMemcpy2DAsync(dstDevice, lstride, srcDevice, lstride,
+                  //                                bytes, lines, ,
+                  //                                (stream->get_stream())));
                 }
               }
               break;
-            }
             }
 
             // stop if it's been too long, but make sure we do at least the
@@ -977,13 +868,13 @@ namespace Realm {
     // class DPUfillChannel
 
     DPUfillChannel::DPUfillChannel(DPU *_dpu, BackgroundWorkManager *bgwork)
-      : SingleXDQChannel<DPUfillChannel, DPUfillXferDes>(
-            bgwork, XFER_DPU_IN_MRAM,
-            stringbuilder() << "upmem fill channel (dpu=" << _dpu->info->index << ")")
+      : SingleXDQChannel<DPUfillChannel, DPUfillXferDes>(bgwork, XFER_DPU_IN_MRAM,
+                                                         "fill channel")
+      // stringbuilder() << "upmem fill channel (dpu=" << _dpu->info->index << ")")
       , dpu(_dpu)
     {
       std::vector<Memory> local_dpu_mems;
-      local_dpu_mems.push_back(dpu->fbmem->me);
+      local_dpu_mems.push_back(dpu->mram->me);
 
       // look for any other local memories that belong to our context
       const Node &n = get_runtime()->nodes[Network::my_node_id];
@@ -1027,6 +918,5 @@ namespace Realm {
       assert(0);
       return 0;
     }
-
   }; // namespace Upmem
 };   // namespace Realm

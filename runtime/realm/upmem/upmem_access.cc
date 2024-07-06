@@ -20,7 +20,8 @@ namespace Realm {
   namespace Upmem {
 
     extern Logger log_upmem;
-    REALM_PUBLIC_API void LaunchKernel(const char *bin, void *args[], size_t arg_size,
+    REALM_PUBLIC_API void LaunchKernel(const char *bin, void *args[],
+                                       const char *symbol_name, size_t arg_size,
                                        dpu_set_t *stream)
     {
       int i = 0;
@@ -29,12 +30,14 @@ namespace Realm {
 
       DPU_ASSERT(dpu_alloc(1, NULL, stream));
       printf("load: %s\n", bin);
+
       DPU_ASSERT(dpu_load(*stream, bin, NULL));
+      printf("debug me: arg_size = %ld\n", arg_size);
 
       DPU_FOREACH(*stream, dpu_proc, i) { DPU_ASSERT(dpu_prepare_xfer(dpu_proc, args)); }
 
-      DPU_ASSERT(dpu_push_xfer(*stream, DPU_XFER_TO_DPU, "DPU_INPUT_ARGUMENTS", 0,
-                               arg_size, DPU_XFER_DEFAULT));
+      DPU_ASSERT(dpu_push_xfer(*stream, DPU_XFER_TO_DPU, DPU_MRAM_HEAP_POINTER_NAME, 0, arg_size,
+                               DPU_XFER_DEFAULT));
 
       DPU_ASSERT(dpu_launch(*stream, DPU_ASYNCHRONOUS));
     }

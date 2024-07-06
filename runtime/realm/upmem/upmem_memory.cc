@@ -36,7 +36,8 @@ namespace Realm {
       // use a blocking copy - host memory probably isn't pinned anyway
       {
         // we need to get the dpu_set_t stream
-        CHECK_UPMEM(dpu_copy_from(*stream->get_stream(), "data", offset, dst, size));
+        CHECK_UPMEM(dpu_copy_from(*stream->get_stream(), DPU_MRAM_HEAP_POINTER_NAME,
+                                  offset, dst, size));
       }
     }
 
@@ -45,8 +46,8 @@ namespace Realm {
       // use a blocking copy - host memory probably isn't pinned anyway
       {
         // we need to get the dpu_set_t stream
-        CHECK_UPMEM(dpu_broadcast_to(*stream->get_stream(), "data", offset, src, size,
-                                     DPU_XFER_DEFAULT));
+        CHECK_UPMEM(dpu_broadcast_to(*stream->get_stream(), DPU_MRAM_HEAP_POINTER_NAME,
+                                     offset, src, size, DPU_XFER_DEFAULT));
       }
     }
 

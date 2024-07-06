@@ -17,12 +17,19 @@
 #ifndef REALM_UPMEM_MEMORY_H
 #define REALM_UPMEM_MEMORY_H
 
-enum DPUMemcpyKind
-{
-  DPU_MEMCPY_HOST_TO_DEVICE,
-  DPU_MEMCPY_DEVICE_TO_HOST,
-  DPU_MEMCPY_DEVICE_TO_DEVICE,
-};
+// enum DPUMemcpyKind
+// {
+//   DPU_XFER_TO_DPU,
+//   DPU_XFER_FROM_DPU,
+// };
+
+#ifndef DPURT
+#define DPURT
+#include <dpu> // UPMEM rt syslib
+#define CHECK_UPMEM(x) DPU_ASSERT(x)
+#endif
+
+typedef _dpu_xfer_t DPUMemcpyKind;
 
 #include "realm/mem_impl.h"
 

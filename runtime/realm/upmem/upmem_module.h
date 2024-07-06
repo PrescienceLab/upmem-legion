@@ -24,7 +24,7 @@
 
 #include "realm/atomics.h"
 #include "realm/module.h"
-#include "realm/network.h"
+// #include "realm/network.h"
 #include "realm/realm_config.h"
 
 #include "realm/cmdline.h"
@@ -49,6 +49,9 @@ namespace Realm {
     class DPUStream;
     // proc.h
     class DPUProcessor;
+    // dma.h
+    class DPUChannel;
+    class DPUfillChannel;
 
     class UpmemModuleConfig : public ModuleConfig {
       friend class UpmemModule;
@@ -78,6 +81,8 @@ namespace Realm {
       size_t cfg_hostreg_limit = 1 << 30;
       int cfg_d2d_stream_priority = -1;
       bool cfg_use_upmem_ipc = true;
+
+      bool cfg_pin_sysmem = true;
 
       // resources
       bool resource_discovered = false;

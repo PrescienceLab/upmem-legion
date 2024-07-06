@@ -17,7 +17,7 @@
 #ifndef REALM_UPMEM_DMA_H
 #define REALM_UPMEM_DMA_H
 
-// #include "realm/upmem/upmem_internal.h"
+#include "realm/upmem/upmem_internal.h"
 
 #include "realm/transfer/channel.h"
 #include "realm/transfer/ib_memory.h"
@@ -28,6 +28,9 @@
 
 namespace Realm {
   namespace Upmem {
+    // forward declaration
+    // internal.h
+    class DPU;
 
     class DPUTransferCompletion : public DPUCompletionNotification {
     public:

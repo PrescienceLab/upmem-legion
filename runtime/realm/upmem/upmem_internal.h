@@ -29,6 +29,7 @@
 #include "realm/upmem/upmem_proc.h"
 #include "realm/upmem/upmem_stream.h"
 #include "realm/upmem/upmem_workers.h"
+#include "realm/upmem/upmem_dma.h"
 
 namespace Realm {
   namespace Upmem {
@@ -73,6 +74,7 @@ namespace Realm {
 
       void create_processor(RuntimeImpl *runtime, size_t stack_size);
       void create_mram_memory(RuntimeImpl *runtime, size_t size);
+      void create_dma_channels(RuntimeImpl *runtime);
 
     public:
       UpmemModule *module;
@@ -85,6 +87,11 @@ namespace Realm {
       // upmemCtx_t context;
       int device_id;
       char *mram_base;
+
+      // which system memories have been registered and can be used for cuMemcpyAsync
+      std::set<Memory> pinned_sysmems;
+      // which other mram we have peer access to
+      std::set<Memory> peer_mram;
 
       DPUStream *find_stream(struct dpu_set_t *stream) const;
       DPUStream *get_null_task_stream(void) const;

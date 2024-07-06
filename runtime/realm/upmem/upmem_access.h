@@ -22,7 +22,8 @@
 
 namespace Realm {
   namespace Upmem {
-    REALM_PUBLIC_API void LaunchKernel(const char *bin, void *args[], size_t arg_size,
+    REALM_PUBLIC_API void LaunchKernel(const char *bin, void *args[],
+                                       const char *symbol_name, size_t arg_size,
                                        dpu_set_t *stream);
 
   }
