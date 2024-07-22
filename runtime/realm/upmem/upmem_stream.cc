@@ -15,6 +15,7 @@
  */
 
 #include "realm/upmem/upmem_stream.h"
+#include "realm/upmem/upmem_internal.h"
 
 namespace Realm {
 
@@ -40,13 +41,13 @@ namespace Realm {
       log_stream.info() << "stream created: dpu=" << dpu << " stream=" << stream;
     }
 
-    DPUStream::~DPUStream(void) { DPU_ASSERT(dpu_free(*stream)); }
+    DPUStream::~DPUStream(void) { CHECK_UPMEM(dpu_free(*stream)); }
 
     DPU *DPUStream::get_dpu(void) const { return dpu; }
 
-    struct dpu_set_t *DPUStream::get_stream(void) const { return stream; }
+    struct dpu_set_t *DPUStream::get_stream(void) const { return this->stream; }
 
-    void DPUStream::set_stream(struct dpu_set_t *_stream) { stream = _stream; }
+    void DPUStream::set_stream(struct dpu_set_t *_stream) { this->stream = _stream; }
 
     // may be called by anybody to enqueue a copy or an event
     void DPUStream::add_copy(DPUMemcpy *copy)
@@ -72,7 +73,7 @@ namespace Realm {
     {
       upmemEvent_t e = dpu->event_pool.get_event();
 
-      // DPU_ASSERT(upmemEventRecord(e, stream));
+      // CHECK_UPMEM(upmemEventRecord(e, stream));
 
       log_stream.debug() << "UPMEM fence event " << e << " recorded on stream " << stream
                          << " (DPU " << dpu << ")";
@@ -84,7 +85,7 @@ namespace Realm {
     {
       upmemEvent_t e = dpu->event_pool.get_event();
 
-      // DPU_ASSERT(upmemEventRecord(e, stream));
+      // CHECK_UPMEM(upmemEventRecord(e, stream));
 
       log_stream.debug() << "UPMEM start event " << e << " recorded on stream " << stream
                          << " (DPU " << dpu << ")";
@@ -97,7 +98,7 @@ namespace Realm {
     {
       upmemEvent_t e = dpu->event_pool.get_event();
 
-      // DPU_ASSERT(upmemEventRecord(e, stream));
+      // CHECK_UPMEM(upmemEventRecord(e, stream));
 
       add_event(e, 0, notification, 0);
     }
@@ -140,7 +141,7 @@ namespace Realm {
         log_stream.debug() << "UPMEM stream " << stream << " waiting on stream "
                            << (*it)->get_stream() << " (DPU " << dpu << ")";
         // sync
-        DPU_ASSERT(dpu_sync(*(*it)->get_stream()));
+        CHECK_UPMEM(dpu_sync(*(*it)->get_stream()));
 
         // record this event on our stream
         add_event(e, 0);
@@ -237,18 +238,6 @@ namespace Realm {
 
         //   if(res == upmemErrorNotReady)
         //     return true; // oldest event hasn't triggered - check again later
-
-        //   // no other kind of error is expected
-        //   if(res != DPU_OK) {
-        //     const char *ename = 0;
-        //     const char *estr = 0;
-        //     ename = upmemGetErrorName(res);
-        //     estr = upmemGetErrorString(res);
-        //     log_dpu.fatal() << "UPMEM error reported on DPU " << dpu->info->index << ":
-        //     "
-        //                     << estr << " (" << ename << ")";
-        //     assert(0);
-        //   }
 
         log_stream.debug() << "UPMEM event " << event << " triggered on stream " << stream
                            << " (DPU " << dpu << ")";

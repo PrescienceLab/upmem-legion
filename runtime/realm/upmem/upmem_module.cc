@@ -277,9 +277,9 @@ namespace Realm {
         // #endif
       }
 
-      // for(std::vector<DPU *>::iterator it = dpus.begin(); it != dpus.end(); it++) {
-      //   (*it)->create_dma_channels(runtime);
-      // }
+      for(std::vector<DPU *>::iterator it = dpus.begin(); it != dpus.end(); it++) {
+        (*it)->create_dma_channels(runtime);
+      }
 
       Module::create_dma_channels(runtime);
     }
@@ -301,15 +301,6 @@ namespace Realm {
           i++) {
         delete dpus[++dpu_count];
       }
-    }
-
-    struct dpu_set_t *UpmemModule::get_task_upmem_stream()
-    {
-      // if we're not in a dpu task, this'll be null
-      if(ThreadLocal::current_dpu_stream)
-        return ThreadLocal::current_dpu_stream->get_stream();
-      else
-        return 0;
     }
 
   }; // namespace Upmem

@@ -17,15 +17,14 @@
 #ifndef REALM_UPMEM_WORKERS_H
 #define REALM_UPMEM_WORKERS_H
 
-#include "realm/circ_queue.h"
-
 #ifndef DPURT
 #define DPURT
 #include <dpu> // UPMEM rt syslib
 #define CHECK_UPMEM(x) DPU_ASSERT(x)
 #endif
 
-#include "realm/upmem/upmem_internal.h"
+#include "realm/circ_queue.h"
+
 #include "realm/upmem/upmem_stream.h"
 
 namespace Realm {
@@ -75,8 +74,6 @@ namespace Realm {
 
     }; // end class DPUWorker
 
-#ifndef DPUWORKFENCE
-#define DPUWORKFENCE
     class DPUWorkFence : public Realm::Operation::AsyncWorkItem {
     public:
       DPUWorkFence(Realm::Operation *op);
@@ -97,7 +94,6 @@ namespace Realm {
       static dpu_error_t upmem_start_callback(struct dpu_set_t stream, uint32_t rank_id,
                                               void *data);
     }; // end class DPUWorkFence
-#endif
 
     class DPUWorkStart : public Realm::Operation::AsyncWorkItem {
     public:

@@ -22,11 +22,12 @@
 #define CHECK_UPMEM(x) DPU_ASSERT(x)
 #endif
 
+#define HERE() fprintf(stderr, "we are at line %d in file %s\n", __LINE__, __FILE__)
+
 #include "realm/upmem/upmem_module.h"
 
 #include "realm/upmem/upmem_events.h"
 #include "realm/upmem/upmem_memory.h"
-#include "realm/upmem/upmem_proc.h"
 #include "realm/upmem/upmem_stream.h"
 #include "realm/upmem/upmem_workers.h"
 #include "realm/upmem/upmem_dma.h"
@@ -46,6 +47,7 @@ namespace Realm {
 
     // Forard declaration
     class DPU;
+    class DPUProcessor;
     class DPUReplHeapListener;
     // memory.h
     class DPUMRAMMemory;
@@ -53,6 +55,8 @@ namespace Realm {
     class DPUEventPool;
     // module.h
     class UpmemModule;
+    // workers.h
+    class DPUWorkFence;
 
     extern UpmemModule *upmem_module_singleton;
 
@@ -67,6 +71,16 @@ namespace Realm {
     class DPU {
     public:
       DPU(UpmemModule *_module, DPUInfo *_info, DPUWorker *worker, int _device_id);
+
+      DPU() { assert(0); } // should never happen
+
+      DPU(const DPU &rhs) { assert(0); }
+      DPU &operator=(const DPU &rhs)
+      {
+        assert(0);
+        return *this;
+      }
+
       ~DPU(void);
 
       void push_context(void);
@@ -114,31 +128,122 @@ namespace Realm {
 
     }; // end class DPU
 
-    // class ContextSynchronizer {
-    // public:
-    //   ContextSynchronizer(DPU *_dpu, int _device_id, CoreReservationSet &crs,
-    //                       int _max_threads);
-    //   ~ContextSynchronizer();
+    class ContextSynchronizer {
+    public:
+      ContextSynchronizer(DPU *_dpu, int _device_id, CoreReservationSet &crs,
+                          int _max_threads);
+      ~ContextSynchronizer();
 
-    //   void add_fence(DPUWorkFence *fence);
+      void add_fence(DPUWorkFence *fence);
 
-    //   void shutdown_threads();
+      void shutdown_threads();
 
-    //   void thread_main();
+      void thread_main();
 
-    // protected:
-    //   DPU *dpu;
+    protected:
+      DPU *dpu;
 
-    //   int device_id;
-    //   int max_threads;
-    //   Mutex mutex;
-    //   Mutex::CondVar condvar;
-    //   bool shutdown_flag;
-    //   DPUWorkFence::FenceList fences;
-    //   int total_threads, sleeping_threads, syncing_threads;
-    //   std::vector<Thread *> worker_threads;
-    //   CoreReservation *core_rsrv;
-    // }; // end class ContextSynchronizer
+      int device_id;
+      int max_threads;
+      Mutex mutex;
+      Mutex::CondVar condvar;
+      bool shutdown_flag;
+      DPUWorkFence::FenceList fences;
+      int total_threads, sleeping_threads, syncing_threads;
+      std::vector<Thread *> worker_threads;
+      CoreReservation *core_rsrv;
+    }; // end class ContextSynchronizer
+
+    typedef void (*StreamAwareTaskFuncPtr)(const void *args, size_t arglen,
+                                           const void *user_data, size_t user_data_len,
+                                           Processor proc, struct dpu_set_t *stream);
+
+    class DPUProcessor : public Realm::LocalTaskProcessor {
+    public:
+      DPUProcessor(DPU *_dpu, Processor _me, Realm::CoreReservationSet &crs,
+                   size_t _stack_size);
+      virtual ~DPUProcessor(void);
+
+    public:
+      virtual bool register_task(Processor::TaskFuncID func_id, CodeDescriptor &codedesc,
+                                 const ByteArrayRef &user_data);
+
+      virtual void shutdown(void);
+
+    protected:
+      virtual void execute_task(Processor::TaskFuncID func_id,
+                                const ByteArrayRef &task_args);
+
+    public:
+      static DPUProcessor *get_current_dpu_proc(void);
+
+      //   void stream_wait_on_event(dpu_set_t stream, upmemEvent_t event);
+      //   void stream_synchronize(dpu_set_t stream);
+      void device_synchronize(void);
+
+      void dpu_memcpy(void *dst, const void *src, size_t size, DPUMemcpyKind kind);
+      void dpu_memcpy_async(void *dst, const void *src, size_t size, DPUMemcpyKind kind,
+                            dpu_set_t stream);
+      void dpu_memset(void *dst, int value, size_t count);
+      void dpu_memset_async(void *dst, int value, size_t count, dpu_set_t stream);
+
+    public:
+      DPU *dpu;
+      // data needed for kernel launches
+      struct LaunchConfig {
+        uint16_t tasklets;
+        uint16_t dpus;
+        size_t mram;
+        LaunchConfig(uint16_t tasklets, uint16_t dpus, size_t _mram);
+      };
+      struct CallConfig : public LaunchConfig {
+        struct dpu_set_t stream;
+        CallConfig(uint16_t tasklets, uint16_t dpus, size_t _mram,
+                   struct dpu_set_t _stream);
+      };
+      std::vector<CallConfig> launch_configs;
+      std::vector<char> kernel_args;
+      std::vector<CallConfig> call_configs;
+      bool block_on_synchronize;
+      ContextSynchronizer ctxsync;
+
+    protected:
+      Realm::CoreReservation *core_rsrv;
+
+      struct DPUTaskTableEntry {
+        Processor::TaskFuncPtr fnptr;
+        Upmem::StreamAwareTaskFuncPtr stream_aware_fnptr;
+        ByteArray user_data;
+      };
+
+      // we're not using the parent's task table, but we can use the mutex
+      // RWLock task_table_mutex;
+      std::map<Processor::TaskFuncID, DPUTaskTableEntry> dpu_task_table;
+
+    }; // end class DPUProcessor
+
+    // we want to subclass the scheduler to replace the execute_task method, but we also
+    // want to
+    //  allow the use of user or kernel threads, so we apply a bit of template magic
+    //  (which only works because the constructors for the KernelThreadTaskScheduler and
+    //  UserThreadTaskScheduler classes have the same prototypes)
+
+    template <typename T>
+    class DPUTaskScheduler : public T {
+    public:
+      DPUTaskScheduler(Processor _proc, Realm::CoreReservation &_core_rsrv,
+                       DPUProcessor *_dpu_proc);
+
+      virtual ~DPUTaskScheduler(void);
+
+    protected:
+      virtual bool execute_task(Task *task);
+      virtual void execute_internal_task(InternalTask *task);
+
+      // might also need to override the thread-switching methods to keep TLS up to date
+
+      DPUProcessor *dpu_proc;
+    };
 
     class DPUReplHeapListener : public ReplicatedHeap::Listener {
     public:
@@ -150,13 +255,6 @@ namespace Realm {
     protected:
       UpmemModule *module;
     }; // end class DPUReplHeapListener
-
-    namespace ThreadLocal {
-      static REALM_THREAD_LOCAL DPUProcessor *current_dpu_proc = 0;
-      static REALM_THREAD_LOCAL DPUStream *current_dpu_stream = 0;
-      static REALM_THREAD_LOCAL std::set<DPUStream *> *created_dpu_streams = 0;
-      static REALM_THREAD_LOCAL int context_sync_required = 0;
-    }; // namespace ThreadLocal
 
   }; // namespace Upmem
 

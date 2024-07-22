@@ -28,30 +28,30 @@ extern "C" {
 #include <assert.h>
 }
 
-
 #ifdef __cplusplus
 #define EXTERNC extern "C"
 #else
 #define EXTERNC
 #endif
 
-
-EXTERNC inline int __cxa_atexit(void (*func) (void *), void *arg, void *d) {
-  return 0;
-}
+EXTERNC inline int __cxa_atexit(void (*func)(void *), void *arg, void *d) { return 0; }
 
 namespace Realm {
 
-  template <int N, typename T = int> struct Point;
-  template <int N, typename T = int> struct Rect;
-  template <int N, typename T = int> class PointInRectIterator;
-  template <int M, int N, typename T = int> struct Matrix;
-  
+  template <int N, typename T = int>
+  struct Point;
+  template <int N, typename T = int>
+  struct Rect;
+  template <int N, typename T = int>
+  class PointInRectIterator;
+  template <int M, int N, typename T = int>
+  struct Matrix;
+
   // a Point is a tuple describing a point in an N-dimensional space - the default "base
   // type"
   //  for each dimension is int, but 64-bit indices are supported as well
   template <int N, typename T>
-  struct Point {
+  struct __attribute__((aligned(8))) Point {
 
     typedef T value_type;
     value_type values[N]; // use operator[] instead
@@ -61,13 +61,12 @@ namespace Realm {
     explicit Point(value_type val);
 
     template <typename Arg0, typename Arg1, typename... Args>
-     Point(Arg0 val0, Arg1 val1, Args... vals);
+    Point(Arg0 val0, Arg1 val1, Args... vals);
     // construct from any integral value
     template <typename T2>
-     explicit Point(T2 val, T2); // same value for all dimensions
+    explicit Point(T2 val, T2); // same value for all dimensions
     template <typename T2>
     explicit Point(T2 vals[N], T2);
-  
 
     // copies allow type coercion (assuming the underlying type does)
     template <typename T2>
@@ -129,7 +128,7 @@ namespace Realm {
   //  the bounds are INCLUSIVE
 
   template <int N, typename T>
-  struct  __attribute__((aligned(8))) Rect {
+  struct __attribute__((aligned(8))) Rect {
     Point<N, T> lo, hi;
 
     Rect(void);
@@ -213,9 +212,8 @@ namespace Realm {
   template <int N, typename T, typename T2>
   Rect<N, T> &operator-=(Rect<N, T> &lhs, const Rect<N, T2> &rhs);
 
-
   template <int M, int N, typename T>
-  struct  __attribute__((aligned(8)))  Matrix {
+  struct __attribute__((aligned(8))) Matrix {
     Point<N, T> rows[M];
 
     Matrix(void);
@@ -238,7 +236,7 @@ namespace Realm {
   Matrix<M, N, T> operator*(const Matrix<M, P, T> &m, const Matrix<P, N, T2> &n);
 
   template <int N, typename T>
-  class  __attribute__((aligned(8))) PointInRectIterator {
+  class __attribute__((aligned(8))) PointInRectIterator {
   public:
     Point<N, T> p;
     bool valid;
@@ -263,7 +261,7 @@ namespace Realm {
    * The random-access look-ups are O(1) in the size of the instance.
    */
   template <typename FT, int N, typename T = int>
-  class  __attribute__((aligned(8)))  AffineAccessor {
+  class __attribute__((aligned(8))) AffineAccessor {
   public:
     // NOTE: even when compiling with nvcc, non-default constructors are only
     //  available in host code

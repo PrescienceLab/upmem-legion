@@ -18,7 +18,12 @@
 #define REALM_UPMEM_ACCESS_H
 
 #include "realm/inst_layout.h"
-#include <dpu>
+
+#ifndef DPURT
+#define DPURT
+#include <dpu> // UPMEM rt syslib
+#define CHECK_UPMEM(x) DPU_ASSERT(x)
+#endif
 
 namespace Realm {
   namespace Upmem {

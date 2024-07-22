@@ -70,7 +70,8 @@ namespace Realm {
 
       int cfg_task_streams = 16;
 
-      bool cfg_fences_use_callbacks = false;
+      bool cfg_fences_use_callbacks =
+          true; // need to know what this means. forcing it true.
       bool cfg_suppress_hijack_warning = false;
       unsigned cfg_skip_dpu_count = 0;
       bool cfg_skip_busy_dpus = false;

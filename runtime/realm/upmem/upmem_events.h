@@ -17,8 +17,6 @@
 #ifndef REALM_UPMEM_EVENTS_H
 #define REALM_UPMEM_EVENTS_H
 
-// #include "realm/upmem/upmem_internal.h"
-
 #include "realm/event_impl.h"
 
 #include "realm/bgwork.h"

@@ -11,36 +11,33 @@ inline Point<N, T>::Point(value_type val)
     values[i] = val;
 }
 
- template <int N, typename T>
-  template <typename Arg0, typename Arg1, typename... Args>
-   inline Point<N, T>::Point(Arg0 val0, Arg1 val1, Args... vals)
-    // TODO(cperry): Very bad!  We should not static_cast these for the user, as it can
-    // hide sign and casting issues.  Kept here for compatibility while we weed out all
-    // the cases in our codebase
-    : values{static_cast<value_type>(val0), static_cast<value_type>(val1),
-             static_cast<value_type>(vals)...}
-  {
-  }
+template <int N, typename T>
+template <typename Arg0, typename Arg1, typename... Args>
+inline Point<N, T>::Point(Arg0 val0, Arg1 val1, Args... vals)
+  // TODO(cperry): Very bad!  We should not static_cast these for the user, as it can
+  // hide sign and casting issues.  Kept here for compatibility while we weed out all
+  // the cases in our codebase
+  : values{static_cast<value_type>(val0), static_cast<value_type>(val1),
+           static_cast<value_type>(vals)...}
+{}
 
-  template <int N, typename T>
-  template <typename T2>
+template <int N, typename T>
+template <typename T2>
 
-  inline Point<N,T>::Point(T2 val, T2)
-  {
-    for(int i = 0; i < N; i++)
-      values[i] = val;
-  }
+inline Point<N, T>::Point(T2 val, T2)
+{
+  for(int i = 0; i < N; i++)
+    values[i] = val;
+}
 
-  template <int N, typename T>
-  template <typename T2>
+template <int N, typename T>
+template <typename T2>
 
-  inline Point<N,T>::Point(T2 vals[N], T2)
-  {
-    for(int i = 0; i < N; i++)
-      values[i] = vals[i];
-  }
-
-
+inline Point<N, T>::Point(T2 vals[N], T2)
+{
+  for(int i = 0; i < N; i++)
+    values[i] = vals[i];
+}
 
 template <int N, typename T>
 template <typename T2>
@@ -346,7 +343,6 @@ inline bool Rect<N, T>::contains(const Rect<N, T> &other) const
   return ctns;
 }
 
-
 // true if there are any points in the intersection of the two rectangles
 template <int N, typename T>
 inline bool Rect<N, T>::overlaps(const Rect<N, T> &other) const
@@ -579,140 +575,139 @@ inline bool PointInRectIterator<N, T>::step(void)
       }
     }
   }
-  }
+}
 
-  ////////////////////////////////////////////////////////////////////////
-  //
-  // class AffineAccessor<FT,N,T>
+////////////////////////////////////////////////////////////////////////
+//
+// class AffineAccessor<FT,N,T>
 
-  template <typename FT, int N, typename T>
-  inline AffineAccessor<FT, N, T>::AffineAccessor(void)
-  {}
+template <typename FT, int N, typename T>
+inline AffineAccessor<FT, N, T>::AffineAccessor(void)
+{}
 
-    template <typename FT, int N, typename T>
-  inline AffineAccessor<FT, N, T>::~AffineAccessor(void)
-  {}
+template <typename FT, int N, typename T>
+inline AffineAccessor<FT, N, T>::~AffineAccessor(void)
+{}
 
+template <typename FT, int N, typename T>
+inline void AffineAccessor<FT, N, T>::reset()
+{
+  base = 0;
+}
+template <typename FT, int N, typename T>
+inline FT *AffineAccessor<FT, N, T>::ptr(const Point<N, T> &p) const
+{
+  return this->get_ptr(p);
+}
 
-  template <typename FT, int N, typename T>
-  inline void AffineAccessor<FT, N, T>::reset()
-  {
-    base = 0;
-  }
-  template <typename FT, int N, typename T>
-  inline FT *AffineAccessor<FT, N, T>::ptr(const Point<N, T> &p) const
-  {
-    return this->get_ptr(p);
-  }
+template <typename FT, int N, typename T>
+inline FT AffineAccessor<FT, N, T>::read(const Point<N, T> &p) const
+{
+  return *(this->get_ptr(p));
+}
 
-  template <typename FT, int N, typename T>
-  inline FT AffineAccessor<FT, N, T>::read(const Point<N, T> &p) const
-  {
-    return *(this->get_ptr(p));
-  }
+template <typename FT, int N, typename T>
+inline void AffineAccessor<FT, N, T>::write(const Point<N, T> &p, FT newval) const
+{
+  *(this->get_ptr(p)) = newval;
+}
 
-  template <typename FT, int N, typename T>
-  inline void AffineAccessor<FT, N, T>::write(const Point<N, T> &p, FT newval) const
-  {
-    *(this->get_ptr(p)) = newval;
-  }
+template <typename FT, int N, typename T>
+inline FT &AffineAccessor<FT, N, T>::operator[](const Point<N, T> &p) const
+{
+  return *(this->get_ptr(p));
+}
 
-  template <typename FT, int N, typename T>
-  inline FT &AffineAccessor<FT, N, T>::operator[](const Point<N, T> &p) const
-  {
-    return *(this->get_ptr(p));
-  }
-
-  template <typename FT, int N, typename T>
-  inline bool AffineAccessor<FT, N, T>::is_dense_arbitrary(const Rect<N, T> &bounds) const
-  {
-    size_t exp_offset = sizeof(FT);
-    int used_mask = 0; // keep track of which dimensions we've already matched
-    for(int i = 0; i < N; i++) {
-      bool found = false;
-      for(int j = 0; j < N; j++) {
-        if((used_mask >> j) & 1)
+template <typename FT, int N, typename T>
+inline bool AffineAccessor<FT, N, T>::is_dense_arbitrary(const Rect<N, T> &bounds) const
+{
+  size_t exp_offset = sizeof(FT);
+  int used_mask = 0; // keep track of which dimensions we've already matched
+  for(int i = 0; i < N; i++) {
+    bool found = false;
+    for(int j = 0; j < N; j++) {
+      if((used_mask >> j) & 1)
+        continue;
+      if(strides[j] != exp_offset) {
+        // Mask off any dimensions with stride 0
+        if(strides[j] == 0) {
+          if(bounds.lo[j] != bounds.hi[j])
+            return false;
+          used_mask |= (1 << j);
+          if(++i == N) {
+            found = true;
+            break;
+          }
+        }
+        continue;
+      }
+      found = true;
+      // It's possible other dimensions can have the same strides if
+      // there are multiple dimensions with extents of size 1. At most
+      // one dimension must have an extent >1 though
+      int nontrivial = (bounds.lo[j] < bounds.hi[j]) ? j : -1;
+      for(int k = j + 1; k < N; k++) {
+        if((used_mask >> k) & 1)
           continue;
-        if(strides[j] != exp_offset) {
-          // Mask off any dimensions with stride 0
-          if(strides[j] == 0) {
-            if(bounds.lo[j] != bounds.hi[j])
+        if(strides[k] == exp_offset) {
+          if(bounds.lo[k] < bounds.hi[k]) {
+            if(nontrivial >= 0) // if we already saw a non-trivial dimension this is bad
               return false;
-            used_mask |= (1 << j);
-            if(++i == N) {
-              found = true;
-              break;
-            }
+            else
+              nontrivial = k;
           }
-          continue;
+          used_mask |= (1 << k);
+          i++;
         }
-        found = true;
-        // It's possible other dimensions can have the same strides if
-        // there are multiple dimensions with extents of size 1. At most
-        // one dimension must have an extent >1 though
-        int nontrivial = (bounds.lo[j] < bounds.hi[j]) ? j : -1;
-        for(int k = j + 1; k < N; k++) {
-          if((used_mask >> k) & 1)
-            continue;
-          if(strides[k] == exp_offset) {
-            if(bounds.lo[k] < bounds.hi[k]) {
-              if(nontrivial >= 0) // if we already saw a non-trivial dimension this is bad
-                return false;
-              else
-                nontrivial = k;
-            }
-            used_mask |= (1 << k);
-            i++;
-          }
-        }
-        used_mask |= (1 << j);
-        if(nontrivial >= 0)
-          exp_offset *= (bounds.hi[nontrivial] - bounds.lo[nontrivial] + 1);
-        break;
       }
-      if(!found)
-        return false;
+      used_mask |= (1 << j);
+      if(nontrivial >= 0)
+        exp_offset *= (bounds.hi[nontrivial] - bounds.lo[nontrivial] + 1);
+      break;
     }
-    return true;
+    if(!found)
+      return false;
   }
+  return true;
+}
 
-  template <typename FT, int N, typename T>
-  inline bool AffineAccessor<FT, N, T>::is_dense_col_major(const Rect<N, T> &bounds) const
-  {
-    size_t exp_offset = sizeof(FT);
-    for(int i = 0; i < N; i++) {
-      if(strides[i] != exp_offset) {
-        // Special case for stride of zero for unit dimension
-        if((strides[i] == 0) && (bounds.lo[i] == bounds.hi[i]))
-          continue;
-        return false;
-      }
-      exp_offset *= (bounds.hi[i] - bounds.lo[i] + 1);
+template <typename FT, int N, typename T>
+inline bool AffineAccessor<FT, N, T>::is_dense_col_major(const Rect<N, T> &bounds) const
+{
+  size_t exp_offset = sizeof(FT);
+  for(int i = 0; i < N; i++) {
+    if(strides[i] != exp_offset) {
+      // Special case for stride of zero for unit dimension
+      if((strides[i] == 0) && (bounds.lo[i] == bounds.hi[i]))
+        continue;
+      return false;
     }
-    return true;
+    exp_offset *= (bounds.hi[i] - bounds.lo[i] + 1);
   }
+  return true;
+}
 
-  template <typename FT, int N, typename T>
-  inline bool AffineAccessor<FT, N, T>::is_dense_row_major(const Rect<N, T> &bounds) const
-  {
-    size_t exp_offset = sizeof(FT);
-    for(int i = N - 1; i >= 0; i--) {
-      if(strides[i] != exp_offset) {
-        // Special case for stride of zero for unit dimension
-        if((strides[i] == 0) && (bounds.lo[i] == bounds.hi[i]))
-          continue;
-        return false;
-      }
-      exp_offset *= (bounds.hi[i] - bounds.lo[i] + 1);
+template <typename FT, int N, typename T>
+inline bool AffineAccessor<FT, N, T>::is_dense_row_major(const Rect<N, T> &bounds) const
+{
+  size_t exp_offset = sizeof(FT);
+  for(int i = N - 1; i >= 0; i--) {
+    if(strides[i] != exp_offset) {
+      // Special case for stride of zero for unit dimension
+      if((strides[i] == 0) && (bounds.lo[i] == bounds.hi[i]))
+        continue;
+      return false;
     }
-    return true;
+    exp_offset *= (bounds.hi[i] - bounds.lo[i] + 1);
   }
+  return true;
+}
 
-  template <typename FT, int N, typename T>
-  inline FT *AffineAccessor<FT, N, T>::get_ptr(const Point<N, T> &p) const
-  {
-    uintptr_t rawptr = base;
-    for(int i = 0; i < N; i++)
-      rawptr += p[i] * strides[i];
-    return reinterpret_cast<FT *>(rawptr);
-  }
+template <typename FT, int N, typename T>
+inline FT *AffineAccessor<FT, N, T>::get_ptr(const Point<N, T> &p) const
+{
+  uintptr_t rawptr = base;
+  for(int i = 0; i < N; i++)
+    rawptr += p[i] * strides[i];
+  return reinterpret_cast<FT *>(rawptr);
+}

@@ -15,6 +15,7 @@
  */
 
 #include "realm/upmem/upmem_workers.h"
+#include "realm/upmem/upmem_internal.h"
 
 namespace Realm {
 
@@ -220,6 +221,50 @@ namespace Realm {
 
     ////////////////////////////////////////////////////////////////////////
     //
+    // class BlockingCompletionNotification
+
+    class BlockingCompletionNotification : public DPUCompletionNotification {
+    public:
+      BlockingCompletionNotification(void);
+      virtual ~BlockingCompletionNotification(void);
+
+      virtual void request_completed(void);
+
+      virtual void wait(void);
+
+    public:
+      atomic<bool> completed;
+    };
+
+    BlockingCompletionNotification::BlockingCompletionNotification(void)
+      : completed(false)
+    {}
+
+    BlockingCompletionNotification::~BlockingCompletionNotification(void) {}
+
+    void BlockingCompletionNotification::request_completed(void)
+    {
+      // no condition variable needed - the waiter is spinning
+      completed.store(true);
+    }
+
+    void BlockingCompletionNotification::wait(void)
+    {
+      // blocking completion is horrible and should die as soon as possible
+      // in the mean time, we need to assist with background work to avoid
+      //  the risk of deadlock
+      // note that this means you can get NESTED blocking completion
+      //  notifications, which is just one of the ways this is horrible
+      BackgroundWorkManager::Worker worker;
+
+      worker.set_manager(&(get_runtime()->bgwork));
+
+      while(!completed.load())
+        worker.do_work(-1 /* as long as it takes */, &completed /* until this is set */);
+    }
+
+    ////////////////////////////////////////////////////////////////////////
+    //
     // class DPUWorkFence
 
     DPUWorkFence::DPUWorkFence(Realm::Operation *op)
@@ -236,9 +281,11 @@ namespace Realm {
     void DPUWorkFence::enqueue_on_stream(DPUStream *stream)
     {
       if(stream->get_dpu()->module->config->cfg_fences_use_callbacks) {
-        DPU_ASSERT(dpu_callback(*stream->get_stream(), &upmem_start_callback,
-                                (void *)this, DPU_CALLBACK_NONBLOCKING));
+        CHECK_UPMEM(dpu_callback(
+            *stream->get_stream(), &upmem_start_callback, (void *)this,
+            (dpu_callback_flags_t)(DPU_CALLBACK_ASYNC | DPU_CALLBACK_NONBLOCKING)));
       } else {
+        assert(0 && "cfg_fences_use_callbacks must be set true");
         stream->add_fence(this);
       }
     }
@@ -267,9 +314,11 @@ namespace Realm {
     void DPUWorkStart::enqueue_on_stream(DPUStream *stream)
     {
       if(stream->get_dpu()->module->config->cfg_fences_use_callbacks) {
-        DPU_ASSERT(dpu_callback(*stream->get_stream(), &upmem_start_callback,
-                                (void *)this, DPU_CALLBACK_NONBLOCKING));
+        CHECK_UPMEM(dpu_callback(
+            *stream->get_stream(), &upmem_start_callback, (void *)this,
+            (dpu_callback_flags_t)(DPU_CALLBACK_ASYNC | DPU_CALLBACK_NONBLOCKING)));
       } else {
+        assert(0 && "cfg_fences_use_callbacks must be set true");
         stream->add_start_event(this);
       }
     }

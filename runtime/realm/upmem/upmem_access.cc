@@ -15,6 +15,7 @@
  */
 
 #include "realm/upmem/upmem_access.h"
+#include "realm/upmem/upmem_module.h"
 
 namespace Realm {
   namespace Upmem {
@@ -24,22 +25,21 @@ namespace Realm {
                                        const char *symbol_name, size_t arg_size,
                                        dpu_set_t *stream)
     {
-      int i = 0;
+
+      UpmemModule *mod = get_runtime()->get_module<UpmemModule>("UpmemModule");
+      stream = mod->get_task_upmem_stream();
 
       dpu_set_t dpu_proc;
-
-      DPU_ASSERT(dpu_alloc(1, NULL, stream));
       printf("load: %s\n", bin);
+      CHECK_UPMEM(dpu_load(*stream, bin, NULL));
+      // printf("debug me: arg_size = %ld\n", arg_size);
 
-      DPU_ASSERT(dpu_load(*stream, bin, NULL));
-      printf("debug me: arg_size = %ld\n", arg_size);
+      DPU_FOREACH(*stream, dpu_proc) { CHECK_UPMEM(dpu_prepare_xfer(dpu_proc, args)); }
 
-      DPU_FOREACH(*stream, dpu_proc, i) { DPU_ASSERT(dpu_prepare_xfer(dpu_proc, args)); }
+      CHECK_UPMEM(dpu_push_xfer(*stream, DPU_XFER_TO_DPU, DPU_MRAM_HEAP_POINTER_NAME, 0,
+                                arg_size, DPU_XFER_ASYNC));
 
-      DPU_ASSERT(dpu_push_xfer(*stream, DPU_XFER_TO_DPU, DPU_MRAM_HEAP_POINTER_NAME, 0, arg_size,
-                               DPU_XFER_DEFAULT));
-
-      DPU_ASSERT(dpu_launch(*stream, DPU_ASYNCHRONOUS));
+      CHECK_UPMEM(dpu_launch(*stream, DPU_ASYNCHRONOUS));
     }
 
   }; // namespace Upmem

@@ -68,8 +68,7 @@ namespace Realm {
       // shouldn't be any events running around still
       assert((current_size + external_count) == total_size);
       if(external_count)
-        log_stream.warning() << "Application leaking " << external_count
-                             << " cuda events";
+        log_stream.warning() << "Application leaking " << external_count << " events";
 
       for(int i = 0; i < current_size; i++) {
         // destroy all events

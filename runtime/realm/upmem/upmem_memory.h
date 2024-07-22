@@ -33,8 +33,6 @@ typedef _dpu_xfer_t DPUMemcpyKind;
 
 #include "realm/mem_impl.h"
 
-// #include "realm/upmem/upmem_internal.h"
-
 #include "realm/upmem/upmem_stream.h"
 #include "realm/upmem/upmem_workers.h"
 

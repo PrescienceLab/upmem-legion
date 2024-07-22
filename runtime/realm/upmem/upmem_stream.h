@@ -25,8 +25,6 @@
 #include "realm/transfer/channel.h"
 #include "realm/transfer/ib_memory.h"
 
-// #include "realm/upmem/upmem_internal.h"
-
 #include "realm/upmem/upmem_events.h"
 #include "realm/upmem/upmem_memory.h"
 #include "realm/upmem/upmem_workers.h"

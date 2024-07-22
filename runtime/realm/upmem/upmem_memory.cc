@@ -81,7 +81,7 @@ namespace Realm {
     {
       fence->enqueue_on_stream(stream);
 #ifdef FORCE_DPU_STREAM_SYNCHRONIZE
-      DPU_ASSERT(dpu_sync(*stream->get_stream()));
+      CHECK_UPMEM(dpu_sync(*stream->get_stream()));
 #endif
     }
 

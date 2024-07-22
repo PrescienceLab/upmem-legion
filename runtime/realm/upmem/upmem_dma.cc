@@ -33,7 +33,6 @@ namespace Realm {
     static DPU *mem_to_dpu(const MemoryImpl *mem)
     {
       if(ID(mem->me).is_memory()) {
-        // might not be a DPUFBMemory...
         const DPUMRAMMemory *mram = dynamic_cast<const DPUMRAMMemory *>(mem);
         if(mram)
           return mram->dpu;
@@ -702,6 +701,12 @@ namespace Realm {
       ReadSequenceCache rseqcache(this, 2 << 20);
       WriteSequenceCache wseqcache(this, 2 << 20);
 
+      DPUStream *stream = channel->dpu->get_next_task_stream(false);
+
+      CHECK_UPMEM(dpu_load(*(stream->get_stream()),
+                           "/home/david/temp/upmem_realm_test/dpu/dpu_mem_transfer.up.o",
+                           NULL));
+
       while(true) {
         size_t min_xfer_size = 4096; // TODO: make controllable
         size_t max_bytes = get_addresses(min_xfer_size, &rseqcache);
@@ -725,10 +730,6 @@ namespace Realm {
           uintptr_t out_base =
               reinterpret_cast<uintptr_t>(out_port->mem->get_direct_ptr(0, 0));
 
-          // DPUStream *stream = channel->dpu->get_next_d2d_stream();
-          // TODO: not correct just want compile
-          DPUStream *stream = channel->dpu->stream;
-
           while(total_bytes < max_bytes) {
             AddressListCursor &out_alc = out_port->addrcursor;
 
@@ -751,11 +752,10 @@ namespace Realm {
             size_t partial_bytes = 0;
 
             void *buffer = (void *)malloc(elems * reduced_fill_size);
-
-            // leftover or unaligned bytes are done 8 bits at a time
+            // this is done because fill_data is a void* that has a reduced_fill_size
+            // length in bytes
             while(partial_bytes < reduced_fill_size) {
 
-              // TODO: NOT CORRECT
               uint8_t fill_u8;
               memcpy(&fill_u8,
                      reinterpret_cast<const uint8_t *>(fill_data) + partial_bytes, 1);
@@ -763,11 +763,6 @@ namespace Realm {
               memset(buffer, (int)fill_u8, elems * reduced_fill_size);
 
               {
-                // TODO fix this. Should not be allocating here
-                DPU_ASSERT(dpu_alloc(1, NULL, stream->get_stream()));
-                DPU_ASSERT(dpu_load(*(stream->get_stream()),
-                                    "./dpu/dpu_mem_transfer.up.o", NULL));
-
                 CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()), buffer));
                 CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), DPU_XFER_TO_DPU,
                                           DPU_MRAM_HEAP_POINTER_NAME,
@@ -783,7 +778,7 @@ namespace Realm {
             }
 
             // need to make sure the async transfer is done before we free the buffer
-            CHECK_UPMEM(dpu_free(*(stream->get_stream())));
+            CHECK_UPMEM(dpu_sync(*(stream->get_stream())));
             free(buffer);
 
             if(out_dim == 1) {
@@ -844,6 +839,7 @@ namespace Realm {
           // however many fills/copies we submitted, put in a single fence that
           //  will tell us that they're all done
           add_reference(); // released by transfer completion
+
           stream->add_notification(
               new DPUTransferCompletion(this, -1, 0, 0, output_control.current_io_port,
                                         out_span_start, total_bytes));
