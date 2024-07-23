@@ -762,10 +762,6 @@ namespace Realm {
               memset(buffer, (int)fill_u8, elems * reduced_fill_size);
 
               {
-                printf("partial_bytes %ld\n", partial_bytes);
-                printf("out_base + out_offset %ld\n", out_base + out_offset);
-                printf("reduced_fill_size %ld\n", reduced_fill_size);
-
                 CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()), buffer));
                 CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), DPU_XFER_TO_DPU,
                                           DPU_MRAM_HEAP_POINTER_NAME,
