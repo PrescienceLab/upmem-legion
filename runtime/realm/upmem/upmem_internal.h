@@ -177,8 +177,8 @@ namespace Realm {
     public:
       static DPUProcessor *get_current_dpu_proc(void);
 
-      //   void stream_wait_on_event(dpu_set_t stream, upmemEvent_t event);
-      //   void stream_synchronize(dpu_set_t stream);
+      void stream_wait_on_event(dpu_set_t *stream, upmemEvent_t event);
+      void stream_synchronize(dpu_set_t *stream);
       void device_synchronize(void);
 
       void dpu_memcpy(void *dst, const void *src, size_t size, DPUMemcpyKind kind);

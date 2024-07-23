@@ -118,6 +118,19 @@ namespace Realm {
     void UpmemModule::initialize(RuntimeImpl *runtime)
     {
       Module::initialize(runtime);
+
+      // if we are using a shared worker, create that next
+      if(config->cfg_use_shared_worker) {
+        shared_worker = new DPUWorker;
+
+        if(config->cfg_use_worker_threads)
+          shared_worker->start_background_thread(
+              runtime->core_reservation_set(),
+              64 * MEGABYTE); // hardcoded worker stack size
+        else
+          shared_worker->add_to_manager(&(runtime->bgwork));
+      }
+
       std::vector<unsigned> fixed_indices;
 
       // each DPU has 64MB of MRAM and 64KB of cache
@@ -134,9 +147,22 @@ namespace Realm {
         int idx = (fixed_indices.empty() ? i : fixed_indices[i]);
 
         DPUWorker *worker;
-        worker = new DPUWorker;
+        if(config->cfg_use_shared_worker) {
+          worker = shared_worker;
+        } else {
+          worker = new DPUWorker;
+
+          if(config->cfg_use_worker_threads)
+            worker->start_background_thread(runtime->core_reservation_set(),
+                                            64 * MEGABYTE); // hardcoded worker stack size
+          else
+            worker->add_to_manager(&(runtime->bgwork));
+        }
         DPU *g = new DPU(this, dpu_info[idx], worker, idx);
-        dedicated_workers[g] = worker;
+
+        if(!config->cfg_use_shared_worker)
+          dedicated_workers[g] = worker;
+
         dpus[dpu_count++] = g;
       }
 
@@ -294,13 +320,50 @@ namespace Realm {
     //  after all memories/processors/etc. have been shut down and destroyed
     void UpmemModule::cleanup(void)
     {
-      Module::cleanup();
+      // clean up worker(s)
+      if(shared_worker) {
+#ifdef DEBUG_REALM
+        shared_worker->shutdown_work_item();
+#endif
+        if(config->cfg_use_worker_threads)
+          shared_worker->shutdown_background_thread();
+
+        delete shared_worker;
+        shared_worker = 0;
+      }
+
+      for(std::map<DPU *, DPUWorker *>::iterator it = dedicated_workers.begin();
+          it != dedicated_workers.end(); it++) {
+        DPUWorker *worker = it->second;
+
+#ifdef DEBUG_REALM
+        worker->shutdown_work_item();
+#endif
+        if(config->cfg_use_worker_threads)
+          worker->shutdown_background_thread();
+
+        delete worker;
+      }
+      dedicated_workers.clear();
+
+      // also unregister any host memory at this time
+      if(!registered_host_ptrs.empty()) {
+        registered_host_ptrs.clear();
+      }
+
+      // and clean up anything that was needed for the replicated heap
+      runtime->repl_heap.remove_listener(rh_listener);
+
       size_t dpu_count = 0;
       for(size_t i = config->cfg_skip_dpu_count;
           (i < dpu_info.size()) && (static_cast<int>(dpu_count) < config->cfg_num_dpus);
-          i++) {
-        delete dpus[++dpu_count];
+          i++, dpu_count++) {
+        delete dpus[dpu_count];
       }
+
+      dpus.clear();
+
+      Module::cleanup();
     }
 
   }; // namespace Upmem

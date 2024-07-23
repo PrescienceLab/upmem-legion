@@ -70,8 +70,7 @@ namespace Realm {
 
       int cfg_task_streams = 16;
 
-      bool cfg_fences_use_callbacks =
-          true; // need to know what this means. forcing it true.
+      bool cfg_fences_use_callbacks = true;
       bool cfg_suppress_hijack_warning = false;
       unsigned cfg_skip_dpu_count = 0;
       bool cfg_skip_busy_dpus = false;
@@ -82,7 +81,8 @@ namespace Realm {
       size_t cfg_hostreg_limit = 1 << 30;
       int cfg_d2d_stream_priority = -1;
       bool cfg_use_upmem_ipc = true;
-
+      bool cfg_use_worker_threads = false;
+      bool cfg_use_shared_worker = true;
       bool cfg_pin_sysmem = true;
 
       // resources

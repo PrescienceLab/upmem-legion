@@ -297,7 +297,6 @@ namespace Realm {
                                                               void *data)
     {
       DPUWorkFence *me = (DPUWorkFence *)data;
-
       me->mark_finished(true /*succesful*/);
       return DPU_OK;
     }

@@ -52,33 +52,39 @@ namespace Realm {
     // may be called by anybody to enqueue a copy or an event
     void DPUStream::add_copy(DPUMemcpy *copy)
     {
+      HERE();
       assert(0 && "hit old copy path"); // shouldn't be used any more
-      bool add_to_worker = false;
-      {
-        AutoLock<> al(mutex);
 
-        // if we didn't already have work AND if there's not an active
-        //  worker issuing copies, request attention
-        add_to_worker =
-            (pending_copies.empty() && pending_events.empty() && !issuing_copies);
+      // bool add_to_worker = false;
+      // {
+      //   AutoLock<> al(mutex);
 
-        pending_copies.push_back(copy);
-      }
+      //   // if we didn't already have work AND if there's not an active
+      //   //  worker issuing copies, request attention
+      //   add_to_worker =
+      //       (pending_copies.empty() && pending_events.empty() && !issuing_copies);
 
-      if(add_to_worker)
-        worker->add_stream(this);
+      //   pending_copies.push_back(copy);
+      // }
+
+      // if(add_to_worker)
+      //   worker->add_stream(this);
     }
 
     void DPUStream::add_fence(DPUWorkFence *fence)
     {
-      upmemEvent_t e = dpu->event_pool.get_event();
+      HERE();
+      assert(0 && "should not be used");
+
+      // upmemEvent_t e = dpu->event_pool.get_event();
 
       // CHECK_UPMEM(upmemEventRecord(e, stream));
 
-      log_stream.debug() << "UPMEM fence event " << e << " recorded on stream " << stream
-                         << " (DPU " << dpu << ")";
+      // log_stream.debug() << "UPMEM fence event " << e << " recorded on stream " <<
+      // stream
+      //                    << " (DPU " << dpu << ")";
 
-      add_event(e, fence, 0, 0);
+      // add_event(e, fence, 0, 0);
     }
 
     void DPUStream::add_start_event(DPUWorkStart *start)

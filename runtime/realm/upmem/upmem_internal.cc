@@ -87,15 +87,17 @@ namespace Realm {
       task_streams[0] = new DPUStream(this, worker);
       task_streams[0]->set_stream(single_dpu);
 
+      // stream =  task_streams[0];
+
       // for(unsigned i = 0; i < module->config->cfg_task_streams; i++)
       //   task_streams[i] = new DPUStream(this, worker);
     }
 
     DPU::~DPU(void)
     {
-      event_pool.empty_pool();
+      CHECK_UPMEM(dpu_free(*task_streams[0]->get_stream()));
 
-      CHECK_UPMEM(dpu_free(*stream->get_stream()));
+      event_pool.empty_pool();
     }
 
     void DPU::create_mram_memory(RuntimeImpl *runtime, size_t size)
@@ -175,7 +177,7 @@ namespace Realm {
         return ThreadLocal::current_dpu_stream;
       }
       unsigned index = next_task_stream.fetch_add(1) % task_streams.size();
-      DPUStream *result = task_streams[index];
+      DPUStream *result = task_streams[0];
       if(create)
         ThreadLocal::created_dpu_streams->insert(result);
       return result;
@@ -219,25 +221,6 @@ namespace Realm {
       // see if we have a function pointer to register
       const FunctionPointerImplementation *fpi =
           codedesc.find_impl<FunctionPointerImplementation>();
-
-      // // if we don't have a function pointer implementation, see if we can make one
-      // if(!fpi) {
-      //   const std::vector<CodeTranslator *>& translators =
-      //   get_runtime()->get_code_translators(); for(std::vector<CodeTranslator
-      //   *>::const_iterator it = translators.begin();
-      //       it != translators.end();
-      //       it++)
-      //     if((*it)->can_translate<FunctionPointerImplementation>(codedesc)) {
-      //       FunctionPointerImplementation *newfpi =
-      //       (*it)->translate<FunctionPointerImplementation>(codedesc); if(newfpi) {
-      //         log_taskreg.info() << "function pointer created: trans=" << (*it)->name
-      //         << " fnptr=" << (void *)(newfpi->fnptr);
-      //         codedesc.add_implementation(newfpi);
-      //         fpi = newfpi;
-      //         break;
-      //       }
-      //     }
-      // }
 
       assert(fpi != 0);
 
@@ -319,12 +302,81 @@ namespace Realm {
     {
       log_dpu.info("shutting down");
 
+      // CHECK_UPMEM(dpu_sync(*dpu->stream->get_stream()));
+
       // shut down threads/scheduler
       LocalTaskProcessor::shutdown();
 
       ctxsync.shutdown_threads();
+    }
 
-      CHECK_UPMEM(dpu_sync(*dpu->stream->get_stream()));
+    void DPUProcessor::device_synchronize(void)
+    {
+      DPUStream *current = ThreadLocal::current_dpu_stream;
+
+      if(ThreadLocal::created_dpu_streams) {
+        current->wait_on_streams(*ThreadLocal::created_dpu_streams);
+        delete ThreadLocal::created_dpu_streams;
+        ThreadLocal::created_dpu_streams = 0;
+      }
+
+      if(!block_on_synchronize) {
+        // We don't actually want to block the GPU processor
+        // when synchronizing, so we instead register a cuda
+        // event on the stream and then use it triggering to
+        // indicate that the stream is caught up
+        // Make a completion notification to be notified when
+        // the event has actually triggered
+        DPUPreemptionWaiter waiter(dpu);
+        // Register the waiter with the stream
+        current->add_notification(&waiter);
+        // Perform the wait, this will preempt the thread
+        waiter.preempt();
+      } else {
+        // oh well...
+        CHECK_UPMEM(dpu_sync(*current->get_stream()));
+      }
+    }
+
+    void DPUProcessor::stream_wait_on_event(dpu_set_t *stream, upmemEvent_t event)
+    {
+      HERE();
+      assert(0 && "should not be here");
+      // if (IS_DEFAULT_STREAM(stream))
+      //   CHECK_HIP( hipStreamWaitEvent(
+      //         ThreadLocal::current_gpu_stream->get_stream(), event, 0) );
+      // else
+      //   CHECK_HIP( hipStreamWaitEvent(stream, event, 0) );
+    }
+
+    void DPUProcessor::stream_synchronize(dpu_set_t *stream)
+    {
+
+      if(!block_on_synchronize) {
+        DPUStream *s = dpu->find_stream(stream);
+        if(s) {
+          // We don't actually want to block the GPU processor
+          // when synchronizing, so we instead register a cuda
+          // event on the stream and then use it triggering to
+          // indicate that the stream is caught up
+          // Make a completion notification to be notified when
+          // the event has actually triggered
+          DPUPreemptionWaiter waiter(dpu);
+          // Register the waiter with the stream
+          s->add_notification(&waiter);
+          // Perform the wait, this will preempt the thread
+          waiter.preempt();
+        } else {
+          log_dpu.warning() << "WARNING: Detected unknown UPMEM stream " << stream
+                            << " that Realm did not create which suggests "
+                            << "that there is another copy of the UPMEM runtime "
+                            << "somewhere making its own streams... be VERY careful.";
+          CHECK_UPMEM(dpu_sync(*ThreadLocal::current_dpu_stream->get_stream()));
+        }
+      } else {
+        // oh well...
+        CHECK_UPMEM(dpu_sync(*ThreadLocal::current_dpu_stream->get_stream()));
+      }
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -388,6 +440,7 @@ namespace Realm {
       //  full context synchronization is required for a task to be
       //  "complete"
       if(dpu_proc->dpu->module->config->cfg_task_context_sync < 0) {
+        // without hijack or legacy sync requested, ctxsync is needed
         dpu_proc->dpu->module->config->cfg_task_context_sync = 1;
       }
 
@@ -622,7 +675,7 @@ namespace Realm {
       if(!module->dpus.empty()) {
         log_dpu.info() << "unregistering replicated heap chunk: base=" << base
                        << " size=" << bytes;
-        free(base);
+        // free(base);
       }
     }
 
