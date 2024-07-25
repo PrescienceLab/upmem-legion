@@ -1053,7 +1053,11 @@ namespace Realm {
                || (kind == XFER_GPU_IN_FB)
                || (kind == XFER_GPU_PEER_FB)
                || (kind == XFER_REMOTE_WRITE)
-               || (kind == XFER_MEM_CPY);
+               || (kind == XFER_MEM_CPY) 
+			   || (kind == XFER_DPU_TO_MRAM)
+			   || (kind == XFER_DPU_FROM_MRAM)
+			   || (kind == XFER_DPU_PEER_MRAM)
+			   || (kind == XFER_DPU_IN_MRAM);	   
       }
 
   size_t XferDes::update_control_info(ReadSequenceCache *rseqcache)

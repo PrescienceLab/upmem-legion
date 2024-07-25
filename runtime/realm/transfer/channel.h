@@ -73,6 +73,10 @@ namespace Realm {
       XFER_FILE_WRITE,
       XFER_ADDR_SPLIT,
       XFER_MEM_FILL,
+      XFER_DPU_FROM_MRAM,
+      XFER_DPU_TO_MRAM,
+      XFER_DPU_PEER_MRAM,
+      XFER_DPU_IN_MRAM,
     };
 
     class Request {

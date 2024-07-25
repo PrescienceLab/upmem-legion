@@ -229,7 +229,8 @@ endif
 endif
 
 # machine architecture (generally "native" unless cross-compiling)
-MARCH ?= native
+# MARCH ?= native
+MARCH ?= x86-64
 
 ifneq (${MARCH},)
   # Summit/Summitdev are strange and want to have this specified via -mcpu
@@ -366,8 +367,7 @@ ifeq ($(strip $(USE_UPMEM)),1)
   CC_FLAGS        += 
   LD_FLAGS        += -L$(UPMEM_HOME)/lib -ldpu
   UPMEMCC_FLAGS   +=  -fno-exceptions
-  # this is currently experimentaly below
-  UPMEM_INC_FLAGS +=  -I/home/david/tools/upmem/bin/../share/upmem/include/stdlib/ -I/usr/include/x86_64-linux-gnu/c++/12/ -I/usr/include/c++/12/ -I/usr/include/c++/12/parallel/
+
   INC_FLAGS       += -I$(UPMEM_HOME)/include/dpu
   ifeq ($(strip $(DEBUG)),1)
     UPMEMCC_FLAGS	+= -g
@@ -1076,7 +1076,12 @@ endif
 ifeq ($(strip $(USE_UPMEM)),1)
 REALM_SRC 	+= $(LG_RT_DIR)/realm/upmem/upmem_module.cc \
               $(LG_RT_DIR)/realm/upmem/upmem_access.cc \
-              $(LG_RT_DIR)/realm/upmem/upmem_internal.cc 
+              $(LG_RT_DIR)/realm/upmem/upmem_internal.cc \
+              $(LG_RT_DIR)/realm/upmem/upmem_memory.cc \
+              $(LG_RT_DIR)/realm/upmem/upmem_workers.cc \
+              $(LG_RT_DIR)/realm/upmem/upmem_stream.cc \
+              $(LG_RT_DIR)/realm/upmem/upmem_events.cc \
+              $(LG_RT_DIR)/realm/upmem/upmem_dma.cc 
 endif
 
 REALM_SRC 	+= $(LG_RT_DIR)/realm/activemsg.cc \
@@ -1246,7 +1251,8 @@ INSTALL_HEADERS += realm/simpletest/simpletest_access.h
 endif
 ifeq ($(strip $(USE_UPMEM)),1)
 INSTALL_HEADERS += realm/upmem/upmem_access.h \
-                   realm/upmem/realm_upmem.h
+                   realm/upmem/realm_c_upmem.h \
+                   realm/upmem/realm_c_upmem.inl
 endif
 # General shell commands
 SHELL	:= /bin/sh
@@ -1298,7 +1304,7 @@ LEGION_OBJS     += $(LEGION_HIP_SRC:.cu=.cu.o)
 endif
 
 ifeq ($(strip $(USE_UPMEM)),1)
-UPMEM_OBJS	+= $(UPMEM_SRC:.c=.up.o)
+UPMEM_OBJS	+= $(UPMEM_SRC:.cc=.up.o)
 endif
 
 USE_FORTRAN ?= 0
@@ -1472,16 +1478,44 @@ $(MAPPER_OBJS) : %.cc.o : %.cc $(LEGION_DEFINES_HEADER) $(REALM_DEFINES_HEADER)
 
 
 ifeq ($(strip $(USE_UPMEM)),1)
-UPMEM_FATBIN = fatbin.up.o
-REALM_UPMEM_SRC += $(LG_RT_DIR)/realm/upmem/realm_upmem.cc
+UPMEM_ACCESS = access.up.bc
+UPMEM_ACCESS_OBJ = access.up.o
+REALM_UPMEM_SRC = $(LG_RT_DIR)/realm/upmem/realm_c_upmem.cc
 
-$(filter %.up.o, $(UPMEM_OBJS)) : %.up.o : %.c $(LEGION_DEFINES_HEADER) $(REALM_DEFINES_HEADER) $(UPMEM_FATBIN) $(SLIB_REALM)
-	$(UPMEM_CC) -o $@ $< $(UPMEM_FATBIN) $(UPMEMCC_FLAGS) $(INC_FLAGS) $(UPMEM_INC_FLAGS) $(SLIB_REALM)
+# assumption/limitation with this: every source code file produces its own excutable 
+# multiple UPMEM device .c files are NOT combined together to make an excutable  
+# this means each .c file here contains a main function
+
+###########################################################################################
+$(filter %.up.o, $(UPMEM_OBJS)) : %.up.o : %.cc 
+	$(UPMEM_CC) -o $@  $(UPMEMCC_FLAGS) $(INC_FLAGS) $^
+
+###########################################################################################
+
+
+# CUSTOM_CXX 	= -nostdlib++ -static $(UPMEM_HOME)/lib/libc++.a
+
+# $(filter %.up.o, $(UPMEM_OBJS)) : %.up.o : %.c $(UPMEM_ACCESS)
+# 	$(UPMEM_CC) $(CUSTOM_CXX) -o $@ $(UPMEMCC_FLAGS) $(INC_FLAGS) $^
+
+# $(UPMEM_ACCESS): $(REALM_UPMEM_SRC)
+# 	$(UPMEM_CC) -x c++ -nostdinc++ -o $(UPMEM_ACCESS) -isystem $(UPMEM_HOME)/share/upmem/include/c++/v1 \
+#   -c $(UPMEMCC_FLAGS) $(INC_FLAGS) $^
+
+
+###########################################################################################
+# $(filter %.up.o, $(UPMEM_OBJS)) : %.up.o : %.cc $(UPMEM_ACCESS_OBJ)
+# 	$(UPMEM_CC) -o $@  $(UPMEMCC_FLAGS) $(INC_FLAGS) $^ 
+
+# $(UPMEM_ACCESS_OBJ): $(UPMEM_ACCESS)
+# 	$(UPMEM_CC) -o $@ -c $^
+
+# $(UPMEM_ACCESS): $(REALM_UPMEM_SRC) 
+# 	clang++ -x c++ -emit-llvm -S -O0 -o $(UPMEM_ACCESS) -c $(UPMEMCC_FLAGS) $(INC_FLAGS) $^ 
+###########################################################################################
+
 
 $(REALM_UPMEM_SRC) : $(REALM_DEFINES_HEADER)
-
-$(UPMEM_FATBIN): $(REALM_UPMEM_SRC)
-	$(UPMEM_CC) $^ -o $(UPMEM_FATBIN) -c $(UPMEMCC_FLAGS) $(INC_FLAGS) $(UPMEM_INC_FLAGS) 
 
 endif
 
@@ -1531,7 +1565,7 @@ endif
 % : %.o
 
 clean::
-	$(RM) -f $(OUTFILE) $(SLIB_LEGION) $(SLIB_REALM) $(APP_OBJS) $(REALM_OBJS) $(REALM_INST_OBJS) $(LEGION_OBJS) $(LEGION_INST_OBJS) $(MAPPER_OBJS) $(LG_RT_DIR)/*mod *.mod $(LEGION_DEFINES_HEADER) $(REALM_DEFINES_HEADER) $(DEP_FILES) $(REALM_FATBIN_SRC) $(REALM_FATBIN) $(SLIB_REALM_CUHOOK) $(REALM_CUHOOK_OBJS) $(UPMEM_OBJS)
+	$(RM) -f $(OUTFILE) $(SLIB_LEGION) $(SLIB_REALM) $(APP_OBJS) $(REALM_OBJS) $(REALM_INST_OBJS) $(LEGION_OBJS) $(LEGION_INST_OBJS) $(MAPPER_OBJS) $(LG_RT_DIR)/*mod *.mod $(LEGION_DEFINES_HEADER) $(REALM_DEFINES_HEADER) $(DEP_FILES) $(REALM_FATBIN_SRC) $(REALM_FATBIN) $(SLIB_REALM_CUHOOK) $(REALM_CUHOOK_OBJS) $(UPMEM_OBJS) $(UPMEM_ACCESS) $(UPMEM_ACCESS_OBJ)
 
 ifeq ($(strip $(USE_LLVM)),1)
 llvmjit_internal.cc.o : CC_FLAGS += $(LLVM_CXXFLAGS)
