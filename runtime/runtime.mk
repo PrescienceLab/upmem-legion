@@ -1377,24 +1377,6 @@ ifeq ($(strip $(USE_UPMEM)),1)
 UPMEM_OBJS	+= $(UPMEM_SRC:.cc=.up.o)
 endif
 
-USE_FORTRAN ?= 0
-LEGION_USE_FORTRAN ?= 0
-# For backwards compatibility
-GEN_FORTRAN_SRC ?=
-FORT_SRC	+= $(GEN_FORTRAN_SRC)
-ifeq ($(strip $(USE_FORTRAN)),1)
-LEGION_OBJS 	+= $(LEGION_FORT_SRC:.f90=.f90.o)
-APP_OBJS 	+= $(FORT_SRC:.f90=.f90.o)
-FC_FLAGS 	+= -cpp
-LD_FLAGS 	+= -lgfortran
-else ifeq ($(strip $(LEGION_USE_FORTRAN)),1)
-USE_FORTRAN	:= 1
-LEGION_OBJS 	+= $(LEGION_FORT_SRC:.f90=.f90.o)
-APP_OBJS	+= $(FORT_SRC:.f90=.f90.o)
-FC_FLAGS 	+= -cpp
-LD_FLAGS 	+= -lgfortran
-endif
-
 # Provide build rules unless the user asks us not to
 ifndef NO_BUILD_RULES
 # Provide an all unless the user asks us not to
@@ -1647,6 +1629,7 @@ clean::
 else
 clean::
 	$(RM) -f $(OUTFILE) $(SLIB_LEGION) $(SLIB_REALM) $(APP_OBJS) $(REALM_OBJS) $(REALM_INST_OBJS) $(LEGION_OBJS) $(LEGION_INST_OBJS) $(MAPPER_OBJS) $(LG_RT_DIR)/*mod *.mod $(LEGION_DEFINES_HEADER) $(REALM_DEFINES_HEADER) $(DEP_FILES) $(REALM_FATBIN_SRC) $(REALM_FATBIN) $(SLIB_REALM_CUHOOK) $(REALM_CUHOOK_OBJS) $(UPMEM_OBJS) $(UPMEM_ACCESS) $(UPMEM_ACCESS_OBJ)
+endif
 
 ifeq ($(strip $(USE_LLVM)),1)
 llvmjit_internal.cc.o : CC_FLAGS += $(LLVM_CXXFLAGS)
