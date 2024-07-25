@@ -1,4 +1,4 @@
--- Copyright 2023 Stanford University, NVIDIA Corporation
+-- Copyright 2024 Stanford University, NVIDIA Corporation
 --
 -- Licensed under the Apache License, Version 2.0 (the "License");
 -- you may not use this file except in compliance with the License.
@@ -2332,10 +2332,12 @@ std.rect_type = data.weak_memoize(function(index_type)
   terra st:to_domain()
     return [c["legion_domain_from_rect_" .. tostring(st.dim) .. "d"]](@self)
   end
+  st.methods.to_domain.replicable = true
 
   terra st:size()
     return self.hi - self.lo + [st.index_type:const(1)]
   end
+  st.methods.size.replicable = true
 
   if index_type.fields then
     terra st:volume()
@@ -3801,16 +3803,20 @@ local projection_functors = terralib.newlist()
 
 do
   local next_id = 1
-  function std.register_projection_functor(exclusive, functional, depth,
+  function std.register_projection_functor(exclusive, functional, has_args, depth,
                                            region_functor, partition_functor)
     local id = next_id
     next_id = next_id + 1
 
-    projection_functors:insert(terralib.newlist({id, exclusive, functional, depth,
+    projection_functors:insert(terralib.newlist({id, exclusive, functional, has_args, depth,
                                                  region_functor, partition_functor}))
 
     return id
   end
+end
+
+function std.count_projection_functors()
+  return #projection_functors
 end
 
 local variants = terralib.newlist()
@@ -4151,19 +4157,28 @@ function std.setup(main_task, extra_setup_thunk, task_wrappers, registration_nam
 
   local projection_functor_registrations = projection_functors:map(
     function(args)
-      local id, exclusive, functional, depth, region_functor, partition_functor = unpack(args)
+      local id, exclusive, functional, has_args, depth, region_functor, partition_functor = unpack(args)
 
       -- Hack: Work around Terra not wanting to escape nil.
       region_functor = region_functor or `nil
       partition_functor = partition_functor or `nil
 
       if functional then
-        return quote
-          c.legion_runtime_preregister_projection_functor(
-            id, exclusive, depth,
-            region_functor, partition_functor)
+        if not has_args then
+          return quote
+            c.legion_runtime_preregister_projection_functor(
+              id, exclusive, depth,
+              region_functor, partition_functor)
+          end
+        else
+          return quote
+            c.legion_runtime_preregister_projection_functor_args(
+              id, exclusive, depth,
+              region_functor, partition_functor)
+          end
         end
       else
+        assert(not has_args)
         return quote
           c.legion_runtime_preregister_projection_functor_mappable(
             id, exclusive, depth,

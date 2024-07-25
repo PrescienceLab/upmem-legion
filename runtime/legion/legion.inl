@@ -1,4 +1,4 @@
-/* Copyright 2023 Stanford University, NVIDIA Corporation
+/* Copyright 2024 Stanford University, NVIDIA Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,20 +44,64 @@ namespace Legion {
      * size_t legion_buffer_size(void)
      * void legion_serialize(void *buffer)
      * void legion_deserialize(const void *buffer)
+     *(optional) void legion_buffer_finalize(const void *buffer)
      */
     class LegionSerialization {
     public:
       // A helper method for getting access to the runtime's
       // end_task method with private access
-      static inline void end_helper(Runtime *rt, Context ctx,
-          const void *result, size_t result_size, bool owned)
+      static inline void end_helper(Context ctx,
+          const void *result, size_t result_size)
       {
-        Runtime::legion_task_postamble(rt, ctx, result, result_size, owned);
+        Runtime::legion_task_postamble(ctx, result, result_size,false/*owned*/);
       }
-      static inline Future from_value_helper(Runtime *rt, 
-          const void *value, size_t value_size, bool owned)
+      static inline void end_helper(Context ctx,
+          const void *result, size_t result_size,
+          const Realm::ExternalInstanceResource &resource,
+          void (*freefunc)(const Realm::ExternalInstanceResource&))
       {
-        return rt->from_value(value, value_size, owned);
+        Runtime::legion_task_postamble(ctx, result, result_size, true/*owned*/,
+                                       resource, freefunc);
+      }
+      static inline Future from_value_helper(
+          const void *value, size_t value_size)
+      {
+        return Future::from_untyped_pointer(value, value_size, false/*owned*/);
+      }
+      static inline Future from_value_helper(
+          const void *value, size_t value_size,
+          const Realm::ExternalInstanceResource &resource,
+          void (*freefunc)(const Realm::ExternalInstanceResource&))
+      {
+        return Future::from_value(value, value_size, true/*owned*/,
+                                  resource, freefunc);
+      }
+      static void free_func(const Realm::ExternalInstanceResource &res)
+      {
+#ifdef DEBUG_LEGION
+        const Realm::ExternalMemoryResource *resource =
+          dynamic_cast<const Realm::ExternalMemoryResource*>(&res);
+        assert(resource != NULL);
+#else
+        const Realm::ExternalMemoryResource *resource =
+          static_cast<const Realm::ExternalMemoryResource*>(&res);
+#endif
+        free((void*)resource->base);
+      }
+      template<void (*FINALIZE)(const void *buffer)>
+      static void free_func_wrapper(const Realm::ExternalInstanceResource &res)
+      {
+#ifdef DEBUG_LEGION
+        const Realm::ExternalMemoryResource *resource =
+          dynamic_cast<const Realm::ExternalMemoryResource*>(&res);
+        assert(resource != NULL);
+#else
+        const Realm::ExternalMemoryResource *resource =
+          static_cast<const Realm::ExternalMemoryResource*>(&res);
+#endif
+        void *buffer = (void*)resource->base;
+        (*FINALIZE)(buffer);
+        free(buffer);
       }
 
       // WARNING: There are two levels of SFINAE (substitution failure is 
@@ -67,34 +111,73 @@ namespace Legion {
       // a 'legion_serialize' method there are also 'legion_buffer_size'
       // and 'legion_deserialize' methods.
       
-      template<typename T, bool HAS_SERIALIZE>
+      template<typename T, bool HAS_SERIALIZE, bool HAS_FINALIZE>
       struct NonPODSerializer {
-        static inline void end_task(Runtime *rt, Context ctx,
-                                    T *result)
+        static inline void end_task(Context ctx, T *result)
         {
           size_t buffer_size = result->legion_buffer_size();
           if (buffer_size > 0)
           {
             void *buffer = malloc(buffer_size);
             result->legion_serialize(buffer);
-            end_helper(rt, ctx, buffer, buffer_size, true/*owned*/);
-            // No need to free the buffer, the Legion runtime owns it now
+            Realm::ExternalMemoryResource resource(buffer, buffer_size);
+            end_helper(ctx, buffer, buffer_size, resource, free_func);
           }
           else
-            end_helper(rt, ctx, NULL, 0, false/*owned*/);
+            end_helper(ctx, NULL, 0);
         }
-        static inline Future from_value(Runtime *rt, const T *value)
+        static inline Future from_value(const T *value)
         {
           size_t buffer_size = value->legion_buffer_size();
           void *buffer = malloc(buffer_size);
           value->legion_serialize(buffer);
-          return from_value_helper(rt, buffer, buffer_size, true/*owned*/);
+          Realm::ExternalMemoryResource resource(buffer, buffer_size);
+          return from_value_helper(buffer, buffer_size, resource, free_func);
         }
         static inline T unpack(const Future &f, bool silence_warnings,
                                const char *warning_string)
         {
-          const void *result = 
-            f.get_untyped_pointer(silence_warnings, warning_string);
+          size_t size = 0;
+          const void *result = f.get_buffer(Memory::SYSTEM_MEM, &size,
+                false/*check size*/, silence_warnings, warning_string);
+          T derez;
+          derez.legion_deserialize(result);
+          return derez;
+        }
+      };
+
+      // Specialization for the case where we have a finalize method
+      template<typename T>
+      struct NonPODSerializer<T,true,true> { 
+        static inline void end_task(Context ctx, T *result)
+        {
+          size_t buffer_size = result->legion_buffer_size();
+          if (buffer_size > 0)
+          {
+            void *buffer = malloc(buffer_size);
+            result->legion_serialize(buffer);
+            Realm::ExternalMemoryResource resource(buffer, buffer_size);
+            end_helper(ctx, buffer, buffer_size,
+                resource, free_func_wrapper<T::legion_buffer_finalize>);
+          }
+          else
+            end_helper(ctx, NULL, 0);
+        }
+        static inline Future from_value(const T *value)
+        {
+          size_t buffer_size = value->legion_buffer_size();
+          void *buffer = malloc(buffer_size);
+          value->legion_serialize(buffer);
+          Realm::ExternalMemoryResource resource(buffer, buffer_size);
+          return from_value_helper(buffer, buffer_size,
+              resource, free_func_wrapper<T::legion_buffer_finalize>);
+        }
+        static inline T unpack(const Future &f, bool silence_warnings,
+                               const char *warning_string)
+        {
+          size_t size = 0;
+          const void *result = f.get_buffer(Memory::SYSTEM_MEM, &size,
+                false/*check size*/, silence_warnings, warning_string);
           T derez;
           derez.legion_deserialize(result);
           return derez;
@@ -102,72 +185,84 @@ namespace Legion {
       };
 
       // Further specialization for deferred reductions
-      template<typename REDOP, bool EXCLUSIVE>
-      struct NonPODSerializer<DeferredReduction<REDOP,EXCLUSIVE>,false> {
-        static inline void end_task(Runtime *rt, Context ctx,
+      template<typename REDOP, bool EXCLUSIVE, bool FINAL>
+      struct NonPODSerializer<DeferredReduction<REDOP,EXCLUSIVE>,false,FINAL> {
+        static inline void end_task(Context ctx,
                                     DeferredReduction<REDOP,EXCLUSIVE> *result)
         {
-          result->finalize(rt, ctx);
+          static_assert(!IsSerdezType<typename REDOP::RHS>::value, 
+              "Legion does not currently support serialize/deserialize "
+              "methods on types in DefrredReductions");
+          result->finalize(ctx);
         }
-        static inline Future from_value(Runtime *rt, 
+        static inline Future from_value(
             const DeferredReduction<REDOP,EXCLUSIVE> *value)
         {
           // Should never be called
           assert(false);
-          return from_value_helper(rt, (const void*)value,
-            sizeof(DeferredReduction<REDOP,EXCLUSIVE>), false/*owned*/);
+          return from_value_helper((const void*)value,
+            sizeof(DeferredReduction<REDOP,EXCLUSIVE>));
         }
         static inline DeferredReduction<REDOP,EXCLUSIVE> 
           unpack(const Future &f, bool silence_warnings, const char *warning)
         {
           // Should never be called
           assert(false);
-          const void *result = f.get_untyped_pointer(silence_warnings, warning);
+          size_t size = 0;
+          const void *result = f.get_buffer(Memory::SYSTEM_MEM, &size,
+                      false/*check size*/, silence_warnings, warning);
           return (*((const DeferredReduction<REDOP,EXCLUSIVE>*)result));
         }
       };
 
       // Further specialization to see if this a deferred value
-      template<typename T>
-      struct NonPODSerializer<DeferredValue<T>,false> {
-        static inline void end_task(Runtime *rt, Context ctx,
+      template<typename T, bool FINAL>
+      struct NonPODSerializer<DeferredValue<T>,false,FINAL> {
+        static inline void end_task(Context ctx,
                                     DeferredValue<T> *result)
         {
-          result->finalize(rt, ctx);
+          static_assert(!IsSerdezType<T>::value,
+              "Legion does not currently support serialize/deserialize "
+              "methods on types in DeferredValues");
+          result->finalize(ctx);
         }
-        static inline Future from_value(Runtime *rt, const DeferredValue<T> *value)
+        static inline Future from_value(const DeferredValue<T> *value)
         {
           // Should never be called
           assert(false);
-          return from_value_helper(rt, (const void*)value,
-                                   sizeof(DeferredValue<T>), false/*owned*/);
+          return from_value_helper((const void*)value,
+                                   sizeof(DeferredValue<T>));
         }
         static inline DeferredValue<T> unpack(const Future &f,
             bool silence_warnings, const char *warning_string)
         {
           // Should never be called
           assert(false);
-          const void *result = 
-            f.get_untyped_pointer(silence_warnings, warning_string);
+          size_t size = 0;
+          const void *result = f.get_buffer(Memory::SYSTEM_MEM, &size,
+                false/*check size*/, silence_warnings, warning_string);
           return (*((const DeferredValue<T>*)result));
         }
       }; 
       
-      template<typename T>
-      struct NonPODSerializer<T,false> {
-        static inline void end_task(Runtime *rt, Context ctx, T *result)
+      template<typename T, bool FINAL>
+      struct NonPODSerializer<T,false,FINAL> {
+        static inline void end_task(Context ctx, T *result)
         {
-          end_helper(rt, ctx, (void*)result, sizeof(T), false/*owned*/);
+          end_helper(ctx, (void*)result, sizeof(T));
         }
-        static inline Future from_value(Runtime *rt, const T *value)
+        static inline Future from_value(const T *value)
         {
-          return from_value_helper(rt, (const void*)value,
-                                   sizeof(T), false/*owned*/);
+          return from_value_helper((const void*)value, sizeof(T));
         }
         static inline T unpack(const Future &f, bool silence_warnings,
                                const char *warning_string)
         {
-          return f.get_reference<T>(silence_warnings, warning_string);
+          size_t size = sizeof(T);
+          const T *result = static_cast<const T*>(f.get_buffer(
+                Memory::SYSTEM_MEM, &size, true/*check size*/,
+                silence_warnings, warning_string));
+          return *result;
         }
       };
 
@@ -185,56 +280,72 @@ namespace Legion {
           sizeof(test<T>(nullptr, nullptr, nullptr)) == sizeof(yes);
       };
 
+      template <typename T>
+      struct IsFinalizeType {
+        typedef char yes; typedef long no;
+
+        template <typename C>
+        static yes test(decltype(&C::legion_buffer_finalize));
+        template <typename C> static no test(...);
+
+        static constexpr bool value = sizeof(test<T>(nullptr)) == sizeof(yes);
+      };
+
       template<typename T, bool IS_STRUCT>
       struct StructHandler {
-        static inline void end_task(Runtime *rt, Context ctx, T *result)
+        static inline void end_task(Context ctx, T *result)
         {
           // Otherwise this is a struct, so see if it has serialization methods
-          NonPODSerializer<T,IsSerdezType<T>::value>::end_task(rt, ctx, result);
+          NonPODSerializer<T,IsSerdezType<T>::value,
+            IsFinalizeType<T>::value>::end_task(ctx, result);
         }
-        static inline Future from_value(Runtime *rt, const T *value)
+        static inline Future from_value(const T *value)
         {
-          return NonPODSerializer<T,IsSerdezType<T>::value>::from_value(
-                                                                  rt, value);
+          return NonPODSerializer<T,IsSerdezType<T>::value,
+                 IsFinalizeType<T>::value>::from_value(value);
         }
         static inline T unpack(const Future &f, bool silence_warnings,
                                const char *warning_string)
         {
-          return NonPODSerializer<T,IsSerdezType<T>::value>::unpack(f,
-                                    silence_warnings, warning_string); 
+          return NonPODSerializer<T,IsSerdezType<T>::value,
+                  IsFinalizeType<T>::value>::unpack(
+                      f, silence_warnings, warning_string); 
         }
       };
       // False case of template specialization
       template<typename T>
       struct StructHandler<T,false> {
-        static inline void end_task(Runtime *rt, Context ctx, T *result)
+        static inline void end_task(Context ctx, T *result)
         {
-          end_helper(rt, ctx, (void*)result, sizeof(T), false/*owned*/);
+          end_helper(ctx, (void*)result, sizeof(T));
         }
-        static inline Future from_value(Runtime *rt, const T *value)
+        static inline Future from_value(const T *value)
         {
-          return from_value_helper(rt, (const void*)value, 
-                                   sizeof(T), false/*owned*/);
+          return from_value_helper((const void*)value, sizeof(T));
         }
         static inline T unpack(const Future &f, bool silence_warnings,
                                const char *warning_string)
         {
-          return f.get_reference<T>(silence_warnings, warning_string);
+          size_t size = sizeof(T);
+          const T* result = static_cast<const T*>(f.get_buffer(
+                Memory::SYSTEM_MEM, &size, true/*check size*/,
+                silence_warnings, warning_string));
+          return *result;
         }
       };
 
       // Figure out whether this is a struct or not 
       // and call the appropriate Finisher
       template<typename T>
-      static inline void end_task(Runtime *rt, Context ctx, T *result)
+      static inline void end_task(Context ctx, T *result)
       {
-        StructHandler<T,std::is_class<T>::value>::end_task(rt, ctx, result);
+        StructHandler<T,std::is_class<T>::value>::end_task(ctx, result);
       }
 
       template<typename T>
-      static inline Future from_value(Runtime *rt, const T *value)
+      static inline Future from_value(const T *value)
       {
-        return StructHandler<T,std::is_class<T>::value>::from_value(rt, value);
+        return StructHandler<T,std::is_class<T>::value>::from_value(value);
       }
 
       template<typename T>
@@ -1812,6 +1923,8 @@ namespace Legion {
         __CUDA_HD__
         inline bool contains_all(const Rect<N,T> &rect) const
         {
+          if (rect.empty())
+            return true;
           // Check the domain first
 #if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
           // Can only test bounds on the GPU and not sparsity maps yet 
@@ -2895,6 +3008,71 @@ namespace Legion {
       PHYSICAL_REGION_CONSTRUCTORS(LEGION_READ_ONLY, N, false)
       DEFERRED_VALUE_BUFFER_CONSTRUCTORS(N, false)
 #endif
+      // Future accessor
+      FieldAccessor(const Future &future,
+                    Memory::Kind memkind = Memory::NO_MEMKIND,
+                    size_t actual_field_size = sizeof(FT),
+#ifdef DEBUG_LEGION
+                    bool check_field_size = true,
+#else
+                    bool check_field_size = false,
+#endif
+                    bool silence_warnings = false,
+                    const char *warning_string = NULL,
+                    size_t offset = 0)
+      {
+        const Realm::RegionInstance instance = 
+          future.get_instance(memkind, actual_field_size, check_field_size,
+                              warning_string, silence_warnings);
+        // This mapping ignores the input points and sends 
+        // everything to the 1-D origin
+        Realm::Matrix<1,N,T> transform;
+        for (int i = 0; i < N; i++)
+          transform[0][i] = 0;
+        Realm::Point<1,T> origin(0);
+        Realm::Rect<N,T> source_bounds;
+        // Anything in range works for these bounds since we're
+        // going to remap them to the origin
+        for (int i = 0; i < N; i++)
+        {
+          source_bounds.lo[i] = std::numeric_limits<T>::min();
+          source_bounds.hi[i] = std::numeric_limits<T>::max();
+        }
+        if (!Realm::AffineAccessor<FT,N,T>::is_compatible(instance,
+              transform, origin, 0/*field id*/, source_bounds))
+          future.report_incompatible_accessor("AffineAccessor", instance);
+        accessor = Realm::AffineAccessor<FT,N,T>(instance, transform, origin,
+                                        0/*field id*/, source_bounds, offset);
+      }
+      // Future accessor with explicit bounds
+      FieldAccessor(const Future &future,
+                    const Rect<N,T> source_bounds,
+                    Memory::Kind memkind = Memory::NO_MEMKIND,
+                    size_t actual_field_size = sizeof(FT),
+#ifdef DEBUG_LEGION
+                    bool check_field_size = true,
+#else
+                    bool check_field_size = false,
+#endif
+                    bool silence_warnings = false,
+                    const char *warning_string = NULL,
+                    size_t offset = 0)
+      {
+        const Realm::RegionInstance instance = 
+          future.get_instance(memkind, actual_field_size, check_field_size,
+                              warning_string, silence_warnings);
+        // This mapping ignores the input points and sends 
+        // everything to the 1-D origin
+        Realm::Matrix<1,N,T> transform;
+        for (int i = 0; i < N; i++)
+          transform[0][i] = 0;
+        Realm::Point<1,T> origin(0);
+        if (!Realm::AffineAccessor<FT,N,T>::is_compatible(instance,
+              transform, origin, 0/*field id*/, source_bounds))
+          future.report_incompatible_accessor("AffineAccessor", instance);
+        accessor = Realm::AffineAccessor<FT,N,T>(instance, transform, origin,
+                                        0/*field id*/, source_bounds, offset);
+      }
     public:
       __CUDA_HD__
       inline FT read(const Point<N,T>& p) const 
@@ -2977,6 +3155,83 @@ namespace Legion {
       PHYSICAL_REGION_CONSTRUCTORS_WITH_BOUNDS(LEGION_READ_ONLY, N, false)
       DEFERRED_VALUE_BUFFER_CONSTRUCTORS_WITH_BOUNDS(N, false)
 #endif
+      // Future accessor
+      FieldAccessor(const Future &future,
+                    Memory::Kind memkind = Memory::NO_MEMKIND,
+                    size_t actual_field_size = sizeof(FT),
+#ifdef DEBUG_LEGION
+                    bool check_field_size = true,
+#else
+                    bool check_field_size = false,
+#endif
+                    bool silence_warnings = false,
+                    const char *warning_string = NULL,
+                    size_t offset = 0)
+      {
+        const Realm::RegionInstance instance = 
+          future.get_instance(memkind, actual_field_size, check_field_size,
+                              warning_string, silence_warnings);
+        // This mapping ignores the input points and sends 
+        // everything to the 1-D origin
+        Realm::Matrix<1,N,T> transform;
+        for (int i = 0; i < N; i++)
+          transform[0][i] = 0;
+        Realm::Point<1,T> origin(0);
+        Realm::Rect<N,T> source_bounds;
+        // Anything in range works for these bounds since we're
+        // going to remap them to the origin
+        for (int i = 0; i < N; i++)
+        {
+          source_bounds.lo[i] = std::numeric_limits<T>::min();
+          source_bounds.hi[i] = std::numeric_limits<T>::max();
+        }
+        if (!Realm::AffineAccessor<FT,N,T>::is_compatible(instance,
+              transform, origin, 0/*field id*/, source_bounds))
+          future.report_incompatible_accessor("AffineAccessor", instance);
+        accessor = Realm::AffineAccessor<FT,N,T>(instance, transform, origin,
+                                        0/*field id*/, source_bounds, offset);
+        DomainT<1,T> is;
+        is.bounds.lo[0] = 0;
+        is.bounds.hi[0] = 0;
+        is.sparsity.id = 0;
+        AffineTransform<1,N,T> affine(transform, origin);
+        bounds = AffineBounds::Tester<N,T>(is, source_bounds, affine);
+      }
+      // Future accessor with explicit bounds
+      FieldAccessor(const Future &future,
+                    const Rect<N,T> source_bounds,
+                    Memory::Kind memkind = Memory::NO_MEMKIND,
+                    size_t actual_field_size = sizeof(FT),
+#ifdef DEBUG_LEGION
+                    bool check_field_size = true,
+#else
+                    bool check_field_size = false,
+#endif
+                    bool silence_warnings = false,
+                    const char *warning_string = NULL,
+                    size_t offset = 0)
+      {
+        const Realm::RegionInstance instance = 
+          future.get_instance(memkind, actual_field_size, check_field_size,
+                              warning_string, silence_warnings);
+        // This mapping ignores the input points and sends 
+        // everything to the 1-D origin
+        Realm::Matrix<1,N,T> transform;
+        for (int i = 0; i < N; i++)
+          transform[0][i] = 0;
+        Realm::Point<1,T> origin(0);
+        if (!Realm::AffineAccessor<FT,N,T>::is_compatible(instance,
+              transform, origin, 0/*field id*/, source_bounds))
+          future.report_incompatible_accessor("AffineAccessor", instance);
+        accessor = Realm::AffineAccessor<FT,N,T>(instance, transform, origin,
+                                        0/*field id*/, source_bounds, offset);
+        DomainT<1,T> is;
+        is.bounds.lo[0] = 0;
+        is.bounds.hi[0] = 0;
+        is.sparsity.id = 0;
+        AffineTransform<1,N,T> affine(transform, origin);
+        bounds = AffineBounds::Tester<N,T>(is, source_bounds, affine);
+      }
     public:
       __CUDA_HD__
       inline FT read(const Point<N,T>& p) const 
@@ -3092,6 +3347,66 @@ namespace Legion {
       PHYSICAL_REGION_CONSTRUCTORS(LEGION_READ_ONLY, 1, false)
       DEFERRED_VALUE_BUFFER_CONSTRUCTORS(1, false)
 #endif
+      // Future accessor
+      FieldAccessor(const Future &future,
+                    Memory::Kind memkind = Memory::NO_MEMKIND,
+                    size_t actual_field_size = sizeof(FT),
+#ifdef DEBUG_LEGION
+                    bool check_field_size = true,
+#else
+                    bool check_field_size = false,
+#endif
+                    bool silence_warnings = false,
+                    const char *warning_string = NULL,
+                    size_t offset = 0)
+      {
+        const Realm::RegionInstance instance = 
+          future.get_instance(memkind, actual_field_size, check_field_size,
+                              warning_string, silence_warnings);
+        // This mapping ignores the input points and sends 
+        // everything to the 1-D origin
+        Realm::Matrix<1,1,T> transform;
+        transform[0][0] = 0;
+        Realm::Point<1,T> origin(0);
+        Realm::Rect<1,T> source_bounds;
+        // Anything in range works for these bounds since we're
+        // going to remap them to the origin
+        source_bounds.lo[0] = std::numeric_limits<T>::min();
+        source_bounds.hi[0] = std::numeric_limits<T>::max();
+        if (!Realm::AffineAccessor<FT,1,T>::is_compatible(instance,
+              transform, origin, 0/*field id*/, source_bounds))
+          future.report_incompatible_accessor("AffineAccessor", instance);
+        accessor = Realm::AffineAccessor<FT,1,T>(instance, transform, origin,
+                                        0/*field id*/, source_bounds, offset);
+      }
+      // Future accessor with explicit bounds
+      FieldAccessor(const Future &future,
+                    const Rect<1,T> source_bounds,
+                    Memory::Kind memkind = Memory::NO_MEMKIND,
+                    size_t actual_field_size = sizeof(FT),
+#ifdef DEBUG_LEGION
+                    bool check_field_size = true,
+#else
+                    bool check_field_size = false,
+#endif
+                    bool silence_warnings = false,
+                    const char *warning_string = NULL,
+                    size_t offset = 0)
+      {
+        const Realm::RegionInstance instance = 
+          future.get_instance(memkind, actual_field_size, check_field_size,
+                              warning_string, silence_warnings);
+        // This mapping ignores the input points and sends 
+        // everything to the 1-D origin
+        Realm::Matrix<1,1,T> transform;
+        transform[0][0] = 0;
+        Realm::Point<1,T> origin(0);
+        if (!Realm::AffineAccessor<FT,1,T>::is_compatible(instance,
+              transform, origin, 0/*field id*/, source_bounds))
+          future.report_incompatible_accessor("AffineAccessor", instance);
+        accessor = Realm::AffineAccessor<FT,1,T>(instance, transform, origin,
+                                        0/*field id*/, source_bounds, offset);
+      }
     public:
       __CUDA_HD__
       inline FT read(const Point<1,T>& p) const 
@@ -3161,6 +3476,78 @@ namespace Legion {
       PHYSICAL_REGION_CONSTRUCTORS_WITH_BOUNDS(LEGION_READ_ONLY, 1, false)
       DEFERRED_VALUE_BUFFER_CONSTRUCTORS_WITH_BOUNDS(1, false)
 #endif
+      // Future accessor
+      FieldAccessor(const Future &future,
+                    Memory::Kind memkind = Memory::NO_MEMKIND,
+                    size_t actual_field_size = sizeof(FT),
+#ifdef DEBUG_LEGION
+                    bool check_field_size = true,
+#else
+                    bool check_field_size = false,
+#endif
+                    bool silence_warnings = false,
+                    const char *warning_string = NULL,
+                    size_t offset = 0)
+      {
+        const Realm::RegionInstance instance = 
+          future.get_instance(memkind, actual_field_size, check_field_size,
+                              warning_string, silence_warnings);
+        // This mapping ignores the input points and sends 
+        // everything to the 1-D origin
+        Realm::Matrix<1,1,T> transform;
+        transform[0][0] = 0;
+        Realm::Point<1,T> origin(0);
+        Realm::Rect<1,T> source_bounds;
+        // Anything in range works for these bounds since we're
+        // going to remap them to the origin
+        source_bounds.lo[0] = std::numeric_limits<T>::min();
+        source_bounds.hi[0] = std::numeric_limits<T>::max();
+        if (!Realm::AffineAccessor<FT,1,T>::is_compatible(instance,
+              transform, origin, 0/*field id*/, source_bounds))
+          future.report_incompatible_accessor("AffineAccessor", instance);
+        accessor = Realm::AffineAccessor<FT,1,T>(instance, transform, origin,
+                                        0/*field id*/, source_bounds, offset);
+        DomainT<1,T> is;
+        is.bounds.lo[0] = 0;
+        is.bounds.hi[0] = 0;
+        is.sparsity.id = 0;
+        AffineTransform<1,1,T> affine(transform, origin);
+        bounds = AffineBounds::Tester<1,T>(is, source_bounds, affine);
+      }
+      // Future accessor with explicit bounds
+      FieldAccessor(const Future &future,
+                    const Rect<1,T> source_bounds,
+                    Memory::Kind memkind = Memory::NO_MEMKIND,
+                    size_t actual_field_size = sizeof(FT),
+#ifdef DEBUG_LEGION
+                    bool check_field_size = true,
+#else
+                    bool check_field_size = false,
+#endif
+                    bool silence_warnings = false,
+                    const char *warning_string = NULL,
+                    size_t offset = 0)
+      {
+        const Realm::RegionInstance instance = 
+          future.get_instance(memkind, actual_field_size, check_field_size,
+                              warning_string, silence_warnings);
+        // This mapping ignores the input points and sends 
+        // everything to the 1-D origin
+        Realm::Matrix<1,1,T> transform;
+        transform[0][0] = 0;
+        Realm::Point<1,T> origin(0);
+        if (!Realm::AffineAccessor<FT,1,T>::is_compatible(instance,
+              transform, origin, 0/*field id*/, source_bounds))
+          future.report_incompatible_accessor("AffineAccessor", instance);
+        accessor = Realm::AffineAccessor<FT,1,T>(instance, transform, origin,
+                                        0/*field id*/, source_bounds, offset);
+        DomainT<1,T> is;
+        is.bounds.lo[0] = 0;
+        is.bounds.hi[0] = 0;
+        is.sparsity.id = 0;
+        AffineTransform<1,1,T> affine(transform, origin);
+        bounds = AffineBounds::Tester<1,T>(is, source_bounds, affine);
+      }
     public:
       __CUDA_HD__
       inline FT read(const Point<1,T>& p) const 
@@ -15508,7 +15895,9 @@ namespace Legion {
       // Construct a Region of size 1 in the zero copy memory for now
       Machine machine = Realm::Machine::get_machine();
       Machine::MemoryQuery finder(machine);
-      finder.has_affinity_to(Processor::get_executing_processor());
+      Runtime *runtime = Runtime::get_runtime();
+      finder.has_affinity_to(
+          runtime->get_executing_processor(Runtime::get_context()));
       finder.only_kind(Memory::Z_COPY_MEM);
       if (finder.count() == 0)
       {
@@ -15528,7 +15917,6 @@ namespace Legion {
         Realm::InstanceLayoutGeneric::choose_instance_layout(bounds, 
             constraints, dim_order);
       layout->alignment_reqd = alignment;
-      Runtime *runtime = Runtime::get_runtime();
       instance = runtime->create_task_local_instance(memory, layout);
 #ifdef DEBUG_LEGION
 #ifndef NDEBUG
@@ -15594,18 +15982,11 @@ namespace Legion {
 
     //--------------------------------------------------------------------------
     template<typename T>
-    inline void DeferredValue<T>::finalize(Runtime *runtime, Context ctx) const
+    inline void DeferredValue<T>::finalize(Context ctx) const
     //--------------------------------------------------------------------------
     {
-#if 0
-      Runtime::legion_task_postamble(runtime, ctx,
-                    accessor.ptr(Point<1,coord_t>(0)), sizeof(T),
-                    true/*owner*/, instance, instance.get_location().kind());
-#else
-      Runtime::legion_task_postamble(runtime, ctx,
-                    accessor.ptr(Point<1,coord_t>(0)), sizeof(T),
-                    false/*owner*/, instance);
-#endif
+      Runtime::legion_task_postamble(ctx, accessor.ptr(Point<1,coord_t>(0)),
+                                     sizeof(T), true/*owner*/, instance);
     }
 
     //--------------------------------------------------------------------------
@@ -15712,45 +16093,45 @@ namespace Legion {
       inline DeferredBuffer(Memory::Kind kind, 
                             const Domain &bounds,
                             const FT *initial_value = NULL,
-                            size_t alignment = 16,
+                            size_t alignment = std::alignment_of<FT>(),
                             bool fortran_order_dims = false);
       inline DeferredBuffer(const Rect<N,T> &bounds, 
                             Memory::Kind kind,
                             const FT *initial_value = NULL,
-                            size_t alignment = 16,
+                            size_t alignment = std::alignment_of<FT>(),
                             bool fortran_order_dims = false);
       // Explicit memory
       inline DeferredBuffer(Memory memory, 
                             const Domain &bounds,
                             const FT *initial_value = NULL,
-                            size_t alignment = 16,
+                            size_t alignment = std::alignment_of<FT>(),
                             bool fortran_order_dims = false);
       inline DeferredBuffer(const Rect<N,T> &bounds, 
                             Memory memory,
                             const FT *initial_value = NULL,
-                            size_t alignment = 16,
+                            size_t alignment = std::alignment_of<FT>(),
                             bool fortran_order_dims = false);
     public: // Explicit ordering
       inline DeferredBuffer(Memory::Kind kind,
                             const Domain &bounds,
                             std::array<DimensionKind,N> ordering,
                             const FT *initial_value = NULL,
-                            size_t alignment = 16);
+                            size_t alignment = std::alignment_of<FT>());
       inline DeferredBuffer(const Rect<N,T> &bounds,
                             Memory::Kind kind,
                             std::array<DimensionKind,N> ordering,
                             const FT *initial_value = NULL,
-                            size_t alignment = 16);
+                            size_t alignment = std::alignment_of<FT>());
       inline DeferredBuffer(Memory memory,
                             const Domain &bounds,
                             std::array<DimensionKind,N> ordering,
                             const FT *initial_value = NULL,
-                            size_t alignment = 16);
+                            size_t alignment = std::alignment_of<FT>());
       inline DeferredBuffer(const Rect<N,T> &bounds,
                             Memory memory,
                             std::array<DimensionKind,N> ordering,
                             const FT *initial_value = NULL,
-                            size_t alignment = 16);
+                            size_t alignment = std::alignment_of<FT>());
     protected:
       Memory get_memory_from_kind(Memory::Kind kind);
       void initialize_layout(size_t alignment, bool fortran_order_dims);
@@ -15770,7 +16151,11 @@ namespace Legion {
       inline FT* ptr(const Rect<N,T> &r, size_t strides[N]) const;
       __CUDA_HD__
       inline FT& operator[](const Point<N,T> &p) const;
+    public:
+      void destroy();
+      Realm::RegionInstance get_instance() const;
     protected:
+      friend class OutputRegion;
       Realm::RegionInstance instance;
       Realm::AffineAccessor<FT,N,T> accessor;
       std::array<DimensionKind,N> ordering;
@@ -15812,7 +16197,7 @@ namespace Legion {
 #endif
            >::DeferredBuffer(Memory::Kind kind, const Domain &space,
                              const FT *initial_value/* = NULL*/,
-                             size_t alignment/* = 16*/,
+                             size_t alignment/* = alignof(FT)*/,
                              bool fortran_order_dims/* = false*/)
     //--------------------------------------------------------------------------
     {
@@ -15840,7 +16225,7 @@ namespace Legion {
 #endif
            >::DeferredBuffer(const Rect<N,T> &rect, Memory::Kind kind,
                              const FT *initial_value /*= NULL*/,
-                             size_t alignment/* = 16*/,
+                             size_t alignment/* = alignof(FT)*/,
                              bool fortran_order_dims /*= false*/)
     //--------------------------------------------------------------------------
     {
@@ -15863,7 +16248,7 @@ namespace Legion {
 #endif
            >::DeferredBuffer(Memory memory, const Domain &space,
                              const FT *initial_value/* = NULL*/,
-                             size_t alignment/* = 16*/,
+                             size_t alignment/* = alignof(FT)*/,
                              bool fortran_order_dims/* = false*/)
     //--------------------------------------------------------------------------
     {
@@ -15890,7 +16275,7 @@ namespace Legion {
 #endif
            >::DeferredBuffer(const Rect<N,T> &rect, Memory memory,
                              const FT *initial_value /*= NULL*/,
-                             size_t alignment/* = 16*/,
+                             size_t alignment/* = alignof(FT)*/,
                              bool fortran_order_dims /*= false*/)
     //--------------------------------------------------------------------------
     {
@@ -15913,7 +16298,7 @@ namespace Legion {
            >::DeferredBuffer(Memory::Kind kind, const Domain &space,
                              std::array<DimensionKind,N> _ordering,
                              const FT *initial_value/* = NULL*/,
-                             size_t _alignment/* = 16*/)
+                             size_t _alignment/* = alignof(FT)*/)
       : ordering(_ordering), alignment(_alignment)
     //--------------------------------------------------------------------------
     {
@@ -15941,7 +16326,7 @@ namespace Legion {
            >::DeferredBuffer(const Rect<N,T> &rect, Memory::Kind kind,
                              std::array<DimensionKind,N> _ordering,
                              const FT *initial_value /*= NULL*/,
-                             size_t _alignment/* = 16*/)
+                             size_t _alignment/* = alignof(FT)*/)
       : ordering(_ordering), alignment(_alignment)
     //--------------------------------------------------------------------------
     {
@@ -15964,7 +16349,7 @@ namespace Legion {
            >::DeferredBuffer(Memory memory, const Domain &space,
                              std::array<DimensionKind,N> _ordering,
                              const FT *initial_value/* = NULL*/,
-                             size_t _alignment/* = 16*/)
+                             size_t _alignment/* = alignof(FT)*/)
       : ordering(_ordering), alignment(_alignment)
     //--------------------------------------------------------------------------
     {
@@ -15991,7 +16376,7 @@ namespace Legion {
            >::DeferredBuffer(const Rect<N,T> &rect, Memory memory,
                              std::array<DimensionKind,N> _ordering,
                              const FT *initial_value /*= NULL*/,
-                             size_t _alignment/* = 16*/)
+                             size_t _alignment/* = alignof(FT)*/)
       : ordering(_ordering), alignment(_alignment)
     //--------------------------------------------------------------------------
     {
@@ -16016,12 +16401,14 @@ namespace Legion {
       // Construct an instance of the right size in the corresponding memory
       Machine machine = Realm::Machine::get_machine();
       Machine::MemoryQuery finder(machine);
-      finder.best_affinity_to(Processor::get_executing_processor());
+      const Processor executing_processor =
+        Runtime::get_runtime()->get_executing_processor(Runtime::get_context());
+      finder.best_affinity_to(executing_processor);
       finder.only_kind(kind);
       if (finder.count() == 0)
       {
         finder = Machine::MemoryQuery(machine);
-        finder.has_affinity_to(Processor::get_executing_processor());
+        finder.has_affinity_to(executing_processor);
         finder.only_kind(kind);
       }
       if (finder.count() == 0)
@@ -16243,6 +16630,44 @@ namespace Legion {
     //--------------------------------------------------------------------------
     {
       return accessor[p];
+    }
+
+    //--------------------------------------------------------------------------
+    template<typename FT, int N, typename T
+#ifndef LEGION_BOUNDS_CHECKS
+              , bool CB
+#endif
+              >
+    void DeferredBuffer<FT,N,T,
+#ifdef LEGION_BOUNDS_CHECKS
+              false
+#else
+              CB
+#endif
+              >::destroy()
+    //--------------------------------------------------------------------------
+    {
+      Runtime *runtime = Runtime::get_runtime();
+      runtime->destroy_task_local_instance(instance);
+      instance = Realm::RegionInstance::NO_INST;
+    }
+
+    //--------------------------------------------------------------------------
+    template<typename FT, int N, typename T
+#ifndef LEGION_BOUNDS_CHECKS
+              , bool CB
+#endif
+              >
+    Realm::RegionInstance DeferredBuffer<FT,N,T,
+#ifdef LEGION_BOUNDS_CHECKS
+              false
+#else
+              CB
+#endif
+              >::get_instance() const
+    //--------------------------------------------------------------------------
+    {
+      return instance;
     }
 
     //--------------------------------------------------------------------------
@@ -16481,12 +16906,14 @@ namespace Legion {
       // Construct an instance of the right size in the corresponding memory
       Machine machine = Realm::Machine::get_machine();
       Machine::MemoryQuery finder(machine);
-      finder.best_affinity_to(Processor::get_executing_processor());
+      const Processor executing_processor =
+        Runtime::get_runtime()->get_executing_processor(Runtime::get_context());
+      finder.best_affinity_to(executing_processor);
       finder.only_kind(kind);
       if (finder.count() == 0)
       {
         finder = Machine::MemoryQuery(machine);
-        finder.has_affinity_to(Processor::get_executing_processor());
+        finder.has_affinity_to(executing_processor);
         finder.only_kind(kind);
       }
       if (finder.count() == 0)
@@ -16744,6 +17171,44 @@ namespace Legion {
     }
 
     //--------------------------------------------------------------------------
+    template<typename FT, int N, typename T
+#ifdef LEGION_BOUNDS_CHECKS
+              , bool CB
+#endif
+              >
+    void DeferredBuffer<FT,N,T,
+#ifdef LEGION_BOUNDS_CHECKS
+              CB
+#else
+              true
+#endif
+              >::destroy()
+    //--------------------------------------------------------------------------
+    {
+      Runtime *runtime = Runtime::get_runtime();
+      runtime->destroy_task_local_instance(instance);
+      instance = Realm::RegionInstance::NO_INST;
+    }
+
+    //--------------------------------------------------------------------------
+    template<typename FT, int N, typename T
+#ifdef LEGION_BOUNDS_CHECKS
+              , bool CB
+#endif
+              >
+    Realm::RegionInstance DeferredBuffer<FT,N,T,
+#ifdef LEGION_BOUNDS_CHECKS
+              CB
+#else
+              true
+#endif
+              >::get_instance() const
+    //--------------------------------------------------------------------------
+    {
+      return instance;
+    }
+
+    //--------------------------------------------------------------------------
     template<typename T>
     UntypedDeferredBuffer<T>::UntypedDeferredBuffer(void)
       : instance(Realm::RegionInstance::NO_INST), field_size(0), dims(0)
@@ -16766,7 +17231,9 @@ namespace Legion {
       assert(dims <= LEGION_MAX_DIM);
       Machine machine = Realm::Machine::get_machine();
       Machine::MemoryQuery finder(machine);
-      const Processor exec_proc = Processor::get_executing_processor();
+      Runtime *runtime = Runtime::get_runtime();
+      const Processor exec_proc = 
+        runtime->get_executing_processor(Runtime::get_context());
       finder.best_affinity_to(exec_proc);
       finder.only_kind(memkind);
       if (finder.count() == 0)
@@ -16775,7 +17242,6 @@ namespace Legion {
         finder.has_affinity_to(exec_proc);
         finder.only_kind(memkind);
       }
-      Runtime *runtime = Runtime::get_runtime();
       if (finder.count() == 0)
       {
         const char *mem_names[] = {
@@ -16874,7 +17340,9 @@ namespace Legion {
       assert(dims <= LEGION_MAX_DIM);
       Machine machine = Realm::Machine::get_machine();
       Machine::MemoryQuery finder(machine);
-      const Processor exec_proc = Processor::get_executing_processor();
+      Runtime *runtime = Runtime::get_runtime();
+      const Processor exec_proc =
+        runtime->get_executing_processor(Runtime::get_context());
       finder.best_affinity_to(exec_proc);
       finder.only_kind(memkind);
       if (finder.count() == 0)
@@ -16883,7 +17351,6 @@ namespace Legion {
         finder.has_affinity_to(exec_proc);
         finder.only_kind(memkind);
       }
-      Runtime *runtime = Runtime::get_runtime();
       if (finder.count() == 0)
       {
         const char *mem_names[] = {
@@ -17145,7 +17612,6 @@ namespace Legion {
       return result;
     }
 
-#if 0
     //--------------------------------------------------------------------------
     template<typename T>
     inline void UntypedDeferredBuffer<T>::destroy(void)
@@ -17157,7 +17623,72 @@ namespace Legion {
       field_size = 0;
       dims = 0;
     }
+
+    //--------------------------------------------------------------------------
+    template<typename T, int DIM, typename COORD_T, bool CHECK_BOUNDS>
+    DeferredBuffer<T,DIM,COORD_T,CHECK_BOUNDS> OutputRegion::create_buffer(
+                                              const Point<DIM,COORD_T> &extents,
+                                              FieldID field_id,
+                                              const T *initial_value /*= NULL*/,
+                                              bool return_buffer /*= false*/)
+    //--------------------------------------------------------------------------
+    {
+#ifdef DEBUG_LEGION
+      check_type_tag(
+        Internal::NT_TemplateHelper::encode_tag<DIM, COORD_T>());
 #endif
+
+      Rect<DIM> bounds(Point<DIM>::ZEROES(), extents - Point<DIM>::ONES());
+
+      std::vector<DimensionKind> ordering;
+      size_t alignment;
+      get_layout(field_id, ordering, alignment);
+      std::array<DimensionKind, DIM> ord;
+#ifdef DEBUG_LEGION
+      assert(ordering.size() == DIM);
+#endif
+      std::copy(ordering.begin(), ordering.end(), ord.begin());
+
+      DeferredBuffer<T,DIM,COORD_T,CHECK_BOUNDS> buffer(
+        bounds, target_memory(), ord, initial_value, alignment);
+      if (return_buffer)
+      {
+#ifdef DEBUG_LEGION
+        return_data(extents, field_id, buffer);
+#else
+        // In release mode, we don't check the constraints, as we already know
+        // that the instance satisfies them.
+        return_data(extents, field_id, buffer.instance, NULL, false);
+#endif
+      }
+      return buffer;
+    }
+
+    //--------------------------------------------------------------------------
+    template<typename T, int DIM, typename COORD_T, bool CHECK_BOUNDS>
+    void OutputRegion::return_data(
+                             const Point<DIM,COORD_T> &extents,
+                             FieldID field_id,
+                             DeferredBuffer<T,DIM,COORD_T,CHECK_BOUNDS> &buffer)
+    //--------------------------------------------------------------------------
+    {
+#ifdef DEBUG_LEGION
+      check_type_tag(
+        Internal::NT_TemplateHelper::encode_tag<DIM, COORD_T>());
+      check_field_size(field_id, sizeof(T));
+#endif
+      // Populate the layout constraints for the returned buffer
+      // for the constraint checks.
+      LayoutConstraintSet constraints;
+      std::vector<DimensionKind> ordering(DIM + 1);
+      for (int32_t i = 0; i < DIM; ++i) ordering[i] = buffer.ordering[i];
+      ordering[DIM] = LEGION_DIM_F;
+      constraints.ordering_constraint = OrderingConstraint(ordering, false);
+      constraints.alignment_constraints.push_back(
+        AlignmentConstraint(field_id, LEGION_EQ_EK, buffer.alignment));
+
+      return_data(extents, field_id, buffer.instance, &constraints, true);
+    }
 
     //--------------------------------------------------------------------------
     inline bool IndexSpace::operator==(const IndexSpace &rhs) const
@@ -17202,6 +17733,13 @@ namespace Legion {
       if (id < rhs.id)
         return false;
       return (tid > rhs.tid);
+    }
+
+    //--------------------------------------------------------------------------
+    inline size_t IndexSpace::hash(void) const
+    //--------------------------------------------------------------------------
+    {
+      return std::hash<unsigned>{}(id); // uniquely identifies this index space
     }
 
     //--------------------------------------------------------------------------
@@ -17297,6 +17835,14 @@ namespace Legion {
     }
 
     //--------------------------------------------------------------------------
+    inline size_t IndexPartition::hash(void) const
+    //--------------------------------------------------------------------------
+    {
+      // uniquely identifies this index partition
+      return std::hash<unsigned>{}(id);
+    }
+
+    //--------------------------------------------------------------------------
     inline int IndexPartition::get_dim(void) const
     //--------------------------------------------------------------------------
     {
@@ -17370,6 +17916,13 @@ namespace Legion {
     //--------------------------------------------------------------------------
     {
       return (id > rhs.id);
+    }
+
+    //--------------------------------------------------------------------------
+    inline size_t FieldSpace::hash(void) const
+    //--------------------------------------------------------------------------
+    {
+      return std::hash<unsigned>{}(id); // uniquely identifies this field space
     }
 
     //--------------------------------------------------------------------------
@@ -17550,7 +18103,7 @@ namespace Legion {
                                            bool replace/*= false*/)
     //--------------------------------------------------------------------------
     {
-      LEGION_STATIC_ASSERT(DIM <= DomainPoint::MAX_POINT_DIM,
+      static_assert(DIM <= DomainPoint::MAX_POINT_DIM,
           "ArgumentMap DIM is larger than LEGION_MAX_DIM");  
       DomainPoint dp;
       dp.dim = DIM;
@@ -17564,7 +18117,7 @@ namespace Legion {
     inline bool ArgumentMap::remove_point(const PT point[DIM])
     //--------------------------------------------------------------------------
     {
-      LEGION_STATIC_ASSERT(DIM <= DomainPoint::MAX_POINT_DIM,
+      static_assert(DIM <= DomainPoint::MAX_POINT_DIM,
           "ArgumentMap DIM is larger than LEGION_MAX_DIM");
       DomainPoint dp;
       dp.dim = DIM;
@@ -17722,6 +18275,14 @@ namespace Legion {
     {
       region_requirements.push_back(req);
       return region_requirements.back();
+    }
+
+    //--------------------------------------------------------------------------
+    template <int DIM, typename COORD_T>
+    void OutputRequirement::set_type_tag()
+    //--------------------------------------------------------------------------
+    {
+      type_tag = Internal::NT_TemplateHelper::encode_tag<DIM,COORD_T>();
     }
 
     //--------------------------------------------------------------------------
@@ -18370,18 +18931,7 @@ namespace Legion {
       arrive_barriers.push_back(handshake.get_legion_arrive_phase_barrier());
     }
 
-#ifdef __GNUC__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#endif
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-#endif
-#ifdef __PGIC__
-#pragma warning (push)
-#pragma diag_suppress 1445
-#endif
+    LEGION_DISABLE_DEPRECATED_WARNINGS
 
     //--------------------------------------------------------------------------
     inline void AttachLauncher::initialize_constraints(bool column_major, 
@@ -18413,6 +18963,13 @@ namespace Legion {
              it != alignments->end(); it++)
           constraints.add_constraint(
               AlignmentConstraint(it->first, LEGION_GE_EK, it->second));
+    }
+
+    //--------------------------------------------------------------------------
+    inline void DiscardLauncher::add_field(FieldID f)
+    //--------------------------------------------------------------------------
+    {
+      fields.insert(f);
     }
 
     //--------------------------------------------------------------------------
@@ -18733,15 +19290,7 @@ namespace Legion {
       pointers.emplace_back(PointerConstraint(mem, uintptr_t(base)));
     }
 
-#ifdef __GNUC__
-#pragma GCC diagnostic pop
-#endif
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif
-#ifdef __PGIC__
-#pragma warning (pop)
-#endif
+    LEGION_REENABLE_DEPRECATED_WARNINGS
 
     //--------------------------------------------------------------------------
     inline void PredicateLauncher::add_predicate(const Predicate &pred)
@@ -18947,6 +19496,20 @@ namespace Legion {
     }
 
     //--------------------------------------------------------------------------
+    inline void TaskVariantRegistrar::set_concurrent(bool is_concur/*= true*/)
+    //--------------------------------------------------------------------------
+    {
+      concurrent_variant = is_concur;
+    }
+
+    //--------------------------------------------------------------------------
+    inline void TaskVariantRegistrar::set_concurrent_barrier(bool bar/*= true*/)
+    //--------------------------------------------------------------------------
+    {
+      concurrent_barrier = bar;
+    }
+
+    //--------------------------------------------------------------------------
     inline void TaskVariantRegistrar::add_generator_task(TaskID tid)
     //--------------------------------------------------------------------------
     {
@@ -18966,13 +19529,32 @@ namespace Legion {
     }
 
     //--------------------------------------------------------------------------
+    template<typename T, PrivilegeMode PM>
+    inline Span<T,PM> Future::get_span(Memory::Kind memory,
+                        bool silence_warnings, const char *warning_string) const
+    //--------------------------------------------------------------------------
+    {
+      // This has to be true for now
+      static_assert(PM == LEGION_READ_ONLY, 
+      "PrivilegeMode for Future:get_span must be 'LEGION_READ_ONLY' currently");
+      size_t size = 0;
+      const void *ptr = get_buffer(memory, &size, false/*check size*/, 
+                                   silence_warnings, warning_string);
+      assert((size % sizeof(T)) == 0);
+      return Span<T,PM>(ptr, size / sizeof(T));
+    }
+
+    //--------------------------------------------------------------------------
     template<typename T>
     inline const T& Future::get_reference(bool silence_warnings,
                                           const char *warning_string) const
     //--------------------------------------------------------------------------
     {
-      return *((const T*)get_untyped_result(silence_warnings, warning_string,
-                                            true/*check size*/, sizeof(T)));
+      size_t size = sizeof(T);
+      const void *ptr = get_buffer(Memory::SYSTEM_MEM, &size, 
+          true/*check size*/, silence_warnings, warning_string);
+      assert(size == sizeof(T));
+      return *static_cast<const T*>(ptr);
     }
 
     //--------------------------------------------------------------------------
@@ -18980,7 +19562,9 @@ namespace Legion {
                                                const char *warning_string) const
     //--------------------------------------------------------------------------
     {
-      return get_untyped_result(silence_warnings, warning_string, false);
+      size_t size = 0;
+      return get_buffer(Memory::SYSTEM_MEM, &size, false/*check size*/,
+                        silence_warnings, warning_string);
     }
 
     //--------------------------------------------------------------------------
@@ -19010,17 +19594,15 @@ namespace Legion {
     /*static*/ inline Future Future::from_value(Runtime *rt, const T &value)
     //--------------------------------------------------------------------------
     {
-      return LegionSerialization::from_value(rt, &value);
-    }
+      return LegionSerialization::from_value(&value);
+    } 
 
     //--------------------------------------------------------------------------
-    /*static*/ inline Future Future::from_untyped_pointer(Runtime *rt,
-							  const void *buffer,
-							  size_t bytes)
+    template<typename T>
+    /*static*/ inline Future Future::from_value(const T &value)
     //--------------------------------------------------------------------------
     {
-      return LegionSerialization::from_value_helper(rt, buffer, bytes,
-						    false /*!owned*/);
+      return LegionSerialization::from_value(&value);
     }
 
     //--------------------------------------------------------------------------
@@ -19038,7 +19620,7 @@ namespace Legion {
     inline RT FutureMap::get_result(const PT point[DIM]) const
     //--------------------------------------------------------------------------
     {
-      LEGION_STATIC_ASSERT(DIM <= DomainPoint::MAX_POINT_DIM,
+      static_assert(DIM <= DomainPoint::MAX_POINT_DIM,
           "FutureMap DIM is larger than LEGION_MAX_DIM");
       DomainPoint dp;
       dp.dim = DIM;
@@ -19053,7 +19635,7 @@ namespace Legion {
     inline Future FutureMap::get_future(const PT point[DIM]) const
     //--------------------------------------------------------------------------
     {
-      LEGION_STATIC_ASSERT(DIM <= DomainPoint::MAX_POINT_DIM,
+      static_assert(DIM <= DomainPoint::MAX_POINT_DIM,
           "FutureMap DIM is larger than LEGION_MAX_DIM");
       DomainPoint dp;
       dp.dim = DIM;
@@ -19067,7 +19649,7 @@ namespace Legion {
     inline void FutureMap::get_void_result(const PT point[DIM]) const
     //--------------------------------------------------------------------------
     {
-      LEGION_STATIC_ASSERT(DIM <= DomainPoint::MAX_POINT_DIM,
+      static_assert(DIM <= DomainPoint::MAX_POINT_DIM,
           "FutureMap DIM is larger than LEGION_MAX_DIM");
       DomainPoint dp;
       dp.dim = DIM;
@@ -19507,85 +20089,6 @@ namespace Legion {
       return result;
     }
 
-#ifdef __GNUC__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#endif
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-#endif
-    //--------------------------------------------------------------------------
-    inline bool IndexIterator::has_next(void) const
-    //--------------------------------------------------------------------------
-    {
-      return is_iterator.valid;
-    }
-    
-    //--------------------------------------------------------------------------
-    inline ptr_t IndexIterator::next(void)
-    //--------------------------------------------------------------------------
-    {
-      if (!rect_iterator.valid)
-        rect_iterator = 
-          Realm::PointInRectIterator<1,coord_t>(is_iterator.rect);
-      const ptr_t result = rect_iterator.p[0];
-      rect_iterator.step();
-      if (!rect_iterator.valid)
-        is_iterator.step();
-      return result;
-    }
-
-    //--------------------------------------------------------------------------
-    inline ptr_t IndexIterator::next_span(size_t& act_count, size_t req_count)
-    //--------------------------------------------------------------------------
-    {
-      if (rect_iterator.valid)
-      {
-        // If we have a rect iterator we just go to the end of the rectangle
-        const ptr_t result = rect_iterator.p[0];
-        const ptr_t last = is_iterator.rect.hi[0];
-        act_count = (last.value - result.value) + 1;
-        if (act_count <= req_count)
-        {
-          rect_iterator.valid = false;
-          is_iterator.step();
-        }
-        else
-	{
-          rect_iterator.p[0] = result.value + req_count;
-	  act_count = req_count;
-	}
-        return result;
-      }
-      else
-      {
-        // Consume the whole rectangle
-        const ptr_t result = is_iterator.rect.lo[0];
-        const ptr_t last = is_iterator.rect.hi[0];
-        act_count = (last.value - result.value) + 1;
-        if (act_count > req_count)
-        {
-          rect_iterator = 
-            Realm::PointInRectIterator<1,coord_t>(is_iterator.rect);
-          rect_iterator.p[0] = result.value + req_count;
-	  act_count = req_count;
-        }
-        else
-        {
-          rect_iterator.valid = false;
-          is_iterator.step();
-        }
-        return result;
-      }
-    }
-#ifdef __GNUC__
-#pragma GCC diagnostic pop
-#endif
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif
-
     //--------------------------------------------------------------------------
     template<int DIM, typename T>
     IndexSpaceT<DIM,T> Runtime::create_index_space(Context ctx, 
@@ -19682,32 +20185,6 @@ namespace Legion {
     {
       return IndexSpaceT<DIM,T>(subtract_index_spaces(ctx, 
                               IndexSpace(left), IndexSpace(right), provenance));
-    }
-
-    //--------------------------------------------------------------------------
-    template<typename T>
-    IndexPartition Runtime::create_index_partition(Context ctx,
-      IndexSpace parent, const T& mapping, Color part_color /*= AUTO_GENERATE*/)
-    //--------------------------------------------------------------------------
-    {
-      LegionRuntime::Arrays::Rect<T::IDIM> parent_rect = 
-        get_index_space_domain(ctx, parent).get_rect<T::IDIM>();
-      LegionRuntime::Arrays::Rect<T::ODIM> color_space = 
-        mapping.image_convex(parent_rect);
-      DomainPointColoring c;
-      for (typename T::PointInOutputRectIterator pir(color_space); 
-          pir; pir++) 
-      {
-        LegionRuntime::Arrays::Rect<T::IDIM> preimage = mapping.preimage(pir.p);
-#ifdef DEBUG_LEGION
-        assert(mapping.preimage_is_dense(pir.p));
-#endif
-        c[DomainPoint::from_point<T::IDIM>(pir.p)] =
-          Domain::from_rect<T::IDIM>(preimage.intersection(parent_rect));
-      }
-      return create_index_partition(ctx, parent, 
-              Domain::from_rect<T::ODIM>(color_space), c, 
-              LEGION_DISJOINT_KIND, part_color);
     }
 
     //--------------------------------------------------------------------------
@@ -20033,20 +20510,40 @@ namespace Legion {
                                     IndexSpaceT<COLOR_DIM,COLOR_T> color_space,
                                     bool perform_intersections,
                                     PartitionKind part_kind, Color color,
-                                    const char *provenance)
+                                    const char *provenance, bool collective)
     //--------------------------------------------------------------------------
     {
-      // Make realm index spaces for each of the points and then we can call
-      // the base domain version of this method which takes ownership of the
-      // sparsity maps that have been created
-      std::map<DomainPoint,Domain> domains;
-      for (typename std::map<Point<COLOR_DIM,COLOR_T>,
-            std::vector<Rect<DIM,T> > >::const_iterator it =
-              rectangles.begin(); it != rectangles.end(); it++)
-        domains[DomainPoint(it->first)] = DomainT<DIM,T>(it->second); 
-      return IndexPartitionT<DIM,T>(create_partition_by_domain(ctx,
-            IndexSpace(parent), domains, IndexSpace(color_space),
-            perform_intersections, part_kind, color, provenance));
+      if (collective)
+      {
+        std::map<DomainPoint,Future> futures;
+        for (typename std::map<Point<COLOR_DIM,COLOR_T>,
+              std::vector<Rect<DIM,T> > >::const_iterator it =
+                rectangles.begin(); it != rectangles.end(); it++)
+        {
+          const DomainT<DIM,T> domain(it->second);
+          futures[DomainPoint(it->first)] = Future::from_value(Domain(domain));
+        }
+        FutureMap fm = construct_future_map(ctx, IndexSpace(color_space),
+                              futures, true/*collective*/, 0/*shard id*/, 
+                              true/*implicit sharding*/, provenance);
+        return IndexPartitionT<DIM,T>(create_partition_by_domain(ctx,
+              IndexSpace(parent), fm, IndexSpace(color_space),
+              perform_intersections, part_kind, color, provenance));
+      }
+      else
+      {
+        // Make realm index spaces for each of the points and then we can call
+        // the base domain version of this method which takes ownership of the
+        // sparsity maps that have been created
+        std::map<DomainPoint,Domain> domains;
+        for (typename std::map<Point<COLOR_DIM,COLOR_T>,
+              std::vector<Rect<DIM,T> > >::const_iterator it =
+                rectangles.begin(); it != rectangles.end(); it++)
+          domains[DomainPoint(it->first)] = DomainT<DIM,T>(it->second); 
+        return IndexPartitionT<DIM,T>(create_partition_by_domain(ctx,
+              IndexSpace(parent), domains, IndexSpace(color_space),
+              perform_intersections, part_kind, color, provenance));
+      }
     }
 
     //--------------------------------------------------------------------------
@@ -20174,9 +20671,9 @@ namespace Legion {
       for (unsigned idx = 0; idx < handles.size(); idx++)
         untyped_handles[idx] = handles[idx];
       return IndexSpaceT<DIM,T>(create_index_space_union_internal(ctx, 
-            IndexPartition(parent), &color, 
+            IndexPartition(parent), &color, sizeof(color), 
             Internal::NT_TemplateHelper::encode_tag<COLOR_DIM,COLOR_T>(),
-            untyped_handles, provenance));
+            provenance, untyped_handles));
     }
 
     //--------------------------------------------------------------------------
@@ -20189,9 +20686,9 @@ namespace Legion {
     //--------------------------------------------------------------------------
     {
       return IndexSpaceT<DIM,T>(create_index_space_union_internal(ctx,
-          IndexPartition(parent), &color, 
+          IndexPartition(parent), &color, sizeof(color),
           Internal::NT_TemplateHelper::encode_tag<COLOR_DIM,COLOR_T>(),
-          IndexPartition(handle), provenance));
+          provenance, IndexPartition(handle)));
     }
 
     //--------------------------------------------------------------------------
@@ -20208,9 +20705,9 @@ namespace Legion {
       for (unsigned idx = 0; idx < handles.size(); idx++)
         untyped_handles[idx] = handles[idx];
       return IndexSpaceT<DIM,T>(create_index_space_intersection_internal(ctx,
-            IndexPartition(parent), &color,
+            IndexPartition(parent), &color, sizeof(color),
             Internal::NT_TemplateHelper::encode_tag<COLOR_DIM,COLOR_T>(), 
-            untyped_handles, provenance));
+            provenance, untyped_handles));
     }
 
     //--------------------------------------------------------------------------
@@ -20223,9 +20720,9 @@ namespace Legion {
     //--------------------------------------------------------------------------
     {
       return IndexSpaceT<DIM,T>(create_index_space_intersection_internal(ctx,
-          IndexPartition(parent), &color, 
+          IndexPartition(parent), &color, sizeof(color),
           Internal::NT_TemplateHelper::encode_tag<COLOR_DIM,COLOR_T>(),
-          IndexPartition(handle), provenance));
+          provenance, IndexPartition(handle)));
     }
 
     //--------------------------------------------------------------------------
@@ -20243,9 +20740,9 @@ namespace Legion {
       for (unsigned idx = 0; idx < handles.size(); idx++)
         untyped_handles[idx] = handles[idx];
       return IndexSpaceT<DIM,T>(create_index_space_difference_internal(ctx,
-            IndexPartition(parent), &color,
+            IndexPartition(parent), &color, sizeof(color),
             Internal::NT_TemplateHelper::encode_tag<COLOR_DIM,COLOR_T>(), 
-            IndexSpace(initial), untyped_handles, provenance));
+            provenance, IndexSpace(initial), untyped_handles));
     }
 
     //--------------------------------------------------------------------------
@@ -20317,16 +20814,6 @@ namespace Legion {
     {
       return IndexSpaceT<COLOR_DIM,COLOR_T>(
                               get_index_partition_color_space_name(p));
-    }
-
-    //--------------------------------------------------------------------------
-    template<unsigned DIM>
-    IndexSpace Runtime::get_index_subspace(Context ctx, 
-                IndexPartition p, LegionRuntime::Arrays::Point<DIM> color_point)
-    //--------------------------------------------------------------------------
-    {
-      DomainPoint dom_point = DomainPoint::from_point<DIM>(color_point);
-      return get_index_subspace(ctx, p, dom_point);
     }
 
     //--------------------------------------------------------------------------
@@ -20678,7 +21165,7 @@ namespace Legion {
 				       const std::vector<PhysicalRegion> *& ptr,
 				       Context& ctx,
 				       Runtime *& runtime);
-      static void legion_task_postamble(Runtime *runtime, Context ctx,
+      static void legion_task_postamble(Context ctx,
 					const void *retvalptr = NULL,
 					size_t retvalsize = 0);
     };
@@ -20695,14 +21182,10 @@ namespace Legion {
     //--------------------------------------------------------------------------
     {
       // Assert that we are returning Futures or FutureMaps
-      LEGION_STATIC_ASSERT((LegionTypeInequality<T,Future>::value),
+      static_assert(!std::is_same<T,Future>::value,
           "Future types are not permitted as return types for Legion tasks");
-      LEGION_STATIC_ASSERT((LegionTypeInequality<T,FutureMap>::value),
+      static_assert(!std::is_same<T,FutureMap>::value,
           "FutureMap types are not permitted as return types for Legion tasks");
-      // Assert that the return type size is within the required size
-      LEGION_STATIC_ASSERT(sizeof(T) <= LEGION_MAX_RETURN_SIZE,
-          "Task return values must be less than or equal to "
-          "LEGION_MAX_RETURN_SIZE bytes");
       const Task *task; Context ctx; Runtime *rt;
       const std::vector<PhysicalRegion> *regions;
       Runtime::legion_task_preamble(args, arglen, p, task, regions, ctx, rt);
@@ -20711,7 +21194,7 @@ namespace Legion {
       T return_value = (*TASK_PTR)(task, *regions, ctx, rt);
 
       // Send the return value back
-      LegionSerialization::end_task<T>(rt, ctx, &return_value);
+      LegionSerialization::end_task<T>(ctx, &return_value);
     }
 
     //--------------------------------------------------------------------------
@@ -20731,7 +21214,7 @@ namespace Legion {
 
       (*TASK_PTR)(task, *regions, ctx, rt);
 
-      Runtime::legion_task_postamble(rt, ctx);
+      Runtime::legion_task_postamble(ctx);
     }
 
     //--------------------------------------------------------------------------
@@ -20746,16 +21229,10 @@ namespace Legion {
     //--------------------------------------------------------------------------
     {
       // Assert that we are returning Futures or FutureMaps
-      LEGION_STATIC_ASSERT((LegionTypeInequality<T,Future>::value),
+      static_assert(!std::is_same<T,Future>::value,
           "Future types are not permitted as return types for Legion tasks");
-      LEGION_STATIC_ASSERT((LegionTypeInequality<T,FutureMap>::value),
+      static_assert(!std::is_same<T,FutureMap>::value,
           "FutureMap types are not permitted as return types for Legion tasks");
-      // Assert that the return type size is within the required size
-      LEGION_STATIC_ASSERT((sizeof(T) <= LEGION_MAX_RETURN_SIZE) ||
-         (std::is_class<T>::value && 
-          LegionSerialization::IsSerdezType<T>::value),
-         "Task return values must be less than or equal to "
-          "LEGION_MAX_RETURN_SIZE bytes");
 
       const Task *task; Context ctx; Runtime *rt;
       const std::vector<PhysicalRegion> *regions;
@@ -20769,7 +21246,7 @@ namespace Legion {
       T return_value = (*TASK_PTR)(task, *regions, ctx, rt, *user_data); 
 
       // Send the return value back
-      LegionSerialization::end_task<T>(rt, ctx, &return_value);
+      LegionSerialization::end_task<T>(ctx, &return_value);
     }
 
     //--------------------------------------------------------------------------
@@ -20794,7 +21271,7 @@ namespace Legion {
       (*TASK_PTR)(task, *regions, ctx, rt, *user_data); 
 
       // Send an empty return value back
-      Runtime::legion_task_postamble(rt, ctx);
+      Runtime::legion_task_postamble(ctx);
     }
 
     //--------------------------------------------------------------------------
@@ -20814,12 +21291,12 @@ namespace Legion {
 
     //--------------------------------------------------------------------------
     inline void LegionTaskWrapper::legion_task_postamble(
-                  Runtime *runtime, Context ctx,
+                  Context ctx,
 		  const void *retvalptr /*= NULL*/,
 		  size_t retvalsize /*= 0*/)
     //--------------------------------------------------------------------------
     {
-      Runtime::legion_task_postamble(runtime, ctx, retvalptr, retvalsize);
+      Runtime::legion_task_postamble(ctx, retvalptr, retvalsize);
     }
 
     //--------------------------------------------------------------------------
@@ -21116,6 +21593,70 @@ namespace Legion {
     }
 
     //--------------------------------------------------------------------------
+    inline CoherenceProperty operator~(CoherenceProperty p)
+    //--------------------------------------------------------------------------
+    {
+      return static_cast<CoherenceProperty>(~unsigned(p));
+    }
+
+    //--------------------------------------------------------------------------
+    inline CoherenceProperty operator|(CoherenceProperty left, 
+                                       CoherenceProperty right)
+    //--------------------------------------------------------------------------
+    {
+      return static_cast<CoherenceProperty>(unsigned(left) | unsigned(right));
+    }
+
+    //--------------------------------------------------------------------------
+    inline CoherenceProperty operator&(CoherenceProperty left,
+                                       CoherenceProperty right)
+    //--------------------------------------------------------------------------
+    {
+      return static_cast<CoherenceProperty>(unsigned(left) & unsigned(right));
+    }
+
+    //--------------------------------------------------------------------------
+    inline CoherenceProperty operator^(CoherenceProperty left,
+                                       CoherenceProperty right)
+    //--------------------------------------------------------------------------
+    {
+      return static_cast<CoherenceProperty>(unsigned(left) ^ unsigned(right));
+    }
+
+    //--------------------------------------------------------------------------
+    inline CoherenceProperty operator|=(CoherenceProperty &left,
+                                        CoherenceProperty right)
+    //--------------------------------------------------------------------------
+    {
+      unsigned l = static_cast<unsigned>(left);
+      unsigned r = static_cast<unsigned>(right);
+      l |= r;
+      return left = static_cast<CoherenceProperty>(l);
+    }
+
+    //--------------------------------------------------------------------------
+    inline CoherenceProperty operator&=(CoherenceProperty &left,
+                                        CoherenceProperty right)
+    //--------------------------------------------------------------------------
+    {
+      unsigned l = static_cast<unsigned>(left);
+      unsigned r = static_cast<unsigned>(right);
+      l &= r;
+      return left = static_cast<CoherenceProperty>(l);
+    }
+
+    //--------------------------------------------------------------------------
+    inline CoherenceProperty operator^=(CoherenceProperty &left,
+                                        CoherenceProperty right)
+    //--------------------------------------------------------------------------
+    {
+      unsigned l = static_cast<unsigned>(left);
+      unsigned r = static_cast<unsigned>(right);
+      l ^= r;
+      return left = static_cast<CoherenceProperty>(l);
+    }
+
+    //--------------------------------------------------------------------------
     inline AllocateMode operator~(AllocateMode a)
     //--------------------------------------------------------------------------
     {
@@ -21264,307 +21805,24 @@ namespace Legion {
 
 }; // namespace Legion
 
-// This is for backwards compatibility with the old namespace scheme
-namespace LegionRuntime {
-  namespace HighLevel {
-    using namespace LegionRuntime::Arrays;
+namespace std {
 
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::IndexSpace IndexSpace;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::IndexPartition IndexPartition;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::FieldSpace FieldSpace;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::LogicalRegion LogicalRegion;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::LogicalPartition LogicalPartition;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::FieldAllocator FieldAllocator;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::UntypedBuffer TaskArgument;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::ArgumentMap ArgumentMap;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::Predicate Predicate;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::Lock Lock;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::LockRequest LockRequest;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::Grant Grant;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::PhaseBarrier PhaseBarrier;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::DynamicCollective DynamicCollective;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::RegionRequirement RegionRequirement;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::IndexSpaceRequirement IndexSpaceRequirement;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::FieldSpaceRequirement FieldSpaceRequirement;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::Future Future;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::FutureMap FutureMap;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::TaskLauncher TaskLauncher;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::IndexLauncher IndexLauncher;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::InlineLauncher InlineLauncher;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::CopyLauncher CopyLauncher;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::PhysicalRegion PhysicalRegion;
-#ifdef __GNUC__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#endif
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-#endif
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::IndexIterator IndexIterator;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::IndexAllocator IndexAllocator;
-#ifdef __GNUC__
-#pragma GCC diagnostic pop
-#endif
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::AcquireLauncher AcquireLauncher;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::ReleaseLauncher ReleaseLauncher;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::TaskVariantRegistrar TaskVariantRegistrar;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::MustEpochLauncher MustEpochLauncher;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::MPILegionHandshake MPILegionHandshake;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::Mappable Mappable;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::Task Task;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::Copy Copy;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::InlineMapping Inline;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::Acquire Acquire;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::Release Release;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::Mapping::Mapper Mapper;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::InputArgs InputArgs;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::TaskConfigOptions TaskConfigOptions;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::ProjectionFunctor ProjectionFunctor;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::Runtime Runtime;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::Runtime HighLevelRuntime; // for backwards compatibility
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::ColoringSerializer ColoringSerializer;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::DomainColoringSerializer DomainColoringSerializer;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::Serializer Serializer;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::Deserializer Deserializer;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::TaskResult TaskResult;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::CObjectWrapper CObjectWrapper;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::ISAConstraint ISAConstraint;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::ProcessorConstraint ProcessorConstraint;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::ResourceConstraint ResourceConstraint;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::LaunchConstraint LaunchConstraint;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::ColocationConstraint ColocationConstraint;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::ExecutionConstraintSet ExecutionConstraintSet;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::SpecializedConstraint SpecializedConstraint;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::MemoryConstraint MemoryConstraint;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::FieldConstraint FieldConstraint;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::OrderingConstraint OrderingConstraint;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::TilingConstraint TilingConstraint;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::DimensionConstraint DimensionConstraint;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::AlignmentConstraint AlignmentConstraint;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::OffsetConstraint OffsetConstraint;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::PointerConstraint PointerConstraint;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::LayoutConstraintSet LayoutConstraintSet;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::TaskLayoutConstraintSet TaskLayoutConstraintSet;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Realm::Runtime RealmRuntime;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Realm::Machine Machine;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::Domain Domain;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::DomainPoint DomainPoint;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Realm::RegionInstance PhysicalInstance;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Realm::Memory Memory;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Realm::Processor Processor;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Realm::CodeDescriptor CodeDescriptor;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Realm::Event Event;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Realm::Event MapperEvent;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Realm::UserEvent UserEvent;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Realm::Reservation Reservation;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Realm::Barrier Barrier;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef ::legion_reduction_op_id_t ReductionOpID;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Realm::ReductionOpUntyped ReductionOp;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef ::legion_custom_serdez_id_t CustomSerdezID;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Realm::CustomSerdezUntyped SerdezOp;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Realm::Machine::ProcessorMemoryAffinity ProcessorMemoryAffinity;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Realm::Machine::MemoryMemoryAffinity MemoryMemoryAffinity;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef std::map<Legion::CustomSerdezID, 
-                     const Realm::CustomSerdezUntyped *> SerdezOpTable;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef std::map<Realm::ReductionOpID, 
-            const Realm::ReductionOpUntyped *> ReductionOpTable;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef void (*SerdezInitFnptr)(const Legion::ReductionOp*, 
-                                    void *&, size_t&);
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef void (*SerdezFoldFnptr)(const Legion::ReductionOp*, void *&, 
-                                    size_t&, const void*, bool);
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef std::map<Realm::ReductionOpID, 
-                     Legion::SerdezRedopFns> SerdezRedopTable;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef ::legion_address_space_t AddressSpace;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef ::legion_task_priority_t TaskPriority;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef ::legion_color_t Color;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef ::legion_field_id_t FieldID;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef ::legion_trace_id_t TraceID;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef ::legion_mapper_id_t MapperID;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef ::legion_context_id_t ContextID;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef ::legion_instance_id_t InstanceID;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef ::legion_index_space_id_t IndexSpaceID;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef ::legion_index_partition_id_t IndexPartitionID;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef ::legion_index_tree_id_t IndexTreeID;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef ::legion_field_space_id_t FieldSpaceID;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef ::legion_generation_id_t GenerationID;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef ::legion_type_handle TypeHandle;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef ::legion_projection_id_t ProjectionID;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef ::legion_region_tree_id_t RegionTreeID;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef ::legion_distributed_id_t DistributedID;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef ::legion_address_space_t AddressSpaceID;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef ::legion_tunable_id_t TunableID;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef ::legion_mapping_tag_id_t MappingTagID;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef ::legion_semantic_tag_t SemanticTag;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef ::legion_variant_id_t VariantID;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef ::legion_unique_id_t UniqueID;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef ::legion_version_id_t VersionID;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef ::legion_task_id_t TaskID;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef ::legion_layout_constraint_id_t LayoutConstraintID;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef std::map<Legion::Color,Legion::ColoredPoints<ptr_t> > Coloring;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef std::map<Legion::Color,Legion::Domain> DomainColoring;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef std::map<Legion::Color,
-                     std::set<Legion::Domain> > MultiDomainColoring;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef std::map<Legion::DomainPoint,
-                     Legion::ColoredPoints<ptr_t> > PointColoring;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef std::map<Legion::DomainPoint,Legion::Domain> DomainPointColoring;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef std::map<Legion::DomainPoint,
-                     std::set<Legion::Domain> > MultiDomainPointColoring;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef void (*RegistrationCallbackFnptr)(Realm::Machine machine, 
-        Legion::Runtime *rt, const std::set<Legion::Processor> &local_procs);
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::LogicalRegion (*RegionProjectionFnptr)(
-        Legion::LogicalRegion parent,
-        const Legion::DomainPoint&, Legion::Runtime *rt);
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::LogicalRegion (*PartitionProjectionFnptr)(
-        Legion::LogicalPartition parent, 
-        const Legion::DomainPoint&, Legion::Runtime *rt);
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef bool (*PredicateFnptr)(const void*, size_t, 
-        const std::vector<Legion::Future> futures);
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef std::map<Legion::ProjectionID,Legion::RegionProjectionFnptr> 
-      RegionProjectionTable;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef std::map<Legion::ProjectionID,Legion::PartitionProjectionFnptr> 
-      PartitionProjectionTable;
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef void (*RealmFnptr)(const void*,size_t,
-                               const void*,size_t,Legion::Processor);
-    LEGION_DEPRECATED("Use the Legion namespace instance instead.")
-    typedef Legion::Internal::TaskContext* Context; 
+#define LEGION_DEFINE_HASHABLE(__TYPE_NAME__)                     \
+  template<>                                                      \
+  struct hash<__TYPE_NAME__> {                                    \
+    inline std::size_t operator()(const __TYPE_NAME__ &obj) const \
+    { return obj.hash(); }                                        \
   };
 
-  // map old Logger::Category to new Realm::Logger
-  namespace Logger {
-    typedef Realm::Logger Category;
-  };
-};
+LEGION_DEFINE_HASHABLE(Legion::IndexSpace);
+LEGION_DEFINE_HASHABLE(Legion::IndexPartition);
+LEGION_DEFINE_HASHABLE(Legion::FieldSpace);
+LEGION_DEFINE_HASHABLE(Legion::LogicalRegion);
+LEGION_DEFINE_HASHABLE(Legion::LogicalPartition);
+LEGION_DEFINE_HASHABLE(Legion::Future);
+LEGION_DEFINE_HASHABLE(Legion::FutureMap);
+LEGION_DEFINE_HASHABLE(Legion::PhysicalRegion);
 
+#undef LEGION_DEFINE_HASHABLE
+
+}; // namespace std

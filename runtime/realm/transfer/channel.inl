@@ -1,5 +1,5 @@
-/* Copyright 2023 Stanford University
- * Copyright 2023 Los Alamos National Laboratory
+/* Copyright 2024 Stanford University
+ * Copyright 2024 Los Alamos National Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,8 @@ TYPE_IS_SERIALIZABLE(Realm::Channel::SupportedPath);
 
 namespace Realm {
 
+  extern Logger log_xd_ref;
+
   ////////////////////////////////////////////////////////////////////////
   //
   // class XferDes
@@ -43,8 +45,15 @@ namespace Realm {
   inline void XferDes::remove_reference(void)
   {
     unsigned prev = reference_count.fetch_sub_acqrel(1);
-    if(prev == 1)
+    if(prev == 1) {
+      log_xd_ref.info("[Delete xd]: XD guid=%llx, ptr=%p", guid, static_cast<void*>(this));
       delete this;
+    }
+  }
+
+  inline void XferDes::add_update_pre_bytes_total_received(void)
+  {
+    nb_update_pre_bytes_total_calls_received.fetch_add_acqrel(1);
   }
 
   inline unsigned XferDes::current_progress(void)
@@ -171,7 +180,7 @@ namespace Realm {
 	  }
 	}
 
-	if(xd->transfer_completed.load_acquire()) {
+	if(xd->transfer_completed.load_acquire() && xd->nb_update_pre_bytes_total_calls_received.load_acquire() == xd->nb_update_pre_bytes_total_calls_expected) {
 	  xd->flush();
 	  log_new_dma.info("Finish XferDes : id(" IDFMT ")", xd->guid);
 	  xd->mark_completed();
@@ -247,7 +256,8 @@ namespace Realm {
     return ((serializer << owner) &&
             (serializer << kind) &&
             (serializer << remote_ptr) &&
-            (serializer << paths));
+            (serializer << paths) &&
+            (serializer << indirect_memories));
   }
 
   template <typename S>
@@ -257,15 +267,16 @@ namespace Realm {
     XferDesKind kind;
     uintptr_t remote_ptr;
     std::vector<Channel::SupportedPath> paths;
+    std::vector<Memory> indirect_memories;
 
     if((deserializer >> owner) &&
        (deserializer >> kind) &&
        (deserializer >> remote_ptr) &&
-       (deserializer >> paths)) {
-      return new SimpleRemoteChannelInfo(owner, kind, remote_ptr, paths);
-    } else {
-      return 0;
+       (deserializer >> paths) &&
+       (deserializer >> indirect_memories)) {
+      return new SimpleRemoteChannelInfo(owner, kind, remote_ptr, paths, indirect_memories);
     }
+    return nullptr;
   }
 
 

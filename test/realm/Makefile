@@ -1,4 +1,4 @@
-# Copyright 2023 Stanford University
+# Copyright 2024 Stanford University
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -46,7 +46,11 @@ CXX ?= g++
 # we're going to include runtime.mk to get variable settings, but then
 #  do our own build steps
 NO_BUILD_RULES=1
+ifdef LG_INSTALL_DIR
+include $(LG_INSTALL_DIR)/share/legion/runtime.mk
+else
 include $(LG_RT_DIR)/runtime.mk
+endif
 
 TESTS := serializing test_profiling ctxswitch barrier_reduce taskreg memspeed idcheck inst_reuse transpose
 TESTS += version_check
@@ -71,12 +75,17 @@ TESTS += multiaffine
 TESTS += machine_config
 TESTS += rect_transform_test
 TESTS += rsrv_acquire_poisoned
+TESTS += sparsity_destroy
+TESTS += refcount_image_test
+TESTS += refcount_preimage_test
+TESTS += inst_chain_redistrict
 
 ifeq ($(strip $(USE_CUDA)),1)
 TESTS += task_stream
 TESTS += test_cuhook
 TESTS += cuda_memcpy_test
 TESTS += cuda_transpose_test
+TESTS += cuda_scatter_test
 endif
 
 ifeq ($(strip $(USE_HIP)),1)
@@ -84,6 +93,7 @@ TESTS += task_stream
 endif
 
 # can set arguments to be passed to a test when running
+#TESTARGS_inst_chain_redistrict := -ll:csize 1
 TESTARGS_ctxswitch := -ll:io 1 -t 30 -i 10000
 TESTARGS_proc_group := -ll:cpu 4
 TESTARGS_compqueue := -ll:cpu 4 -timeout 120
@@ -123,7 +133,23 @@ vpath %.cc .:$(RUNTIME_VPATH)
 vpath %.S .:$(RUNTIME_VPATH)
 #VPATH = .:$(RUNTIME_VPATH)
 
+ifdef LG_INSTALL_DIR
+ifeq ($(strip $(SHARED_OBJECTS)),0)
+REALM_LIB := $(LG_INSTALL_DIR)/lib/librealm.a
+else
+ifeq ($(shell uname -s),Darwin)
+REALM_LIB := $(LG_INSTALL_DIR)/lib/librealm.dylib
+else
+REALM_LIB := $(LG_INSTALL_DIR)/lib/librealm.so
+endif
+endif
+else
 REALM_LIB := librealm.a
+
+$(REALM_LIB) : $(REALM_OBJS) $(REALM_CUDA_OBJS)
+	rm -f $(REALM_LIB)
+	ar rc $(REALM_LIB) $(REALM_OBJS) $(REALM_CUDA_OBJS)
+endif
 
 TEST_OBJS := $(TESTS:%=%.o)
 
@@ -141,17 +167,18 @@ run_machine_config_args : machine_config
 
 build : $(TESTS)
 
+ifdef LG_INSTALL_DIR
+clean :
+	rm -f $(REALM_OBJS) $(TESTS) $(TEST_OBJS) $(REALM_FATBIN_SRC) $(REALM_FATBIN) $(REALM_CUHOOK_OBJS)
+else
 clean :
 	rm -f $(REALM_LIB) $(REALM_OBJS) $(TESTS) $(TEST_OBJS) $(REALM_FATBIN_SRC) $(REALM_FATBIN) $(SLIB_REALM_CUHOOK) $(REALM_CUHOOK_OBJS)
+endif
 
 machine_config.o : CC_FLAGS += $(REALM_SYMBOL_VISIBILITY)
 
-$(TESTS) : % : %.o librealm.a $(SLIB_REALM_CUHOOK)
-	$(CXX) -o $@ $< $(EXTRAOBJS_$*) -L. -lrealm $(LEGION_LD_FLAGS) $(LD_FLAGS)
-
-$(REALM_LIB) : $(REALM_OBJS) $(REALM_CUDA_OBJS)
-	rm -f $(REALM_LIB)
-	ar rc $(REALM_LIB) $(REALM_OBJS) $(REALM_CUDA_OBJS)
+$(TESTS) : % : %.o $(REALM_LIB) $(SLIB_REALM_CUHOOK)
+	$(CXX) -o $@ $< $(EXTRAOBJS_$*) -L. $(LD_FLAGS) -lrealm $(LEGION_LD_FLAGS) 
 
 ifeq ($(strip $(USE_CUDA)),1)
 EXTRAOBJS_memspeed := memspeed_gpu.o
@@ -181,13 +208,12 @@ endif
 ifeq ($(strip $(USE_HIP)),1)
 EXTRAOBJS_memspeed := memspeed_gpu.o
 EXTRAOBJS_simple_reduce := simple_reduce_gpu.o
-# FIXME: https://github.com/StanfordLegion/legion/issues/1476
-# EXTRAOBJS_multiaffine := multiaffine_gpu.o
+EXTRAOBJS_multiaffine := multiaffine_gpu.o
 EXTRAOBJS_task_stream := task_stream_gpu.o
 TEST_OBJS += $(EXTRAOBJS_memspeed) $(EXTRAOBJS_simple_reduce) $(EXTRAOBJS_multiaffine) $(EXTRAOBJS_task_stream)
 memspeed : memspeed_gpu.o
 simple_reduce : simple_reduce_gpu.o
-# multiaffine : multiaffine_gpu.o
+multiaffine : multiaffine_gpu.o
 task_stream : task_stream_gpu.o
 
 %.o : %.cu $(REALM_DEFINES_HEADER) $(LEGION_DEFINES_HEADER)

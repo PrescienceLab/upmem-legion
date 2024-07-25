@@ -1,4 +1,4 @@
-/* Copyright 2023 Stanford University, NVIDIA Corporation
+/* Copyright 2024 Stanford University, NVIDIA Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -633,6 +633,19 @@ namespace Realm {
   // Valgrind uses SIGUSR2 on Darwin
   static int handler_signal = SIGUSR1;
 
+  namespace {
+    [[nodiscard]] sigset_t make_handler_signal_mask()
+    {
+      sigset_t mask;
+
+      CHECK_LIBC(sigemptyset(&mask));
+      CHECK_LIBC(sigaddset(&mask, handler_signal));
+      return mask;
+    }
+  } // namespace
+
+  static sigset_t HANDLER_SIGNAL_MASK;
+
   static void signal_handler(int signal, siginfo_t *info, void *context)
   {
     if(signal == handler_signal) {
@@ -642,11 +655,19 @@ namespace Realm {
       t->process_signals();
       return;
     }
-    
+
+    sigset_t prev_mask;
+
+    // temporarily block handler_signal while we collect the backtrace
+    CHECK_LIBC(pthread_sigmask(SIG_SETMASK, &HANDLER_SIGNAL_MASK, &prev_mask));
+
     Backtrace bt;
     bt.capture_backtrace();
     bt.lookup_symbols();
     log_thread.error() << "received unexpected signal " << signal << " backtrace=" << bt;
+
+    // reset signal set now that we are exiting signal handler
+    CHECK_LIBC(pthread_sigmask(SIG_SETMASK, &prev_mask, nullptr));
   }
 
   static void register_handler(void)
@@ -654,6 +675,8 @@ namespace Realm {
     bool expval = false;
     if(!handler_registered.compare_exchange(expval, true))
       return;
+
+    HANDLER_SIGNAL_MASK = make_handler_signal_mask();
 
     struct sigaction act;
     bzero(&act, sizeof(act));

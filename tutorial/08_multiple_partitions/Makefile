@@ -1,4 +1,4 @@
-# Copyright 2023 Stanford University
+# Copyright 2024 Stanford University
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,6 +31,7 @@ OUTFILE		?= multiple_partitions
 # List all the application source files here
 GEN_SRC		?= multiple_partitions.cc	# .cc files
 GEN_GPU_SRC	?=				# .cu files
+MARCH		=
 
 # You can modify these variables, some will be appended to by the runtime makefile
 INC_FLAGS	?=

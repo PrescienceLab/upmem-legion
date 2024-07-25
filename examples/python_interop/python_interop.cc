@@ -1,4 +1,4 @@
-/* Copyright 2023 Stanford University
+/* Copyright 2024 Stanford University
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,7 +55,7 @@ int64_t init_task(const Task *task,
 
   // Fill memory with some recognizable pattern.
   for (PointInRectIterator<2> pir(rect); pir(); pir++) {
-    double value = (double)((*pir)[0]*(rect.hi.y - rect.lo.y + 1) + (*pir)[1]);
+    double value = (double)((*pir)[0]*(rect.hi[1] - rect.lo[1] + 1) + (*pir)[1]);
     acc[*pir] = value;
   }
 

@@ -1,4 +1,4 @@
--- Copyright 2023 Stanford University
+-- Copyright 2024 Stanford University
 --
 -- Licensed under the Apache License, Version 2.0 (the "License");
 -- you may not use this file except in compliance with the License.
@@ -13,6 +13,9 @@
 -- limitations under the License.
 
 import "regent"
+local launcher = require("std/launcher")
+local cmapper = launcher.build_library("reduc_mapper")
+local c = regentlib.c
 
 -- Do each of these reductions multiple times so we know they're
 -- folding properly.
@@ -90,4 +93,4 @@ end
 task main()
   regentlib.assert(f() == -2636, "test failed")
 end
-regentlib.start(main)
+launcher.launch(main, "region_reduce", cmapper.register_mappers, {"-lreduc_mapper"})

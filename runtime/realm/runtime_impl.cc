@@ -1,4 +1,4 @@
-/* Copyright 2023 Stanford University, NVIDIA Corporation
+/* Copyright 2024 Stanford University, NVIDIA Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -67,10 +67,13 @@
 #endif
 
 #ifdef REALM_ON_WINDOWS
+#include <winsock2.h>
 #include <windows.h>
 #include <processthreadsapi.h>
 #include <synchapi.h>
 #include <sysinfoapi.h>
+
+#pragma comment(lib, "ws2_32.lib")
 
 static void sleep(int seconds)
 {
@@ -109,6 +112,8 @@ TYPE_IS_SERIALIZABLE(Realm::Memory);
 TYPE_IS_SERIALIZABLE(Realm::Memory::Kind);
 TYPE_IS_SERIALIZABLE(Realm::Channel::SupportedPath);
 TYPE_IS_SERIALIZABLE(Realm::XferDesKind);
+TYPE_IS_SERIALIZABLE(Realm::Machine::ProcessorMemoryAffinity);
+TYPE_IS_SERIALIZABLE(Realm::Machine::ProcessInfo);
 
 namespace Realm {
 
@@ -527,8 +532,9 @@ namespace Realm {
       if(!argc) argc = &my_argc;
       if(!argv) argv = &my_argv;
 
-      if(!create_configs(*argc, *argv)) return false;
       if(!network_init(argc, argv)) return false;
+      if(!create_configs(*argc, *argv))
+        return false;
       if(!configure_from_command_line(*argc, *argv)) return false;
       start();
       return true;
@@ -741,6 +747,7 @@ namespace Realm {
     config_map.insert({"pin_util_procs", &pin_util_procs});
     config_map.insert({"use_ext_sysmem", &use_ext_sysmem});
     config_map.insert({"regmem", &reg_mem_size});
+    config_map.insert({"enable_sparsity_refcount", &enable_sparsity_refcount});
 
     resource_map.insert({"cpu", &res_num_cpus});
     resource_map.insert({"sysmem", &res_sysmem_size});
@@ -1351,7 +1358,17 @@ static DWORD CountSetBits(ULONG_PTR bitMask)
     }
 
     template <typename T>
-    static bool serialize_announce(T& serializer, ProcessorImpl *impl,
+    static bool serialize_announce(T &serializer,
+                                   const Machine::ProcessInfo *process_info,
+                                   NetworkModule *net)
+    {
+      bool ok =
+          ((serializer << NODE_ANNOUNCE_PROCESS_INFO) && (serializer << *process_info));
+      return ok;
+    }
+
+    template <typename T>
+    static bool serialize_announce(T &serializer, const ProcessorImpl *impl,
                                    NetworkModule *net)
     {
       Processor p = impl->me;
@@ -1366,7 +1383,7 @@ static DWORD CountSetBits(ULONG_PTR bitMask)
     }
 
     template <typename T>
-    static bool serialize_announce(T& serializer, MemoryImpl *impl,
+    static bool serialize_announce(T &serializer, const MemoryImpl *impl,
                                    NetworkModule *net)
     {
       Memory m = impl->me;
@@ -1385,7 +1402,7 @@ static DWORD CountSetBits(ULONG_PTR bitMask)
     }
 
     template <typename T>
-    static bool serialize_announce(T& serializer, IBMemory *ibmem,
+    static bool serialize_announce(T &serializer, const IBMemory *ibmem,
                                    NetworkModule *net)
     {
       Memory m = ibmem->me;
@@ -1408,17 +1425,12 @@ static DWORD CountSetBits(ULONG_PTR bitMask)
                                    const Machine::ProcessorMemoryAffinity& pma,
                                    NetworkModule *net)
     {
-      bool ok = ((serializer << NODE_ANNOUNCE_PMA) &&
-                 (serializer << pma.p) &&
-                 (serializer << pma.m) &&
-                 (serializer << pma.bandwidth) &&
-                 (serializer << pma.latency));
+      bool ok = ((serializer << NODE_ANNOUNCE_PMA) && (serializer << pma));
       return ok;
     }
 
     template <typename T>
-    static bool serialize_announce(T& serializer, Channel *ch,
-                                   NetworkModule *net)
+    static bool serialize_announce(T &serializer, const Channel *ch, NetworkModule *net)
     {
       RemoteChannelInfo *rci = ch->construct_remote_info();
       bool ok = ((serializer << NODE_ANNOUNCE_DMA_CHANNEL) &&
@@ -1428,7 +1440,7 @@ static DWORD CountSetBits(ULONG_PTR bitMask)
     }
 
     template <typename T, typename Elem>
-    static bool serialize_announce(T &serializer, std::vector<Elem> &elements,
+    static bool serialize_announce(T &serializer, const std::vector<Elem> &elements,
                                    NetworkModule *net)
     {
       // TODO: rather than have each element push a tag, we can instead push a tag and
@@ -1444,23 +1456,12 @@ static DWORD CountSetBits(ULONG_PTR bitMask)
     }
 
     template <typename T>
-    static bool serialize_announce(T &serializer, Node *node, NetworkModule *net)
+    static bool serialize_announce(T &serializer, const Node *node,
+                                   const MachineImpl *machine_impl, NetworkModule *net)
     {
       bool ok = true;
       std::vector<Machine::ProcessorMemoryAffinity> pmas;
       ok = serialize_announce(serializer, node->processors, net);
-      if(!ok) {
-        return ok;
-      }
-      ok = serialize_announce(serializer, node->memories, net);
-      if(!ok) {
-        return ok;
-      }
-      ok = serialize_announce(serializer, node->memories, net);
-      if(!ok) {
-        return ok;
-      }
-      ok = serialize_announce(serializer, node->ib_memories, net);
       if(!ok) {
         return ok;
       }
@@ -1472,7 +1473,12 @@ static DWORD CountSetBits(ULONG_PTR bitMask)
         }
       }
       ok = serialize_announce(serializer, node->dma_channels, net);
-
+      if(!ok) {
+        return ok;
+      }
+      ok = serialize_announce(
+          serializer, (machine_impl->nodeinfos.at(Network::my_node_id))->process_info,
+          net);
       return ok;
     }
 
@@ -1528,6 +1534,58 @@ static DWORD CountSetBits(ULONG_PTR bitMask)
       return std::to_string(id) + '.' + std::to_string(Config::job_id);
     }
 #endif
+
+    void RuntimeImpl::create_shared_peers(void)
+    {
+#if defined(REALM_USE_SHM) and defined(REALM_USE_ANONYMOUS_SHARED_MEMORY)
+      std::vector<OsHandle> handles;
+      OsHandle all_node_mailbox =
+          Realm::ipc_mailbox_create(get_mailbox_name(Network::my_node_id));
+      Network::barrier(); // Wait for everyone to create their ipc mailboxes
+      if(all_node_mailbox != Realm::INVALID_OS_HANDLE) {
+        NodeSet send_nodes;
+        for(NodeID node_id : Network::all_peers) {
+          std::string slot_name = get_mailbox_name(node_id);
+          if(!Realm::ipc_mailbox_send(all_node_mailbox, slot_name, handles,
+                                      &(Network::my_node_id), sizeof(NodeID))) {
+            log_runtime.info("Create shared_peers using ipc mailbox, but unable to "
+                             "send msg to node %u, skipping",
+                             (unsigned)node_id);
+            continue;
+          }
+          send_nodes.add(node_id);
+        }
+        for(NodeID node_id : send_nodes) {
+          NodeID recv_data = 0;
+          size_t data_sz;
+          std::string slot_name = get_mailbox_name(node_id);
+          if(!Realm::ipc_mailbox_recv(all_node_mailbox, slot_name, handles, &recv_data,
+                                      data_sz, sizeof(NodeID))) {
+            log_runtime.warning("Create shared_peers using ipc mailbox, but unable to "
+                                "recv msg from node %u, skipping",
+                                (unsigned)node_id);
+            continue;
+          }
+          assert(send_nodes.contains(recv_data) && "Received from unexpected node");
+          Network::shared_peers.add(node_id);
+        }
+        shared_peers_use_network_module = false;
+      } else {
+        log_runtime.warning("Failed to create ipc mailbox for building shared_peers, so "
+                            "fall back to use network modules");
+      }
+
+      // Wait for everyone to complete coordinating their shared_peers
+      Network::barrier();
+      close_handle(all_node_mailbox);
+#endif
+      if(shared_peers_use_network_module) {
+        Network::shared_peers.empty();
+        for(NetworkModule *module : network_modules) {
+          module->get_shared_peers(Network::shared_peers);
+        }
+      }
+    }
 
     bool RuntimeImpl::share_memories(void)
     {
@@ -1642,6 +1700,37 @@ static DWORD CountSetBits(ULONG_PTR bitMask)
 #else  // REALM_USE_SHM
       return true;
 #endif
+    }
+
+    static void allgather_announcement(Realm::Serialization::DynamicBufferSerializer &dbs,
+                                       const NodeSet &targets, MachineImpl *machine,
+                                       NetworkModule *network_module)
+    {
+      std::vector<char> all_announcements;
+      std::vector<size_t> lengths(targets.size() + 1);
+      char *buffer = nullptr;
+      size_t rank = 0;
+
+      // Use the networking module to exchange all the announcement information, by
+      // whatever optimal path is available.  We assume a non-symmetric machine here,
+      // so we use allgatherv.
+      network_module->allgatherv(reinterpret_cast<const char *>(dbs.get_buffer()),
+                                 dbs.bytes_used(), all_announcements, lengths);
+      buffer = all_announcements.data();
+      // Traverse the nodes _in-order_, as their data is laid out in the same order
+      for(NodeID node_id = 0; node_id <= Network::max_node_id; node_id++) {
+        if(node_id != Network::my_node_id) {
+          if(!targets.contains(node_id)) {
+            // Not a node that's collaborating here, so skip it and don't update the
+            // buffer pointer
+            continue;
+          }
+          machine->parse_node_announce_data(node_id, buffer, lengths[rank], true);
+        }
+        // Increment to the next section of the buffer with data for the next node id
+        buffer += lengths[rank];
+        rank++;
+      }
     }
 
     void RuntimeImpl::parse_command_line(std::vector<std::string> &cmdline)
@@ -1861,6 +1950,21 @@ static DWORD CountSetBits(ULONG_PTR bitMask)
       else
 	assert(config->active_msg_handler_threads > 0);
 
+        // Coordinate a job identifer across all the nodes in order to use it for
+        // generating names in the system namespace (like files or sockets).  This needs
+        // to come before the modules make their memories, but after the network is
+        // initialized.  This cannot be currently done if GASNET1 is enabled, as the
+        // broadcast function is not available until after Module::attach
+#if !defined(REALM_USE_GASNET1)
+      {
+        Config::job_id =
+            Network::broadcast(0, Clock::current_time_in_nanoseconds(true) + rand());
+      }
+#endif
+
+      // create shared_peers either using ipc mailbox or network modules
+      create_shared_peers();
+
       // initialize modules and create memories before we do network attach
       //  so that we have a chance to register these other memories for
       //  RDMA transfers
@@ -1868,18 +1972,6 @@ static DWORD CountSetBits(ULONG_PTR bitMask)
 	  it != modules.end();
 	  it++)
 	(*it)->initialize(this);
-
-    // Coordinate a job identifer across all the nodes in order to use it for
-    // generating names in the system namespace (like files or sockets).  This needs
-    // to come before the modules make their memories, but after the network is
-    // initialized.  This cannot be currently done if GASNET1 is enabled, as the
-    // broadcast function is not available until after Module::attach
-#if !defined(REALM_USE_GASNET1)
-    {
-      Config::job_id =
-          Network::broadcast(0, Clock::current_time_in_nanoseconds(true) + rand());
-    }
-#endif
 
     for(std::vector<Module *>::const_iterator it = modules.begin(); it != modules.end();
         it++)
@@ -1969,7 +2061,6 @@ static DWORD CountSetBits(ULONG_PTR bitMask)
 
       // network-specific memories are created after attachment
       for(NetworkModule *module : network_modules) {
-        module->get_shared_peers(Network::shared_peers);
         module->create_memories(this);
       }
       for(NodeID node_id : Network::shared_peers) {
@@ -2174,6 +2265,25 @@ static DWORD CountSetBits(ULONG_PTR bitMask)
 
       }
 
+      // retrieve process info
+      {
+        Machine::ProcessInfo process_info;
+        int errcode =
+            gethostname(process_info.hostname, Machine::ProcessInfo::MAX_HOSTNAME_LENGTH);
+        if(errcode != 0) {
+          log_runtime.warning() << "gethostname failed with " << errno;
+        }
+#ifdef REALM_ON_WINDOWS
+        process_info.processid = GetCurrentProcessId();
+        std::hash<std::string> hostname_hasher;
+        process_info.hostid = hostname_hasher(process_info.hostname);
+#else
+        process_info.processid = getpid();
+        process_info.hostid = gethostid();
+#endif
+        machine->add_process_info(Network::my_node_id, process_info);
+      }
+
       // announce by network type
       Serialization::DynamicBufferSerializer dbs(4096);
 
@@ -2189,47 +2299,31 @@ static DWORD CountSetBits(ULONG_PTR bitMask)
           continue;
         }
 
+        // Announcement needs to happen in two stages in order to ensure all memory
+        // information is available for later serialization information (like remote
+        // channels)
+        // Stage 1: Announce all the memories attributes
         dbs.reset();
-        ok = serialize_announce(dbs, n, module);
+        ok = serialize_announce(dbs, n->memories, module);
+        assert(ok && "Failed to serialize memories");
+        ok = serialize_announce(dbs, n->ib_memories, module);
+        assert(ok && "Failed to serialize ib memories");
+        allgather_announcement(dbs, targets, machine, module);
+
+        // Stage 2: Announce everything else.
+        dbs.reset();
+        ok = serialize_announce(dbs, n, machine, module);
         assert(ok && "Failed to serialize node for announcement");
-
-        // Now that all of this node's network-specific information is collected, time to
-        // send it all out
-        {
-          std::vector<char> all_announcements;
-          std::vector<size_t> lengths(targets.size() + 1);
-          char *buffer = nullptr;
-          size_t rank = 0;
-
-          // Use the networking module to exchange all the announcement information, by
-          // whatever optimal path is available.  We assume a non-symmetric machine here,
-          // so we use allgatherv.
-          module->allgatherv(reinterpret_cast<const char *>(dbs.get_buffer()),
-                             dbs.bytes_used(), all_announcements, lengths);
-          buffer = all_announcements.data();
-          // Traverse the nodes _in-order_, as their data is laid out in the same order
-          for(NodeID node_id = 0; node_id <= Network::max_node_id; node_id++) {
-            if(node_id != Network::my_node_id) {
-              if(!targets.contains(node_id)) {
-                // Not a node that's collaborating here, so skip it and don't update the
-                // buffer pointer
-                continue;
-              }
-              machine->parse_node_announce_data(node_id, buffer, lengths[rank], true);
-            }
-            // Increment to the next section of the buffer with data for the next node id
-            buffer += lengths[rank];
-            rank++;
-          }
-        }
+        allgather_announcement(dbs, targets, machine, module);
       }
 
       // Now that we have full knowledge of the machine, update the machine model's
-      // internal representation Start with the kind maps
+      // internal representation.  Start with the kind maps
       machine->update_kind_maps();
       // and the mem_mem affinities
       machine->enumerate_mem_mem_affinities();
 
+      // Then update the path caches
       if (Config::path_cache_lru_size) {
         assert(Config::path_cache_lru_size > 0);
         init_path_cache();
@@ -2776,32 +2870,6 @@ static DWORD CountSetBits(ULONG_PTR bitMask)
         // dlclose all dynamic module handles
         module_registrar.unload_module_sofiles();
 
-        // delete processors, memories, nodes, etc.
-        for (NodeID i = 0; i <= Network::max_node_id; i++) {
-          Node &n = nodes[i];
-
-          delete_container_contents(n.memories);
-          delete_container_contents(n.processors);
-          delete_container_contents(n.ib_memories);
-          delete_container_contents(n.dma_channels);
-
-          for (std::vector<atomic<DynamicTable<SparsityMapTableAllocator> *>>::
-                   iterator it = n.sparsity_maps.begin();
-               it != n.sparsity_maps.end(); ++it)
-            delete it->load();
-
-          for (std::vector<atomic<DynamicTable<SubgraphTableAllocator> *>>::
-                   iterator it = n.subgraphs.begin();
-               it != n.subgraphs.end(); ++it)
-            delete it->load();
-
-          for (std::vector<atomic<
-                   DynamicTable<ProcessorGroupTableAllocator> *>>::iterator it =
-                   n.proc_groups.begin();
-               it != n.proc_groups.end(); ++it)
-            delete it->load();
-        }
-
         delete[] nodes;
         delete local_event_free_list;
         delete local_barrier_free_list;
@@ -2958,6 +3026,14 @@ static DWORD CountSetBits(ULONG_PTR bitMask)
       SparsityMapImplWrapper *wrap = local_sparsity_map_free_lists[target_node]->alloc_entry();
       wrap->me.sparsity_creator_node() = Network::my_node_id;
       return wrap;
+    }
+
+    void RuntimeImpl::free_sparsity_impl(SparsityMapImplWrapper *impl)
+    {
+      assert(
+          local_sparsity_map_free_lists[impl->me.sparsity_owner_node()]->table.has_entry(
+              impl->me.sparsity_sparsity_idx()));
+      local_sparsity_map_free_lists[impl->me.sparsity_owner_node()]->free_entry(impl);
     }
 
     SubgraphImpl *RuntimeImpl::get_subgraph_impl(ID id)
@@ -3273,10 +3349,30 @@ static DWORD CountSetBits(ULONG_PTR bitMask)
   // class Node
   //
 
-    Node::Node(void)
-    {
-    }
+    Node::Node(void) {}
 
+    Node::~Node(void)
+    {
+      // delete processors, memories, nodes, etc.
+      delete_container_contents(memories);
+      delete_container_contents(processors);
+      delete_container_contents(ib_memories);
+      delete_container_contents(dma_channels);
+
+      for(atomic<DynamicTable<SparsityMapTableAllocator> *> &atomic_sparsity :
+          sparsity_maps) {
+        delete atomic_sparsity.load();
+      }
+
+      for(atomic<DynamicTable<SubgraphTableAllocator> *> &atomic_subgraph : subgraphs) {
+        delete atomic_subgraph.load();
+      }
+
+      for(atomic<DynamicTable<ProcessorGroupTableAllocator> *> &atomic_proc_group :
+          proc_groups) {
+        delete atomic_proc_group.load();
+      }
+    }
 
   ////////////////////////////////////////////////////////////////////////
   //

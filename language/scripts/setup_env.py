@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# Copyright 2023 Stanford University
+# Copyright 2024 Stanford University
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -223,10 +223,10 @@ def build_regent(root_dir, use_cmake, cmake_exe, extra_flags,
     subprocess.check_call(
         [os.path.join(root_dir, 'install.py'),
          '--with-terra', terra_dir,
-         '--rdir', 'auto',
          '-j', str(thread_count),
         ] + (['--cmake', '--with-cmake', cmake_exe]
              if use_cmake else ['--no-cmake']) +
+        (['--with-llvm', llvm_dir] if llvm_dir is not None else []) +
         ['--extra=%s' % flag for flag in extra_flags],
         env=env)
 
@@ -260,6 +260,21 @@ def install_llvm(llvm_dir, llvm_install_dir, scratch_dir, llvm_version, cmake_ex
         llvm_source_dir = os.path.join(llvm_dir, 'llvm-project-13.0.0.src', 'llvm')
         clang_tarball = None
         download(llvm_tarball, '%s/llvmorg-13.0.0/llvm-project-13.0.0.src.tar.xz' % mirror, '6075ad30f1ac0e15f07c1bf062c1e1268c241d674f11bd32cdf0e040c71f2bf3', insecure=insecure)
+    elif llvm_version == '160':
+        llvm_tarball = os.path.join(llvm_dir, 'llvm-project-16.0.6.src.tar.xz')
+        llvm_source_dir = os.path.join(llvm_dir, 'llvm-project-16.0.6.src', 'llvm')
+        clang_tarball = None
+        download(llvm_tarball, '%s/llvmorg-16.0.6/llvm-project-16.0.6.src.tar.xz' % mirror, 'ce5e71081d17ce9e86d7cbcfa28c4b04b9300f8fb7e78422b1feb6bc52c3028e', insecure=insecure)
+    elif llvm_version == '170':
+        llvm_tarball = os.path.join(llvm_dir, 'llvm-project-17.0.6.src.tar.xz')
+        llvm_source_dir = os.path.join(llvm_dir, 'llvm-project-17.0.6.src', 'llvm')
+        clang_tarball = None
+        download(llvm_tarball, '%s/llvmorg-17.0.6/llvm-project-17.0.6.src.tar.xz' % mirror, '58a8818c60e6627064f312dbf46c02d9949956558340938b71cf731ad8bc0813', insecure=insecure)
+    elif llvm_version == '181':
+        llvm_tarball = os.path.join(llvm_dir, 'llvm-project-18.1.7.src.tar.xz')
+        llvm_source_dir = os.path.join(llvm_dir, 'llvm-project-18.1.7.src', 'llvm')
+        clang_tarball = None
+        download(llvm_tarball, '%s/llvmorg-18.1.7/llvm-project-18.1.7.src.tar.xz' % mirror, '74446ab6943f686391954cbda0d77ae92e8a60c432eff437b8666e121d748ec4', insecure=insecure)
     else:
         assert False
 
@@ -267,7 +282,6 @@ def install_llvm(llvm_dir, llvm_install_dir, scratch_dir, llvm_version, cmake_ex
         extract(llvm_dir, llvm_tarball, 'xz')
         if clang_tarball:
             extract(llvm_dir, clang_tarball, 'xz')
-        if clang_tarball:
             os.rename(clang_source_dir, os.path.join(llvm_source_dir, 'tools', 'clang'))
 
         llvm_build_dir = tempfile.mkdtemp(prefix='setup_env_llvm_build', dir=scratch_dir or llvm_dir)
@@ -419,7 +433,7 @@ def setup_terra(llvm_version, terra_url, terra_branch, terra_binary, terra_lua, 
 
         release_version = terra_branch[len('release-'):]
 
-        release_commits = {'1.1.0': 'be89521'}
+        release_commits = {'1.1.0': 'be89521', '1.2.0': 'cc543db'}
         release_commit = release_commits[release_version]
 
         bin_key = '%s-%s-%s' % (terra_system, terra_processor, release_commit)
@@ -431,6 +445,12 @@ def setup_terra(llvm_version, terra_url, terra_branch, terra_binary, terra_lua, 
             'Linux-ppc64le-be89521': '95af7749f5bf8e3060d41dce4c8908f63adf016f006045e97a8b8279f566ed20',
             'Linux-x86_64-be89521': 'ee2b13715704da41b0d475b44e1e0432f4395edff44b535353652bda8f6610b1',
             'OSX-x86_64-be89521': '08607ea2919b3571dd9882ac594b62f551f001f7a21151bc99e85155d89c63d3',
+
+            # 1.2.0
+            'Linux-aarch64-cc543db': 'f6b2fd0b8b4f99cf930d5f465a3083a7a586cfe43d7e4f6fb2f9e9a36d2438f1',
+            'Linux-ppc64le-cc543db': '7acb19db3b37a85476dd63b99aac1d0431d8518b796023ce652a137acfc8b13d',
+            'Linux-x86_64-cc543db': '32f6420330de4d7176396aa36929a76733fe5a1fbc5a0cf8b9a6d270f9630d8d',
+            'OSX-x86_64-cc543db': 'f3196177e6508fa2113a44e9cfb839b0522e4e67557351a8b8b2f7e607d5d832',
         }
         bin_shasum = bin_shasums[bin_key]
 
@@ -445,7 +465,31 @@ def setup_terra(llvm_version, terra_url, terra_branch, terra_binary, terra_lua, 
                 download(bin_tarball, bin_url, bin_shasum, insecure=insecure)
             if not cache:
                 extract(prefix_dir, bin_tarball, 'xz')
-        return (bin_dir, None)
+
+        # also download the corresponding LLVM binary, if applicable
+        llvm_versions = {'1.2.0': '18.1.7'}
+        llvm_triples = {('Linux', 'x86_64'): 'x86_64-linux-gnu'}
+        llvm_install_dir = None
+        if release_version in llvm_versions and (terra_system, terra_processor) in llvm_triples:
+            llvm_version = llvm_versions[release_version]
+            llvm_triple = llvm_triples[(terra_system, terra_processor)]
+            llvm_stem = 'clang+llvm-%s-%s' % (llvm_version, llvm_triple)
+            llvm_shasum = ({
+                'clang+llvm-18.1.7-x86_64-linux-gnu': 'e86847217fdb8fa3bdde964540a3e945c171ea0a01004fa9b95fd41e8e9f20ac',
+            }[llvm_stem])
+            llvm_basename = '%s.tar.xz' % llvm_stem
+            llvm_url = 'https://github.com/terralang/llvm-build/releases/download/llvm-%s/%s' % (
+                llvm_version, llvm_basename
+            )
+            llvm_install_dir = os.path.join(prefix_dir, llvm_stem)
+            llvm_tarball = os.path.join(prefix_dir, llvm_basename)
+            if not os.path.exists(llvm_install_dir):
+                if not os.path.exists(llvm_tarball):
+                    download(llvm_tarball, llvm_url, llvm_shasum, insecure=insecure)
+                if not cache:
+                    extract(prefix_dir, llvm_tarball, 'xz')
+
+        return (bin_dir, llvm_install_dir)
 
     llvm_dir = os.path.realpath(os.path.join(prefix_dir, 'llvm'))
     llvm_install_dir = os.path.join(llvm_dir, 'install')
@@ -590,7 +634,7 @@ if __name__ == '__main__':
         default=[],
         help='Extra flags for Make/CMake command.')
     parser.add_argument(
-        '--llvm-version', dest='llvm_version', required=False, choices=('60', '110', '130'),
+        '--llvm-version', dest='llvm_version', required=False, choices=('60', '110', '130', '160', '170', '181'),
         default=discover_llvm_version(),
         help='Select LLVM version.')
     parser.add_argument(
@@ -599,7 +643,7 @@ if __name__ == '__main__':
         help='URL of Terra repository to clone from.')
     parser.add_argument(
         '--terra-branch', dest='terra_branch', required=False,
-        default='release-1.1.0',
+        default='release-1.2.0',
         help='Branch of Terra repository to checkout.')
     parser.add_argument(
         '--terra-binary', dest='terra_binary', action='store_true', default=None,
@@ -619,11 +663,11 @@ if __name__ == '__main__':
         help='Use Make to build Terra.')
     parser.add_argument(
         '--gasnet-version', dest='gasnet_version', required=False,
-        default=os.environ.get('GASNET_VERSION', 'GASNet-2023.3.0'),
+        default=os.environ.get('GASNET_VERSION', 'GASNet-2024.5.0'),
         help='Select GASNet version.')
     parser.add_argument(
         '--gasnet-config-version', dest='gasnet_config_version', required=False,
-        default='3d75a6ffb3c398a96f91248be29de06e475d029b',
+        default='d7cc06907cc66e2a3f968e19ea17a80650b16a3b', # master as of 2024-07-19
         help='Select version of the GASNet configuration/build tool.')
     parser.add_argument(
         '-j', dest='thread_count', nargs='?', type=int,

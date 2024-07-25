@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# Copyright 2023 Stanford University, NVIDIA Corporation
+# Copyright 2024 Stanford University, NVIDIA Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,6 +25,8 @@ import struct
 import gzip
 import io
 import sys
+import os
+from pathlib import Path
 from abc import ABC
 from typing import Union, Dict, List, Tuple, Callable, Type, ItemsView, Any, Optional
 
@@ -38,6 +40,7 @@ if TYPE_CHECKING:
 binary_filetype_pat = re.compile(b"FileType: BinaryLegionProf v: (?P<version>\d+(\.\d+)?)")
 
 max_dim_val = 0
+uuid_size = 0
 
 # use to parse the node id from mem_id, proc_id
 @typecheck
@@ -80,7 +83,7 @@ class LegionDeserializer(ABC):
         """
         self.state = state
         self.callbacks: Dict[Any, Callable] = callbacks # type: ignore # Any is str or int
-        self.always_parsed_logs = ["ProcDesc", "MemDesc", "ProcMDesc", "TaskInfo", "GPUTaskInfo", "MetaInfo", "CopyInfo", "CopyInstInfo", "FillInfo", "FillInstInfo", "InstTimelineInfo", "PartitionInfo"]
+        self.always_parsed_logs = ["ProcDesc", "MemDesc", "ProcMDesc", "TaskInfo", "GPUTaskInfo", "MetaInfo", "MessageInfo", "CopyInfo", "CopyInstInfo", "FillInfo", "FillInstInfo", "InstTimelineInfo", "PartitionInfo"]
         self.visible_nodes: Optional[List[int]] = None
 
     def deserialize(self, filename: str) -> None:
@@ -95,7 +98,7 @@ class LegionDeserializer(ABC):
         if node_id not in self.visible_nodes:
             if log in ["ProcDesc", "MemDesc", "ProcMDesc", "CopyInfo", "FillInfo", "PartitionInfo"]:
                 return True
-            elif log in ["TaskInfo", "GPUTaskInfo", "MetaInfo"]:
+            elif log in ["TaskInfo", "GPUTaskInfo", "MetaInfo", "MessageInfo"]:
                 return is_on_visible_nodes(self.visible_nodes, (kwargs["proc_id"],))
             elif log == "CopyInstInfo":
                 return is_on_visible_nodes(self.visible_nodes, (kwargs["src"], kwargs["dst"]))
@@ -106,6 +109,27 @@ class LegionDeserializer(ABC):
             else:
                 return False
         return True
+    
+    def check_version(self, version: int) -> None:
+        current_path = os.path.dirname(os.path.realpath(__file__))
+        # guess legion_profiling_version.h is in ../runtime/legion
+        legion_prof_version_h_path = os.path.abspath(os.path.join(*[current_path, os.pardir, "runtime", "legion", "legion_profiling_version.h"]))
+        if Path(legion_prof_version_h_path).is_file() == False:
+            # guess legion_profiling.h is in ../include/legion (legion is installed)
+            legion_prof_version_h_path = os.path.abspath(os.path.join(*[current_path, os.pardir, "include", "legion", "legion_profiling_version.h"]))
+            if Path(legion_prof_version_h_path).is_file() == False:
+               print("Warning: can not find legion_profiling_version.h, so legion_prof can not verify the version, the current version of the log is:", version)
+        with open(legion_prof_version_h_path, "r") as legion_prof_file:
+            version_regex = re.compile(r'(?P<version>[0-9]+)')
+            for line in legion_prof_file:
+                m = version_regex.match(line)
+                if m is not None:
+                    legion_version = int(m.groupdict()["version"])
+                    assert legion_version == version, "Can not match the version number of legion_prof:%d with the log:%d" %(legion_version, version)
+                    print(legion_version, version)
+                    return
+        print("Warning: can not find the version number in legion_profiling_version.h, so legion_prof can not verify the version, the current version of the log is:", version)
+
 
 @typecheck
 def read_max_dim(string: str) -> int:
@@ -128,13 +152,17 @@ class LegionProfASCIIDeserializer(LegionDeserializer):
     prefix = r'\[(?:[0-9]+) - (?:[0-9a-f]+)\](?:\s+[0-9]+\.[0-9]+)? \{\w+\}\{legion_prof\}: '
 
     patterns = {
+        "MapperName": re.compile(prefix + r'Prof Mapper Name (?P<mapper_id>[0-9]+) (?P<mapper_proc>[0-9a-f]+) (?P<name>[a-zA-Z0-9_ ]+)'),
         "MapperCallDesc": re.compile(prefix + r'Prof Mapper Call Desc (?P<kind>[0-9]+) (?P<name>[a-zA-Z0-9_ ]+)'),
         "RuntimeCallDesc": re.compile(prefix + r'Prof Runtime Call Desc (?P<kind>[0-9]+) (?P<name>[a-zA-Z0-9_ ]+)'),
         "MetaDesc": re.compile(prefix + r'Prof Meta Desc (?P<kind>[0-9]+) (?P<message>[0-1]) (?P<ordered_vc>[0-1]) (?P<name>[a-zA-Z0-9_ ]+)'),
         "OpDesc": re.compile(prefix + r'Prof Op Desc (?P<kind>[0-9]+) (?P<name>[a-zA-Z0-9_ ]+)'),
         "MaxDimDesc": re.compile(prefix + r'Max Dim Desc (?P<max_dim>[0-9]+)'),
-        "MachineDesc": re.compile(prefix + r'Machine Desc (?P<node_id>[0-9]+) (?P<num_nodes>[0-9]+)'),
+        "RuntimeConfig": re.compile(prefix +r'Runtime Config (?P<debug>[0-1]) (?P<spy>[0-1]) (?P<gc>[0-1]) (?P<inorder>[0-1]) (?P<safe_mapper>[0-1]) (?P<safe_runtime>[0-1]) (?P<safe_ctrlrepl>[0-1]) (?P<part_checks>[0-1]) (?P<bounds_checks>[0-1]) (?P<resilient>[0-1])'),
+        "MachineDesc": re.compile(prefix + r'Machine Desc (?P<node_id>[0-9]+) (?P<num_nodes>[0-9]+) (?P<version>[0-9]+)'),
+        "MachineDesc": re.compile(prefix + r'Machine Desc (?P<node_id>[0-9]+) (?P<num_nodes>[0-9]+) (?P<version>[0-9]+) (?P<hostname>[a-zA-Z0-9_ ]+) (?P<host_id>[0-9]+) (?P<process_id>[0-9]+)'),
         "ZeroTime": re.compile(prefix + r'Zero Time (?P<zero_time>[0-9]+)'),
+        "Provenance": re.compile(prefix + r'Provenance (?P<provenance>[0-9]+) (?P<prov>[a-zA-Z0-9_ ]*)'),
         "ProcDesc": re.compile(prefix + r'Prof Proc Desc (?P<proc_id>[a-f0-9]+) (?P<kind>[0-9]+)'),
         "MemDesc": re.compile(prefix + r'Prof Mem Desc (?P<mem_id>[a-f0-9]+) (?P<kind>[0-9]+) (?P<capacity>[0-9]+)'),
         "ProcMDesc": re.compile(prefix + r'Prof Mem Proc Affinity Desc (?P<proc_id>[a-f0-9]+) (?P<mem_id>[a-f0-9]+) (?P<bandwidth>[0-9]+) (?P<latency>[0-9]+)'),
@@ -155,23 +183,28 @@ class LegionProfASCIIDeserializer(LegionDeserializer):
         "IndexSpaceSizeDesc": re.compile(prefix + r'Index Space Size Desc (?P<unique_id>[0-9]+) (?P<dense_size>[0-9]+) (?P<sparse_size>[0-9]+) (?P<is_sparse>[0-1])'),
         "TaskKind": re.compile(prefix + r'Prof Task Kind (?P<task_id>[0-9]+) (?P<name>[$()a-zA-Z0-9_<>., ]+) (?P<overwrite>[0-1])'),
         "TaskVariant": re.compile(prefix + r'Prof Task Variant (?P<task_id>[0-9]+) (?P<variant_id>[0-9]+) (?P<name>[$()a-zA-Z0-9_<>., ]+)'),
-        "OperationInstance": re.compile(prefix + r'Prof Operation (?P<op_id>[0-9]+) (?P<parent_id>[0-9]+) (?P<kind>[0-9]+) (?P<provenance>[a-zA-Z0-9_ ]*)'),
+        "OperationInstance": re.compile(prefix + r'Prof Operation (?P<op_id>[0-9]+) (?P<parent_id>[0-9]+) (?P<kind>[0-9]+) (?P<provenance>[0-9]+)'),
         "MultiTask": re.compile(prefix + r'Prof Multi (?P<op_id>[0-9]+) (?P<task_id>[0-9]+)'),
         "SliceOwner": re.compile(prefix + r'Prof Slice Owner (?P<parent_id>[0-9]+) (?P<op_id>[0-9]+)'),
-        "TaskWaitInfo": re.compile(prefix + r'Prof Task Wait Info (?P<op_id>[0-9]+) (?P<task_id>[0-9]+) (?P<variant_id>[0-9]+) (?P<wait_start>[0-9]+) (?P<wait_ready>[0-9]+) (?P<wait_end>[0-9]+)'),
-        "MetaWaitInfo": re.compile(prefix + r'Prof Meta Wait Info (?P<op_id>[0-9]+) (?P<lg_id>[0-9]+) (?P<wait_start>[0-9]+) (?P<wait_ready>[0-9]+) (?P<wait_end>[0-9]+)'),
-        "TaskInfo": re.compile(prefix + r'Prof Task Info (?P<op_id>[0-9]+) (?P<task_id>[0-9]+) (?P<variant_id>[0-9]+) (?P<proc_id>[a-f0-9]+) (?P<create>[0-9]+) (?P<ready>[0-9]+) (?P<start>[0-9]+) (?P<stop>[0-9]+) (?P<fevent>[0-9a-f]+)'),
-        "GPUTaskInfo": re.compile(prefix + r'Prof GPU Task Info (?P<op_id>[0-9]+) (?P<task_id>[0-9]+) (?P<variant_id>[0-9]+) (?P<proc_id>[a-f0-9]+) (?P<create>[0-9]+) (?P<ready>[0-9]+) (?P<start>[0-9]+) (?P<stop>[0-9]+) (?P<gpu_start>[0-9]+) (?P<gpu_stop>[0-9]+) (?P<fevent>[0-9a-f]+)'),
-        "MetaInfo": re.compile(prefix + r'Prof Meta Info (?P<op_id>[0-9]+) (?P<lg_id>[0-9]+) (?P<proc_id>[a-f0-9]+) (?P<create>[0-9]+) (?P<ready>[0-9]+) (?P<start>[0-9]+) (?P<stop>[0-9]+) (?P<fevent>[0-9a-f]+)'),
-        "CopyInfo": re.compile(prefix + r'Prof Copy Info (?P<op_id>[0-9]+) (?P<size>[0-9]+) (?P<create>[0-9]+) (?P<ready>[0-9]+) (?P<start>[0-9]+) (?P<stop>[0-9]+) (?P<fevent>[a-f0-9]+)'),
+        "TaskWaitInfo": re.compile(prefix + r'Prof Task Wait Info (?P<op_id>[0-9]+) (?P<task_id>[0-9]+) (?P<variant_id>[0-9]+) (?P<wait_start>[0-9]+) (?P<wait_ready>[0-9]+) (?P<wait_end>[0-9]+) (?P<wait_event>[0-9a-f]+)'),
+        "MetaWaitInfo": re.compile(prefix + r'Prof Meta Wait Info (?P<op_id>[0-9]+) (?P<lg_id>[0-9]+) (?P<wait_start>[0-9]+) (?P<wait_ready>[0-9]+) (?P<wait_end>[0-9]+) (?P<wait_event>[0-9a-f]+)'),
+        "TaskInfo": re.compile(prefix + r'Prof Task Info (?P<op_id>[0-9]+) (?P<task_id>[0-9]+) (?P<variant_id>[0-9]+) (?P<proc_id>[a-f0-9]+) (?P<create>[0-9]+) (?P<ready>[0-9]+) (?P<start>[0-9]+) (?P<stop>[0-9]+) (?P<creator>[0-9a-f]+) (?P<fevent>[0-9a-f]+)'),
+        "GPUTaskInfo": re.compile(prefix + r'Prof GPU Task Info (?P<op_id>[0-9]+) (?P<task_id>[0-9]+) (?P<variant_id>[0-9]+) (?P<proc_id>[a-f0-9]+) (?P<create>[0-9]+) (?P<ready>[0-9]+) (?P<start>[0-9]+) (?P<stop>[0-9]+) (?P<gpu_start>[0-9]+) (?P<gpu_stop>[0-9]+) (?P<creator>[0-9a-f]+) (?P<fevent>[0-9a-f]+)'),
+        "MetaInfo": re.compile(prefix + r'Prof Meta Info (?P<op_id>[0-9]+) (?P<lg_id>[0-9]+) (?P<proc_id>[a-f0-9]+) (?P<create>[0-9]+) (?P<ready>[0-9]+) (?P<start>[0-9]+) (?P<stop>[0-9]+) (?P<creator>[0-9a-f]+) (?P<fevent>[0-9a-f]+)'),
+        "MessageInfo": re.compile(prefix + r'Prof Message Info (?P<op_id>[0-9]+) (?P<lg_id>[0-9]+) (?P<proc_id>[a-f0-9]+) (?P<spawn>[0-9]+) (?P<create>[0-9]+) (?P<ready>[0-9]+) (?P<start>[0-9]+) (?P<stop>[0-9]+) (?P<creator>[0-9a-f]+) (?P<fevent>[0-9a-f]+)'),
+        "CopyInfo": re.compile(prefix + r'Prof Copy Info (?P<op_id>[0-9]+) (?P<size>[0-9]+) (?P<create>[0-9]+) (?P<ready>[0-9]+) (?P<start>[0-9]+) (?P<stop>[0-9]+) (?P<creator>[0-9a-f]+) (?P<fevent>[a-f0-9]+) (?P<collective>[0-9]+)'),
         "CopyInstInfo": re.compile(prefix + r'Prof Copy Inst Info (?P<src>[a-f0-9]+) (?P<dst>[a-f0-9]+) (?P<src_fid>[a-f0-9]+) (?P<dst_fid>[a-f0-9]+) (?P<src_inst>[a-f0-9]+) (?P<dst_inst>[a-f0-9]+) (?P<fevent>[a-f0-9]+) (?P<num_hops>[0-9]+) (?P<indirect>[0-1])'),
-        "FillInfo": re.compile(prefix + r'Prof Fill Info (?P<op_id>[0-9]+) (?P<size>[0-9]+) (?P<create>[0-9]+) (?P<ready>[0-9]+) (?P<start>[0-9]+) (?P<stop>[0-9]+) (?P<fevent>[a-f0-9]+)'),
+        "FillInfo": re.compile(prefix + r'Prof Fill Info (?P<op_id>[0-9]+) (?P<size>[0-9]+) (?P<create>[0-9]+) (?P<ready>[0-9]+) (?P<start>[0-9]+) (?P<stop>[0-9]+) (?P<creator>[0-9a-f]+) (?P<fevent>[a-f0-9]+)'),
         "FillInstInfo": re.compile(prefix + r'Prof Fill Inst Info (?P<dst>[a-f0-9]+) (?P<fid>[a-f0-9]+) (?P<dst_inst>[a-f0-9]+) (?P<fevent>[a-f0-9]+)'),
-        "InstTimelineInfo": re.compile(prefix + r'Prof Inst Timeline (?P<inst_uid>[a-f0-9]+) (?P<inst_id>[a-f0-9]+) (?P<mem_id>[a-f0-9]+) (?P<size>[0-9]+) (?P<op_id>[0-9]+) (?P<create>[0-9]+) (?P<ready>[0-9]+) (?P<destroy>[0-9]+)'),
-        "PartitionInfo": re.compile(prefix + r'Prof Partition Timeline (?P<op_id>[0-9]+) (?P<part_op>[0-9]+) (?P<create>[0-9]+) (?P<ready>[0-9]+) (?P<start>[0-9]+) (?P<stop>[0-9]+)'),
-        "MapperCallInfo": re.compile(prefix + r'Prof Mapper Call Info (?P<kind>[0-9]+) (?P<proc_id>[a-f0-9]+) (?P<op_id>[0-9]+) (?P<start>[0-9]+) (?P<stop>[0-9]+) (?P<fevent>[0-9a-f]+)'),
+        "InstTimelineInfo": re.compile(prefix + r'Prof Inst Timeline (?P<inst_uid>[a-f0-9]+) (?P<inst_id>[a-f0-9]+) (?P<mem_id>[a-f0-9]+) (?P<size>[0-9]+) (?P<op_id>[0-9]+) (?P<create>[0-9]+) (?P<ready>[0-9]+) (?P<destroy>[0-9]+) (?P<creator>[0-9a-f]+)'),
+        "PartitionInfo": re.compile(prefix + r'Prof Partition Timeline (?P<op_id>[0-9]+) (?P<part_op>[0-9]+) (?P<create>[0-9]+) (?P<ready>[0-9]+) (?P<start>[0-9]+) (?P<stop>[0-9]+) (?P<creator>[0-9a-f]+)'),
+        "MapperCallInfo": re.compile(prefix + r'Prof Mapper Call Info (?P<mapper_id>[0-9]+) (?P<mapper_proc>[0-9a-f]+) (?P<kind>[0-9]+) (?P<proc_id>[a-f0-9]+) (?P<op_id>[0-9]+) (?P<start>[0-9]+) (?P<stop>[0-9]+) (?P<fevent>[0-9a-f]+)'),
         "RuntimeCallInfo": re.compile(prefix + r'Prof Runtime Call Info (?P<kind>[0-9]+) (?P<proc_id>[a-f0-9]+) (?P<start>[0-9]+) (?P<stop>[0-9]+) (?P<fevent>[0-9a-f]+)'),
-        "ProfTaskInfo": re.compile(prefix + r'Prof ProfTask Info (?P<proc_id>[a-f0-9]+) (?P<op_id>[0-9]+) (?P<start>[0-9]+) (?P<stop>[0-9]+) (?P<fevent>[0-9a-f]+)')
+        "ApplicationCallInfo": re.compile(prefix + r'Prof Application Call Info (?P<provenance>[0-9]+) (?P<proc_id>[0-9a-f]+) (?P<start>[0-9]+) (?P<stop>[0-9]+) (?P<fevent>[0-9a-f]+)'),
+        "ProfTaskInfo": re.compile(prefix + r'Prof ProfTask Info (?P<proc_id>[a-f0-9]+) (?P<op_id>[0-9]+) (?P<start>[0-9]+) (?P<stop>[0-9]+) (?P<creator>[0-9a-f]+) (?P<fevent>[0-9a-f]+)'),
+        "CalibrationErr": re.compile(prefix + r'Calibration Err (?P<calibration_err>[0-9]+)'),
+        "BacktraceDesc": re.compile(prefix + r'Prof Backtrace Desc (?P<backtrace_id>[0-9]+) (?P<backtrace>.+)'),
+        "EventWaitInfo": re.compile(prefix + r'Prof Event Wait Info (?P<proc_id>[0-9a-f]+) (?P<fevent>[0-9a-f]+) (?P<wait_event>[0-9a-f]+) (?P<backtrace_id>[0-9]+)'),
         # "UserInfo": re.compile(prefix + r'Prof User Info (?P<proc_id>[a-f0-9]+) (?P<start>[0-9]+) (?P<stop>[0-9]+) (?P<name>[$()a-zA-Z0-9_]+)')
     }
     parse_callbacks = {
@@ -181,6 +214,7 @@ class LegionProfASCIIDeserializer(LegionDeserializer):
         "capacity": int,
         "variant_id": int,
         "lg_id": int,
+        "backtrace_id": int,
         "uid": int,
         "overwrite": int,
         "task_id": int,
@@ -216,8 +250,11 @@ class LegionProfASCIIDeserializer(LegionDeserializer):
         "dst_inst": lambda x: int(x, 16),
         "inst_id": lambda x: int(x, 16),
         "inst_uid": lambda x: int(x, 16),
+        "creator": lambda x: int(x, 16),
         "fevent": lambda x: int(x, 16),
+        "wait_event": lambda x: int(x, 16),
         "indirect": int,
+        "spawn": int,
         "create": int,
         "destroy": int,
         "start": int,
@@ -235,15 +272,34 @@ class LegionProfASCIIDeserializer(LegionDeserializer):
         "dense_size": int,
         "sparse_size": int,
         "name": lambda x: x,
-        "request_type": int,
+        "collective": int,
         "num_hops": int,
         "message" : bool,
         "ordered_vc" : bool,
         "desc": lambda x: x,
-        "provenance": lambda x: x,
+        "provenance": int,
+        "prov" : lambda x: x,
         "node_id": int,
         "num_nodes": int,
         "zero_time": int,
+        "version": int,
+        "hostname": str,
+        "backtrace": str,
+        "host_id": int,
+        "process_id": int,
+        "calibration_err": int,
+        "mapper_id": int,
+        "mapper_proc": lambda x: int(x, 16),
+        "debug": bool,
+        "gc": bool,
+        "spy": bool,
+        "inorder": bool,
+        "safe_mapper": bool,
+        "safe_runtime": bool,
+        "safe_ctrlrepl": bool,
+        "part_checks": bool,
+        "bounds_checks": bool,
+        "resilient": bool,
     }
 
     def __init__(self, state: State, callbacks: Dict[str, Callable]) -> None:
@@ -284,6 +340,7 @@ class LegionProfASCIIDeserializer(LegionDeserializer):
             first_time = 0
             last_time = 0
             node_id: Optional[int] = None
+            version: Optional[int] = None
             for line_bytes in log:
                 line = line_bytes.decode('utf-8')
                 if not self.state.has_spy_data and \
@@ -299,7 +356,9 @@ class LegionProfASCIIDeserializer(LegionDeserializer):
                         kwargs = self.parse_regex_matches(m)
                         if prof_event == "MachineDesc":
                             # parse node id
-                            node_id = callback(**kwargs)
+                            node_id, version = callback(**kwargs)
+                            assert version is not None
+                            self.check_version(version)
                             matched = True
                         else:
                             if filter_input:
@@ -339,6 +398,7 @@ class LegionProfBinaryDeserializer(LegionDeserializer):
         "TaskID":             "I", # unsigned int
         "bool":               "?", # bool
         "VariantID":          "I", # unsigned int
+        "MapperID":           "I", # unsigned int
         "unsigned":           "I", # unsigned int
         "timestamp_t":        "Q", # unsigned long long
         "maxdim":             "i", # int
@@ -346,6 +406,8 @@ class LegionProfBinaryDeserializer(LegionDeserializer):
         "long long":          "q", # long long
         "array":              "Q", # unsigned long long
         "point":              "Q", # unsigned long long
+        "uuid":               "b", # signed char
+        "uuid_size":          "I", # unsigned int
         "int":                "i", # int
         "ProcKind":           "i", # int (really an enum so this depends)
         "MemKind":            "i", # int (really an enum so this depends)
@@ -393,14 +455,28 @@ class LegionProfBinaryDeserializer(LegionDeserializer):
                     values.append(value)
                 return values
             return array_reader
+        if param_type == "uuid":
+            fmt = LegionProfBinaryDeserializer.fmt_dict[param_type]
+            def uuid_reader(log: io.BufferedReader) -> List:
+                global uuid_size
+                values = []
+                for index in range(uuid_size):
+                    raw_val = log.read(num_bytes)
+                    value = struct.unpack(fmt, raw_val)[0]
+                    values.append(value)
+                return values
+            return uuid_reader
         else:
             fmt = LegionProfBinaryDeserializer.fmt_dict[param_type]
             def reader(log: io.BufferedReader) -> str:
                 global max_dim_val
+                global uuid_size
                 raw_val = log.read(num_bytes)
                 val = struct.unpack(fmt, raw_val)[0]
                 if param_type == "maxdim":
                     max_dim_val = val
+                if param_type == "uuid_size":
+                    uuid_size = val
                 return val
             return reader
 
@@ -459,6 +535,7 @@ class LegionProfBinaryDeserializer(LegionDeserializer):
         def parse_file(log: io.BufferedReader) -> int:
             matches = 0
             node_id: Optional[int] = None
+            version: Optional[int] = None
             self.parse_preamble(log)
             _id_raw = log.read(4)
             while _id_raw:
@@ -472,7 +549,9 @@ class LegionProfBinaryDeserializer(LegionDeserializer):
                 callback_name = self.id_to_name[_id]
                 if callback_name == "MachineDesc":
                     # parse node id
-                    node_id = self.callbacks[_id](**kwargs)
+                    node_id, version = self.callbacks[_id](**kwargs)
+                    assert version is not None
+                    self.check_version(version)
                     matches += 1
                 else:
                     if filter_input:

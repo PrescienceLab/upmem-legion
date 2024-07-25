@@ -1,5 +1,5 @@
 #------------------------------------------------------------------------------#
-# Copyright 2023 Stanford University
+# Copyright 2024 Stanford University
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -53,18 +53,23 @@ list(APPEND REALM_TESTS
   multiaffine
   machine_config
   rsrv_acquire_poisoned
+  refcount_image_test
+  inst_chain_redistrict
+  refcount_preimage_test
   )
 
 if(Legion_USE_CUDA)
-
+  
   # some tests have CUDA source files too
   set(CUDASRC_memspeed memspeed_gpu.cu)
   set(CUDASRC_simple_reduce simple_reduce_gpu.cu)
   set(CUDASRC_multiaffine multiaffine_gpu.cu)
 
-  list(APPEND REALM_TESTS cuda_arrays)
-  set(CUDASRC_cuda_arrays cuda_arrays_gpu.cu)
+  # FIXME: https://github.com/StanfordLegion/legion/issues/1635
+  # list(APPEND REALM_TESTS cuda_arrays)
+  # set(CUDASRC_cuda_arrays cuda_arrays_gpu.cu)
   list(APPEND REALM_TESTS cuda_memcpy_test)
+  list(APPEND REALM_TESTS cuda_scatter_test)
   list(APPEND REALM_TESTS cuda_transpose_test)
   list(APPEND REALM_TESTS task_stream)
   set(CUDASRC_task_stream task_stream_gpu.cu)
@@ -77,8 +82,7 @@ if(Legion_USE_HIP)
   # some tests have HIP source files too
   set(HIPSRC_memspeed memspeed_gpu.cu)
   set(HIPSRC_simple_reduce simple_reduce_gpu.cu)
-  # FIXME: https://github.com/StanfordLegion/legion/issues/1476
-  # set(HIPSRC_multiaffine multiaffine_gpu.cu)
+  set(HIPSRC_multiaffine multiaffine_gpu.cu)
 
   # FIXME: https://github.com/StanfordLegion/legion/issues/1308
   # list(APPEND REALM_TESTS cuda_arrays)
@@ -101,7 +105,6 @@ foreach(test IN LISTS REALM_TESTS)
   endif()
   target_link_libraries(${test} Legion::Realm)
   target_compile_options(${test} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${CXX_BUILD_WARNING_FLAGS}>)
-
   if(Legion_USE_HIP)
     target_include_directories(${test} PRIVATE ${HIP_INCLUDE_DIRS})
     if(Legion_HIP_TARGET STREQUAL "CUDA")
@@ -132,11 +135,15 @@ set(TESTARGS_scatter           -p1 2 -p2 2)
 set(TESTARGS_alltoall          -ll:csize 1024)
 set(TESTARGS_simple_reduce     -all)
 set(TESTARGS_sparse_construct  -verbose)
-set(TESTARGS_cuda_arrays       -ll:gpu 1)
-set(TESTARGS_transpose_test       -ll:gpu 1 -unit_test 1)
-set(TESTARGS_cuda_memcpy_test      -ll:gpu 1 -sparse 64 -gap 0 -chunks 32 -test-sparse -rects 8 -verify)
-set(TESTARGS_machine_config_args    -test_args 1 -ll:cpu 4 -ll:util 2 -ll:io 1 -ll:csize 16 -ll:stacksize 4 -ll:pin_util 1 -ll:ext_sysmem 0 -ll:rsize 2 -ll:nsize 2 -ll:ncsize 1 -ll:ncpu 1 -numa:pin)
-set(TESTARGS_cuda_transpose_test      -ll:gpu 1)
+# FIXME: https://github.com/StanfordLegion/legion/issues/1635
+# set(TESTARGS_cuda_arrays       -ll:gpu 1)
+set(TESTARGS_task_stream         -ll:gpu 1)
+set(TESTARGS_scatter_test        -ll:gpu 1)
+set(TESTARGS_transpose_test      -ll:gpu 1 -unit_test 1)
+set(TESTARGS_cuda_memcpy_test    -ll:gpu 1 -sparse 64 -gap 0 -chunks 32 -test-sparse -rects 8 -verify)
+set(TESTARGS_machine_config_args -test_args 1 -ll:cpu 4 -ll:util 2 -ll:io 1 -ll:csize 16 -ll:stacksize 4 -ll:pin_util 1 -ll:ext_sysmem 0 -ll:rsize 2 -ll:nsize 2 -ll:ncsize 1 -ll:ncpu 1 -numa:pin)
+set(TESTARGS_cuda_transpose_test -ll:gpu 1)
+set(TESTARGS_cuda_scatter_test   -ll:gpu 1)
 
 if(Legion_USE_CUDA)
   list(APPEND TESTARGS_machine_config_args -ll:gpu 1 -ll:fsize 1024 -ll:zsize 8 -ll:ib_fsize 16 -ll:ib_zsize 32 -ll:msize 64 -cuda:dynfb 1 -cuda:dynfb_max 128 -ll:streams 2 -ll:d2d_streams 2)
@@ -154,10 +161,14 @@ endif()
 
 if(Legion_ENABLE_TESTING)
   foreach(test IN LISTS REALM_TESTS)
-    add_test(NAME ${test} COMMAND ${Legion_TEST_LAUNCHER} $<TARGET_FILE:${test}> ${Legion_TEST_ARGS} ${TESTARGS_${test}})
+    if (NOT test STREQUAL "machine_config")
+      add_test(NAME ${test} COMMAND ${Legion_TEST_LAUNCHER} $<TARGET_FILE:${test}> ${Legion_TEST_ARGS} ${TESTARGS_${test}})
+    endif()
   endforeach()
+  # test machine_config without any Legion_TEST_ARGS
+  add_test(NAME machine_config COMMAND ${Legion_TEST_LAUNCHER} $<TARGET_FILE:machine_config> ${TESTARGS_machine_config})
   # test machine_config with -test_args 1
-  add_test(NAME machine_config_args COMMAND ${Legion_TEST_LAUNCHER} $<TARGET_FILE:machine_config> ${Legion_TEST_ARGS} ${TESTARGS_machine_config_args})
+  add_test(NAME machine_config_args COMMAND ${Legion_TEST_LAUNCHER} $<TARGET_FILE:machine_config> ${TESTARGS_machine_config_args})
 
   if(Legion_NETWORKS)
     # For verifying the -ll:networks arguments, try each network we've compiled with

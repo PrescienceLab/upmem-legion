@@ -1,4 +1,4 @@
-/* Copyright 2023 Stanford University, NVIDIA Corporation
+/* Copyright 2024 Stanford University, NVIDIA Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -304,4 +304,22 @@ namespace Legion {
     };
   };
 };
+
+namespace std {
+
+  template<>
+  struct hash<Legion::Mapping::PhysicalInstance> {
+    inline std::size_t operator()(
+        const Legion::Mapping::PhysicalInstance &instance) const
+    { return instance.hash(); }
+  };
+
+  template<>
+  struct hash<Legion::Mapping::CollectiveView> {
+    inline std::size_t operator()(
+        const Legion::Mapping::CollectiveView &view) const
+    { return view.hash(); }
+  };
+
+}; // namespace std
 

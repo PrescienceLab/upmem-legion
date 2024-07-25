@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# Copyright 2023 Stanford University
+# Copyright 2024 Stanford University
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -48,22 +48,19 @@ cuda_include_dir = os.path.join(cuda_dir, 'include') if cuda_dir is not None els
 
 # Find HIP.
 rocm_dir = os.environ.get('ROCM_PATH')
-hip_dir = os.environ.get('HIP_PATH') or (os.path.join(rocm_dir, 'hip') if rocm_dir is not None else None)
-hip_cub_dir = os.path.join(rocm_dir, 'hipcub') if rocm_dir is not None else None
-
-hip_include_dir = os.path.join(hip_dir, 'include') if hip_dir is not None else None
-hip_cub_include_dir = os.path.join(hip_cub_dir, 'include') if hip_cub_dir is not None else None
+rocm_include_dir = os.path.join(rocm_dir, 'include') if rocm_dir is not None else None
 
 # Thrust only needs to be manually located with HIP, where we need an older version to work around a bug.
 thrust_dir = os.environ.get('THRUST_PATH')
 
-# Find RDIR.
-if 'USE_RDIR' in os.environ:
-    use_rdir = os.environ['USE_RDIR']
-else:
-    rdir_config_filename = os.path.join(regent_dir, '.rdir.json')
-    rdir = load_json_config(rdir_config_filename)
-    use_rdir = '1' if rdir in ['auto', 'manual'] else '0'
+# Find LLVM.
+llvm_dir = os.environ.get('REGENT_LLVM_PATH')
+if not llvm_dir:
+    llvm_dir = os.path.join(regent_dir, 'llvm', 'install')
+    if not os.path.exists(llvm_dir):
+        llvm_dir = os.path.join(regent_dir, 'llvm')
+        if not os.path.exists(llvm_dir):
+            llvm_dir = None
 
 # Detect use of CMake.
 if 'USE_CMAKE' in os.environ:
@@ -88,10 +85,8 @@ include_path = (
     ([os.path.join(legion_install_prefix, 'include')] if legion_install_prefix is not None else []))
 if cuda_include_dir is not None:
     include_path.append(cuda_include_dir)
-if hip_include_dir is not None:
-    include_path.append(hip_include_dir)
-if hip_cub_include_dir is not None:
-    include_path.append(hip_cub_include_dir)
+if rocm_include_dir is not None:
+    include_path.append(rocm_include_dir)
 # per runtime/runtime.mk, has to go ahead of HIP_PATH
 if thrust_dir is not None:
     include_path.insert(0, thrust_dir)
@@ -144,7 +139,6 @@ def regent(args, env={}, cwd=None, **kwargs):
           if first_arg is not None and os.path.exists(first_arg) else []) +
         [os.path.join(regent_dir, 'src', '?.t'),
          os.path.join(regent_dir, 'src', '?.rg'),
-         os.path.join(regent_dir, 'src', 'rdir', 'plugin', 'src', '?.t'),
          os.path.join(terra_dir, 'tests', 'lib', '?.t'),
          os.path.join(terra_dir, 'release', 'include', '?.t'),
          os.path.join(bindings_dir, '?.t')])
@@ -162,7 +156,6 @@ def regent(args, env={}, cwd=None, **kwargs):
         'LG_RT_DIR': runtime_dir,
         'USE_CMAKE': '1' if cmake else '0',
         'CMAKE_BUILD_DIR': cmake_build_dir,
-        'USE_RDIR': use_rdir,
     }
 
     if legion_install_prefix is not None:
@@ -170,6 +163,9 @@ def regent(args, env={}, cwd=None, **kwargs):
 
     if cuda_dir is not None:
         terra_env['CUDA_HOME'] = cuda_dir
+
+    if llvm_dir is not None:
+        terra_env['REGENT_LLVM_PATH'] = llvm_dir
 
     cmd = []
     if 'LAUNCHER' in os.environ:

@@ -194,8 +194,8 @@ void top_level_task(const void *args, size_t arglen,
   int errors = 0;
   if((TestConfig::dim_mask & 1) != 0) {
     Rect<1> bounds;
-    bounds.lo.x = 0;
-    bounds.hi.x = (1 << TestConfig::log2_size) - 1;
+    bounds.lo[0] = 0;
+    bounds.hi[0] = (1 << TestConfig::log2_size) - 1;
     if(!test_case(p, proc_write, IndexSpace<1>(bounds),
 		  8, TestConfig::random_seed, test_id))
       errors++;
@@ -205,10 +205,10 @@ void top_level_task(const void *args, size_t arglen,
     int lx2 = (TestConfig::log2_size / 2);
     int ly2 = (TestConfig::log2_size - lx2);
     Rect<2> bounds;
-    bounds.lo.x = 0;
-    bounds.hi.x = (1 << lx2) - 1;
-    bounds.lo.y = 0;
-    bounds.hi.y = (1 << ly2) - 1;
+    bounds.lo[0] = 0;
+    bounds.hi[0] = (1 << lx2) - 1;
+    bounds.lo[1] = 0;
+    bounds.hi[1] = (1 << ly2) - 1;
     if(!test_case(p, proc_write, IndexSpace<2>(bounds),
 		  8, TestConfig::random_seed, test_id))
       errors++;
@@ -220,8 +220,7 @@ void top_level_task(const void *args, size_t arglen,
   Runtime::get_runtime().shutdown(Event::NO_EVENT, errors == 0 ? 0 : 1);
 }
 
-// FIXME: https://github.com/StanfordLegion/legion/issues/1476
-#if defined(REALM_USE_CUDA) // || defined(REALM_USE_HIP)
+#if defined(REALM_USE_CUDA) || defined(REALM_USE_HIP)
 // defined in multiaffine_gpu.cu
 void register_multiaffine_gpu_tasks();
 #endif
@@ -252,8 +251,7 @@ int main(int argc, char **argv)
 				   ProfilingRequestSet(),
 				   0, 0).wait();
 
-// FIXME: https://github.com/StanfordLegion/legion/issues/1476
-#if defined(REALM_USE_CUDA) //|| defined(REALM_USE_HIP)
+#if defined(REALM_USE_CUDA) || defined(REALM_USE_HIP)
   register_multiaffine_gpu_tasks();
 #endif
 

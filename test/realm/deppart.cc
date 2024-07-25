@@ -1,6 +1,4 @@
 #include "realm.h"
-// for WithDefault<>
-#include "realm/threads.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -160,9 +158,13 @@ public:
     BC_TOTAL = 6,
   };
 
-  WithDefault<ProblemType, PTYPE_0> problem_type;
-  WithDefault<int,  4> global_x, global_y, global_z;
-  WithDefault<int,   2> blocks_x, blocks_y, blocks_z;
+  ProblemType problem_type = PTYPE_0;
+  int global_x = 4;
+  int global_y = 4;
+  int global_z = 4;
+  int blocks_x = 2;
+  int blocks_y = 2;
+  int blocks_z = 2;
 
   int n_cells;  // total cell count
   int n_blocks; // total block count
@@ -469,8 +471,8 @@ public:
 	    a_face_left.write(pf, global_cell_pointer(fx - (reversed ? 0 : 1), cy, cz));
 	    a_face_right.write(pf, global_cell_pointer(fx - (reversed ? 1 : 0), cy, cz));
 	    a_face_type.write(pf, ftype);
-	    pf.x++;
-	  }
+            pf[0]++;
+          }
       }
 
       // down/up faces next
@@ -505,8 +507,8 @@ public:
 	    a_face_left.write(pf, global_cell_pointer(cx, fy - (reversed ? 0 : 1), cz));
 	    a_face_right.write(pf, global_cell_pointer(cx, fy - (reversed ? 1 : 0), cz));
 	    a_face_type.write(pf, ftype);
-	    pf.x++;
-	  }
+            pf[0]++;
+          }
       }
 
       // back/front faces last
@@ -541,29 +543,27 @@ public:
 	    a_face_left.write(pf, global_cell_pointer(cx, cy, fz - (reversed ? 0 : 1)));
 	    a_face_right.write(pf, global_cell_pointer(cx, cy, fz - (reversed ? 1 : 0)));
 	    a_face_type.write(pf, ftype);
-	    pf.x++;
-	  }
+            pf[0]++;
+          }
       }
 
-      assert(pf.x == is_faces.bounds.hi.x + 1);
+      assert(pf[0] == is_faces.bounds.hi[0] + 1);
     }
     
     if(show_graph) {
       AffineAccessor<int,1> a_cell_blockid(i_args.ri_cells, 0 /* offset */);
 
-      for(int i = is_cells.bounds.lo; i <= is_cells.bounds.hi; i++)
-	std::cout << "Z[" << i << "]: blockid=" << a_cell_blockid.read(i) << std::endl;
+      for(int i = is_cells.bounds.lo[0]; i <= is_cells.bounds.hi[0]; i++)
+        std::cout << "Z[" << i << "]: blockid=" << a_cell_blockid.read(i) << std::endl;
 
       AffineAccessor<Point<1>,1> a_face_left(i_args.ri_faces, 0 * sizeof(Point<1>) /* offset */);
       AffineAccessor<Point<1>,1> a_face_right(i_args.ri_faces, 1 * sizeof(Point<1>) /* offset */);
       AffineAccessor<int,1> a_face_type(i_args.ri_faces, 2 * sizeof(Point<1>) /* offset */);
 
-      for(int i = is_faces.bounds.lo; i <= is_faces.bounds.hi; i++)
-	std::cout << "S[" << i << "]:"
-		  << " left=" << a_face_left.read(i)
-		  << " right=" << a_face_right.read(i)
-		  << " type=" << a_face_type.read(i)
-		  << std::endl;
+      for(int i = is_faces.bounds.lo[0]; i <= is_faces.bounds.hi[0]; i++)
+        std::cout << "S[" << i << "]:"
+                  << " left=" << a_face_left.read(i) << " right=" << a_face_right.read(i)
+                  << " type=" << a_face_type.read(i) << std::endl;
     }
   }
 
@@ -746,7 +746,7 @@ public:
 	  }
 	}
 
-	pc.x++;
+        pc[0]++;
       }
 
       // check faces
@@ -817,7 +817,7 @@ public:
 	    }
 	  }
 	}
-	pf.x++;
+        pf[0]++;
       }
     }
 
@@ -828,10 +828,10 @@ public:
 class CircuitTest : public TestInterface {
 public:
   // graph config parameters
-  WithDefault<int, 100> num_nodes;
-  WithDefault<int,  10> num_edges;
-  WithDefault<int,   2> num_pieces;
-  WithDefault<int,  50> pct_wire_in_piece;
+  int num_nodes = 100;
+  int num_edges = 10;
+  int num_pieces = 2;
+  int pct_wire_in_piece = 50;
 
   CircuitTest(int argc, const char *argv[])
   {
@@ -1305,11 +1305,11 @@ public:
   enum MeshType {
     RectangularMesh,
   };
-  WithDefault<MeshType, RectangularMesh> mesh_type;
-  WithDefault<int,  10> nzx;  // number of zones in x
-  WithDefault<int,  10> nzy;  // number of zones in y
-  WithDefault<int,   2> numpcx;  // number of submeshes in x
-  WithDefault<int,   2> numpcy;  // number of submeshes in y
+  MeshType mesh_type = RectangularMesh;
+  int nzx = 10;   // number of zones in x
+  int nzy = 10;   // number of zones in y
+  int numpcx = 2; // number of submeshes in x
+  int numpcy = 2; // number of submeshes in y
 
   int npx, npy;      // number of points in each dimension
   int nz, ns, np, numpc;  // total number of zones, sides, points, and pieces
@@ -1576,44 +1576,48 @@ public:
       for(int zy = zylo; zy < zyhi; zy++) {
 	for(int zx = zxlo; zx < zxhi; zx++) {
 	  // get 4 side pointers
-	  Point<1> ps0 = ps; ps.x++;
-	  Point<1> ps1 = ps; ps.x++;
-	  Point<1> ps2 = ps; ps.x++;
-	  Point<1> ps3 = ps; ps.x++;
+          Point<1> ps0 = ps;
+          ps[0]++;
+          Point<1> ps1 = ps;
+          ps[0]++;
+          Point<1> ps2 = ps;
+          ps[0]++;
+          Point<1> ps3 = ps;
+          ps[0]++;
 
-	  // point pointers are ugly because they can be in neighbors - use a helper
-	  Point<1> pp0 = global_point_pointer(zy, zx); // go CCW
-	  Point<1> pp1 = global_point_pointer(zy+1, zx);
-	  Point<1> pp2 = global_point_pointer(zy+1, zx+1);
-	  Point<1> pp3 = global_point_pointer(zy, zx+1);
+          // point pointers are ugly because they can be in neighbors - use a helper
+          Point<1> pp0 = global_point_pointer(zy, zx); // go CCW
+          Point<1> pp1 = global_point_pointer(zy + 1, zx);
+          Point<1> pp2 = global_point_pointer(zy + 1, zx + 1);
+          Point<1> pp3 = global_point_pointer(zy, zx + 1);
 
-	  a_zone_color.write(pz, i_args.index);
+          a_zone_color.write(pz, i_args.index);
 
-	  a_side_mapsz.write(ps0, pz);
-	  a_side_mapsz.write(ps1, pz);
-	  a_side_mapsz.write(ps2, pz);
-	  a_side_mapsz.write(ps3, pz);
+          a_side_mapsz.write(ps0, pz);
+          a_side_mapsz.write(ps1, pz);
+          a_side_mapsz.write(ps2, pz);
+          a_side_mapsz.write(ps3, pz);
 
-	  a_side_mapss3.write(ps0, ps1);
-	  a_side_mapss3.write(ps1, ps2);
-	  a_side_mapss3.write(ps2, ps3);
-	  a_side_mapss3.write(ps3, ps0);
+          a_side_mapss3.write(ps0, ps1);
+          a_side_mapss3.write(ps1, ps2);
+          a_side_mapss3.write(ps2, ps3);
+          a_side_mapss3.write(ps3, ps0);
 
-	  a_side_mapsp1.write(ps0, pp0);
-	  a_side_mapsp1.write(ps1, pp1);
-	  a_side_mapsp1.write(ps2, pp2);
-	  a_side_mapsp1.write(ps3, pp3);
+          a_side_mapsp1.write(ps0, pp0);
+          a_side_mapsp1.write(ps1, pp1);
+          a_side_mapsp1.write(ps2, pp2);
+          a_side_mapsp1.write(ps3, pp3);
 
-	  a_side_ok.write(ps0, true);
-	  a_side_ok.write(ps1, true);
-	  a_side_ok.write(ps2, true);
-	  a_side_ok.write(ps3, true);
+          a_side_ok.write(ps0, true);
+          a_side_ok.write(ps1, true);
+          a_side_ok.write(ps2, true);
+          a_side_ok.write(ps3, true);
 
-	  pz.x++;
-	}
+          pz[0]++;
+        }
       }
-      assert(pz.x == is_zones.bounds.hi.x + 1);
-      assert(ps.x == is_sides.bounds.hi.x + 1);
+      assert(pz[0] == is_zones.bounds.hi[0] + 1);
+      assert(ps[0] == is_sides.bounds.hi[0] + 1);
     }
     
     if(show_graph) {
@@ -1807,7 +1811,7 @@ public:
 	    errors++;
 	  }
 	}
-	pz.x++;
+        pz[0]++;
       }
     }
 
@@ -1823,7 +1827,7 @@ public:
 	    errors++;
 	  }
 	}
-	ps.x++;
+        ps[0]++;
       }
     }
 

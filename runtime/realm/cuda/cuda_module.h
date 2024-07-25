@@ -1,4 +1,4 @@
-/* Copyright 2023 Stanford University, NVIDIA Corporation
+/* Copyright 2024 Stanford University, NVIDIA Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -83,6 +83,18 @@ namespace Realm {
     typedef void (*StreamAwareTaskFuncPtr)(const void *args, size_t arglen,
 					   const void *user_data, size_t user_data_len,
 					   Processor proc, CUstream_st *stream);
+
+    // this is the same data structure of CUuuid
+    static const size_t UUID_SIZE = 16; // bytes
+    typedef char Uuid[UUID_SIZE];
+
+    // fill in cude related info according to CUDA-capable device associated with
+    // processor
+    //  `p` if available and returns true, or returns false if processor is unknown,
+    //  not associated with a CUDA-capable device, or information is unavailable
+    REALM_PUBLIC_API bool get_cuda_device_uuid(Processor p, Uuid *uuid);
+
+    REALM_PUBLIC_API bool get_cuda_device_id(Processor p, int *device);
 
     class GPU;
     class GPUWorker;
@@ -191,6 +203,10 @@ namespace Realm {
       /// \p cuda_stream completes
       Event make_realm_event(CUstream_st *cuda_stream);
 
+      bool get_cuda_device_uuid(Processor p, Uuid *uuid) const;
+
+      bool get_cuda_device_id(Processor p, int *device) const;
+
     public:
       CudaModuleConfig *config;
       RuntimeImpl *runtime;
@@ -204,14 +220,12 @@ namespace Realm {
       GPUZCMemory *zcmem;
       void *uvm_base; // guaranteed to be same for CPU and GPU
       GPUZCMemory *uvmmem;
-      std::vector<void *> registered_host_ptrs;
       GPUReplHeapListener *rh_listener;
+      atomic<bool> initialization_complete;
 
       Mutex cudaipc_mutex;
       Mutex::CondVar cudaipc_condvar;
-      atomic<int> cudaipc_responses_needed;
-      atomic<int> cudaipc_releases_needed;
-      atomic<int> cudaipc_exports_remaining;
+      atomic<size_t> cudaipc_responses_received;
     };
 
   }; // namespace Cuda

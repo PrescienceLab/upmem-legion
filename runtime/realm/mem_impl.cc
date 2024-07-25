@@ -1,4 +1,4 @@
-/* Copyright 2023 Stanford University, NVIDIA Corporation
+/* Copyright 2024 Stanford University, NVIDIA Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,12 +58,15 @@ namespace Realm {
 
     Memory::Kind Memory::kind(void) const
     {
-      return get_runtime()->get_memory_impl(*this)->get_kind();
+      return (*this == Memory::NO_MEMORY)
+                 ? NO_MEMKIND
+                 : get_runtime()->get_memory_impl(*this)->get_kind();
     }
 
     size_t Memory::capacity(void) const
     {
-      return get_runtime()->get_memory_impl(*this)->size;
+      return (*this == Memory::NO_MEMORY) ? 0
+                                          : get_runtime()->get_memory_impl(*this)->size;
     }
 
     // reports a problem with a memory in general (this is primarily for fault injection)
@@ -514,6 +517,15 @@ namespace Realm {
       return segment;
     }
 
+    bool MemoryImpl::get_local_addr(off_t offset, LocalAddress &local_addr)
+    {
+      if(segment) {
+        local_addr.segment = segment;
+        local_addr.offset = offset;
+        return true;
+      } else
+        return false;
+    }
 
   ////////////////////////////////////////////////////////////////////////
   //
@@ -556,6 +568,42 @@ namespace Realm {
 	     (size_t)peak_usage, peak_usage / 1048576.0,
 	     (size_t)peak_footprint, peak_footprint / 1048576.0);
 #endif
+    }
+
+    MemoryImpl::AllocationResult LocalManagedMemory::reuse_allocated_range(
+        RegionInstanceImpl *old_inst, std::vector<RegionInstanceImpl *> &new_insts)
+    {
+      AutoLock<> al(allocator_mutex);
+
+#ifdef DEBUG_REALM
+      for(const PendingAlloc &alloc : pending_allocs) {
+        if(alloc.inst == old_inst) {
+          return AllocationResult::ALLOC_INSTANT_FAILURE;
+        }
+      }
+
+      for(const PendingRelease &release : pending_releases) {
+        if(release.inst == old_inst) {
+          return AllocationResult::ALLOC_INSTANT_FAILURE;
+        }
+      }
+#endif
+
+      size_t num_insts = new_insts.size();
+      std::vector<RegionInstance> tags(num_insts);
+      std::vector<size_t> sizes(num_insts);
+      std::vector<size_t> alignments(num_insts);
+      for(size_t i = 0; i < num_insts; i++) {
+        sizes[i] = new_insts[i]->metadata.layout->bytes_used;
+        alignments[i] = new_insts[i]->metadata.layout->alignment_reqd;
+        tags[i] = new_insts[i]->me;
+      }
+
+      if(!current_allocator.split_range(old_inst->me, tags, sizes, alignments)) {
+        return AllocationResult::ALLOC_INSTANT_FAILURE;
+      }
+
+      return AllocationResult::ALLOC_INSTANT_SUCCESS;
     }
 
     // attempt to allocate storage for the specified instance

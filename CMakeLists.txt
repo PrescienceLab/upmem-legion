@@ -1,5 +1,5 @@
 #------------------------------------------------------------------------------#
-# Copyright 2023 Kitware, Inc.
+# Copyright 2024 Kitware, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -102,6 +102,20 @@ endif()
 set(SOVERSION 1)
 
 set(INSTALL_SUFFIX "" CACHE STRING "Suffix to add to installed libraries and binaries")
+
+#------------------------------------------------------------------------------#
+# C++ standard version
+#------------------------------------------------------------------------------#
+
+if(CMAKE_CXX_STANDARD)
+  # Legion requires a minimum of C++ 17
+  if(CMAKE_CXX_STANDARD LESS 17 OR CMAKE_CXX_STANDARD EQUAL 98)
+    message(FATAL_ERROR "Legion requires at least C++ 17")
+  endif()
+else()
+  set(CMAKE_CXX_STANDARD 17)
+endif()
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 #------------------------------------------------------------------------------#
 # Build type and shared vs static library
@@ -373,10 +387,11 @@ if("${Legion_NETWORKS}" MATCHES ".*gasnet(1|ex).*")
       "https://github.com/StanfordLegion/gasnet.git"
       CACHE STRING "URL for cloning StanfordLegion/gasnet repository")
     set(Legion_EMBED_GASNet_GITREF
-      "3d75a6ffb3c398a96f91248be29de06e475d029b" # master as of 2023-08-25
+      "d7cc06907cc66e2a3f968e19ea17a80650b16a3b" # master as of 2024-07-19
       CACHE STRING "Branch/tag/commit to use from StanfordLegion/gasnet repository")
-    set(Legion_EMBED_GASNet_LOCALSRC "" CACHE STRING "Path to local clone of stanfordlegion/gasnet repository")
+    set(Legion_EMBED_GASNet_LOCALSRC "" CACHE STRING "Path to local clone of StanfordLegion/gasnet repository")
     set(Legion_EMBED_GASNet_VERSION "" CACHE STRING "Override GASNet version to build")
+    option(Legion_EMBED_GASNet_ENABLE_GPU_MEMORY_KINDS "Enable GASNet memory kinds when Realm has been built with CUDA/HIP/etc." ON)
     set(Legion_EMBED_GASNet_CONFIGURE_ARGS "" CACHE STRING "Extra configuration arguments for GASNet")
   else()
     set(GASNet_THREADING par)
@@ -462,7 +477,7 @@ if(Legion_USE_CUDA OR Legion_USE_HIP)
     infer_cuda_standard(Legion_CUDA_STANDARD)
 
     set(Legion_CUDA_STANDARD "${Legion_CUDA_STANDARD}" CACHE STRING
-      "The CUDA C++ standard to use (14, 17, 20, etc.)"
+      "The CUDA C++ standard to use (17, 20, etc.)"
       FORCE)
 
     # Enable the CUDA language and find the CUDA toolkit
@@ -556,6 +571,8 @@ if(Legion_USE_HIP)
     if(BUILD_SHARED_LIBS)
       list(APPEND HIPCC_FLAGS -fPIC)
     endif()
+
+    list(APPEND HIPCC_FLAGS -std=c++${CMAKE_CXX_STANDARD})
 
     install(FILES ${Legion_SOURCE_DIR}/cmake/FindHIP.cmake
       DESTINATION ${CMAKE_INSTALL_DATADIR}/Legion/cmake
@@ -695,6 +712,8 @@ set(REALM_MAX_DIM ${Legion_MAX_DIM})
 #  sure they're big enough for your use case
 set(Legion_MAX_FIELDS 512 CACHE STRING
     "Maximum number of fields allocated to a single field space -- MUST be a power of two.")
+set(Legion_DEFAULT_LOCAL_FIELDS 4 CACHE STRING
+    "Number of slots in a field space reserved for local fields -- MUST be smaller than or equal to Legion_MAX_FIELDS")
 set(Legion_MAX_NUM_NODES 1024 CACHE STRING
     "Maximum number of nodes supported by the runtime -- MUST be a power of two.")
 set(Legion_MAX_NUM_PROCS 64 CACHE STRING
@@ -718,6 +737,10 @@ if (NOT is_pow_two)
   message(FATAL_ERROR "Legion_MAX_FIELDS must be a power of two.")
 endif()
 
+if (${Legion_DEFAULT_LOCAL_FIELDS} GREATER ${Legion_MAX_FIELDS})
+  message(FATAL_ERROR "Legion_DEFAULT_LOCAL_FIELDS must be smaller than or equal to Legion_MAX_FIELDS.")
+endif()
+
 is_power_of_two(${Legion_MAX_NUM_NODES} is_pow_two)
 if (NOT is_pow_two)
   message(FATAL_ERROR "Legion_MAX_NUM_NODES must be a power of two.")
@@ -730,6 +753,7 @@ endif()
 
 # define variables for legion_defines.h
 set(LEGION_MAX_FIELDS ${Legion_MAX_FIELDS})
+set(LEGION_DEFAULT_LOCAL_FIELDS "(${Legion_DEFAULT_LOCAL_FIELDS})")
 set(LEGION_MAX_NUM_NODES ${Legion_MAX_NUM_NODES})
 set(LEGION_MAX_NUM_PROCS ${Legion_MAX_NUM_PROCS})
 
@@ -915,7 +939,8 @@ elseif(Legion_BUILD_REALM_TESTS)
   # temporary hackery to just enable the realm tests
   add_library(Legion::Realm ALIAS Realm)
   add_subdirectory(test/realm)
-elseif(Legion_BUILD_REALM_UNIT_TESTS)
+endif()
+if(Legion_BUILD_REALM_UNIT_TESTS)
   if (BUILD_SHARED_LIBS)
     add_library(Legion::RealmTests ALIAS RealmStatic)
   else()

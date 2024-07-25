@@ -1,4 +1,4 @@
-/* Copyright 2023 Stanford University, NVIDIA Corporation
+/* Copyright 2024 Stanford University, NVIDIA Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -164,6 +164,12 @@ namespace Realm {
     //  implementation class and a table to look them up in
     struct Node {
       Node(void);
+      ~Node(void);
+
+      Node(const Node &) = delete;
+      Node &operator=(const Node &) = delete;
+      Node(Node &&) noexcept = delete;
+      Node &operator=(Node &&) noexcept = delete;
 
       // not currently resizable
       std::vector<MemoryImpl *> memories;
@@ -242,6 +248,9 @@ namespace Realm {
       // resources
       int res_num_cpus = 0;
       size_t res_sysmem_size = 0;
+
+      // sparstiy maps
+      bool enable_sparsity_refcount = false;
     };
 
     class CoreModule : public Module {
@@ -378,6 +387,7 @@ namespace Realm {
       RegionInstanceImpl *get_instance_impl(ID id);
       SparsityMapImplWrapper *get_sparsity_impl(ID id);
       SparsityMapImplWrapper *get_available_sparsity_impl(NodeID target_node);
+      void free_sparsity_impl(SparsityMapImplWrapper *impl);
       CompQueueImpl *get_compqueue_impl(ID id);
       SubgraphImpl *get_subgraph_impl(ID id);
 
@@ -436,6 +446,8 @@ namespace Realm {
 
       ReplicatedHeap repl_heap; // used for sparsity maps, instance layouts
 
+      bool shared_peers_use_network_module = true;
+
       class DeferredShutdown : public EventWaiter {
       public:
 	void defer(RuntimeImpl *_runtime, Event wait_on);
@@ -481,6 +493,10 @@ namespace Realm {
       friend class Runtime;
 
       Module *get_module_untyped(const char *name) const;
+
+      /// @brief Auxilary function to create Network::shared_peers using either ipc
+      /// mailbox or relying on network modules
+      void create_shared_peers(void);
 
       /// @brief Auxilary function for handling the sharing mechanism of all registered
       /// memories across the machine

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# Copyright 2023 Stanford University
+# Copyright 2024 Stanford University
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -79,41 +79,6 @@ def load_json_config(filename):
 def dump_json_config(filename, value):
     with open(filename, 'w') as f:
         return json.dump(value, f)
-
-prompt_text = '''
-RDIR is an optional compiler plugin for Regent which provides support
-for dataflow optimizations (most notably control replication). RDIR
-support is opt-in because RDIR's license is different from that of
-Regent (thus this prompt). Specifically:
-
-  * portions of RDIR are licensed under BSD
-  * other portions of RDIR are dual-licensed under BSD and Apache
-
-(Regent itself is licensed entirely under Apache.)
-
-You may choose to use RDIR automatically (select "auto" below),
-manually, or not at all. Your preference will be saved. You can change
-your mind at any time by re-running this script with the "--rdir"
-parameter.
-'''
-
-def install_rdir(rdir, legion_dir, regent_dir):
-    config_filename = os.path.join(regent_dir, '.rdir.json')
-    if rdir is None:
-        rdir = load_json_config(config_filename)
-        if rdir is None: rdir = 'prompt'
-
-    if rdir == 'prompt':
-        print(prompt_text)
-        while rdir not in ['auto', 'manual', 'never']:
-            rdir = _input('Enable RDIR? (auto/manual/never) ')
-    assert rdir in ['auto', 'manual', 'skip', 'never']
-
-    if rdir == 'auto':
-        git_submodule_update(legion_dir)
-
-    if rdir != 'skip':
-        dump_json_config(config_filename, rdir)
 
 def build_terra(terra_dir, terra_branch, use_cmake, cmake_exe, thread_count, llvm):
     build_dir = os.path.join(terra_dir, 'build')
@@ -410,9 +375,9 @@ def get_legion_install_prefix(legion_install_prefix, regent_dir, default=None):
     return legion_install_prefix
 
 def install(gasnet=False, cuda=False, hip=False, openmp=False, python=False, llvm=False, hdf=False,
-            spy=False, conduit=None, cmake=None, rdir=None,
+            spy=False, conduit=None, cmake=None,
             cmake_exe=None, cmake_build_dir=None,
-            legion_install_prefix=None,
+            legion_install_prefix=None, llvm_dir=None,
             terra_url=None, terra_branch=None, terra_use_cmake=None, external_terra_dir=None,
             gasnet_dir=None, debug=False, clean_first=True, extra_flags=[],
             thread_count=None, verbose=False):
@@ -451,13 +416,23 @@ def install(gasnet=False, cuda=False, hip=False, openmp=False, python=False, llv
     if 'LG_RT_DIR' in os.environ:
         runtime_dir = os.path.realpath(os.environ['LG_RT_DIR'])
 
-    install_rdir(rdir, legion_dir, regent_dir)
-
     terra_dir = os.path.join(regent_dir, 'terra')
     install_terra(terra_dir, terra_url, terra_branch, terra_use_cmake, cmake_exe,
                   external_terra_dir, thread_count, llvm)
     # luarocks_dir = os.path.join(regent_dir, 'luarocks')
     # install_luarocks(terra_dir, luarocks_dir)
+
+    # Link LLVM too so that Regent can find it later.
+    if llvm_dir:
+        llvm_link = os.path.join(regent_dir, 'llvm')
+        if os.path.lexists(llvm_link):
+            if not os.path.islink(llvm_link):
+                pass # don't disturb what's already there
+            elif os.path.realpath(llvm_link) != os.path.realpath(llvm_dir):
+                os.unlink(llvm_link)
+                os.symlink(llvm_dir, llvm_link)
+        else:
+            os.symlink(llvm_dir, llvm_link)
 
     if legion_install_prefix is None:
         bindings_dir = os.path.join(legion_dir, 'bindings', 'regent')
@@ -521,6 +496,9 @@ def driver():
         default=os.environ.get('USE_LLVM') == '1',
         help='Build Legion (and compatible Terra) with LLVM support.')
     parser.add_argument(
+        '--with-llvm', dest='llvm_dir', metavar='DIR', required=False,
+        help='Path to LLVM installation directory.')
+    parser.add_argument(
         '--hdf5', '--hdf', dest='hdf', action='store_true', required=False,
         default=os.environ.get('USE_HDF') == '1',
         help='Build Legion with HDF.')
@@ -549,10 +527,6 @@ def driver():
     parser.add_argument(
         '--legion-install-prefix', dest='legion_install_prefix', metavar='DIR', required=False,
         help='Do NOT build Legion. Just use the specified installation.')
-    parser.add_argument(
-        '--rdir', dest='rdir', required=False,
-        choices=['prompt', 'auto', 'manual', 'skip', 'never'], default=None,
-        help='Enable RDIR compiler plugin.')
     parser.add_argument(
         '--clean', dest='clean_first', action='store_true', required=False,
         default=None,

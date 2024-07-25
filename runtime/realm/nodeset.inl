@@ -1,4 +1,4 @@
-/* Copyright 2023 Stanford University, NVIDIA Corporation
+/* Copyright 2024 Stanford University, NVIDIA Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,8 +43,7 @@ namespace Realm {
 
   inline NodeSet::~NodeSet()
   {
-    if((count > 0) && (enc_format == ENC_BITMASK))
-      NodeSetBitmask::release_bitmask(data.bitmask, false /*!already_empty*/);
+    clear();
   }
 
   inline NodeSet::NodeSet(const NodeSet& copy_from)

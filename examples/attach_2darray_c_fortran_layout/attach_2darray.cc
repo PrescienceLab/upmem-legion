@@ -1,4 +1,4 @@
-/* Copyright 2023 Los Alamos National Laboratory
+/* Copyright 2024 Los Alamos National Laboratory
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -232,8 +232,8 @@ void read_field_task(const Task *task,
   int errors = 0;
   for (PointInRectIterator<2> pir(rect); pir(); pir++) {
     double expval = (args.base_val +
-		     ((*pir).x * args.step_x) +
-		     ((*pir).y * args.step_y));
+		     ((*pir)[0] * args.step_x) +
+		     ((*pir)[1] * args.step_y));
     double actval = acc[*pir];
     if(fabs(actval - expval) < 1e-10) {
       printf("%.1f\t", actval);

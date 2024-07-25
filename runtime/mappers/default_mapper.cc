@@ -1,4 +1,4 @@
-/* Copyright 2023 Stanford University, NVIDIA Corporation
+/* Copyright 2024 Stanford University, NVIDIA Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,9 +27,11 @@
 #define STATIC_BREADTH_FIRST          false
 #define STATIC_STEALING_ENABLED       false
 #define STATIC_MAX_SCHEDULE_COUNT     8
-#define STATIC_MEMOIZE                false
+#define STATIC_MEMOIZE                true
 #define STATIC_MAP_LOCALLY            false
 #define STATIC_EXACT_REGION           false
+#define STATIC_REPLICATION_ENABLED    true
+#define STATIC_SAME_ADDRESS_SPACE     false
 
 // This is the default implementation of the mapper interface for
 // the general low level runtime
@@ -73,7 +75,9 @@ namespace Legion {
         max_schedule_count(STATIC_MAX_SCHEDULE_COUNT),
         memoize(STATIC_MEMOIZE),
         map_locally(STATIC_MAP_LOCALLY),
-        exact_region(STATIC_EXACT_REGION)
+        exact_region(STATIC_EXACT_REGION),
+        replication_enabled(STATIC_REPLICATION_ENABLED),
+        same_address_space(STATIC_SAME_ADDRESS_SPACE)
     //--------------------------------------------------------------------------
     {
       log_mapper.spew("Initializing the default mapper for "
@@ -83,6 +87,7 @@ namespace Legion {
       {
         int argc = HighLevelRuntime::get_input_args().argc;
         char **argv = HighLevelRuntime::get_input_args().argv;
+        bool no_memoize = false;
         // Parse the input arguments looking for ones for the default mapper
         for (int i=1; i < argc; i++)
         {
@@ -102,11 +107,16 @@ namespace Legion {
           BOOL_ARG("-dm:bft", breadth_first_traversal);
           INT_ARG("-dm:sched", max_schedule_count);
           BOOL_ARG("-dm:memoize", memoize);
+          BOOL_ARG("-dm:no-memoize", no_memoize);
           BOOL_ARG("-dm:map_locally", map_locally);
           BOOL_ARG("-dm:exact_region", exact_region);
+          INT_ARG("-dm:replicate", replication_enabled);
+          BOOL_ARG("-dm:same_address_space", same_address_space);
 #undef BOOL_ARG
 #undef INT_ARG
         }
+        if (no_memoize)
+          memoize = false;
       }
       if (stealing_enabled)
       {
@@ -371,6 +381,40 @@ namespace Legion {
       // This is the best choice for the default mapper assuming
       // there is locality in the remote mapped tasks
       output.map_locally = map_locally;
+      // Control replicate the top-level task in multi-node settings
+      // otherwise we do no control replication
+#ifdef DEBUG_CTRL_REPL
+      if (task.get_depth() == 0)
+#else
+      if ((total_nodes > 1) && (task.get_depth() == 0))
+#endif
+        output.replicate = replication_enabled;
+      else
+        output.replicate = false;
+      // If this is an index space task launch, check to see if there are
+      // any region requirements that should be mapped collectively
+      // Our heurisitc for this right now are any regions which all the
+      // point tasks are mapping the same logical region with read-only
+      // or reduction privileges then we'll map them collectively
+      if (task.is_index_space)
+      {
+        for (unsigned idx = 0; idx < task.regions.size(); idx++)
+        {
+          const RegionRequirement &req = task.regions[idx];
+          // The runtime will pick this up for us anyway
+          if (req.prop & LEGION_COLLECTIVE_MASK)
+            continue;
+          const bool is_read_only =
+            ((req.privilege & LEGION_READ_WRITE) == LEGION_READ_PRIV);
+          const bool is_reduction =
+            ((req.privilege & LEGION_READ_WRITE) == LEGION_REDUCE_PRIV);
+          if ((is_read_only || is_reduction) &&
+              ((req.handle_type == LEGION_SINGULAR_PROJECTION) ||
+                ((req.handle_type == LEGION_REGION_PROJECTION) &&
+                 (req.projection == 0))))
+              output.check_collective_regions.insert(idx);
+        }
+      }
     }
 
     //--------------------------------------------------------------------------
@@ -443,7 +487,7 @@ namespace Legion {
 	    // told not to
             // TODO: Fix this when we implement a good stealing algorithm
             // to instead encourage locality
-	    if ((task.tag & SAME_ADDRESS_SPACE) == 0)
+	    if (!same_address_space && (task.tag & SAME_ADDRESS_SPACE) == 0)
             {
 	      switch (info.proc_kind)
               {
@@ -720,7 +764,6 @@ namespace Legion {
           result.proc_kind = Processor::PROC_SET;
           result.variant = variants[0];
           result.tight_bound = (variants.size() == 1);
-          result.is_inner = false;
           return result;
         }
       }
@@ -878,6 +921,10 @@ namespace Legion {
         }
         result.is_inner = runtime->is_inner_variant(ctx, task.task_id,
                                                     result.variant);
+        result.is_leaf = runtime->is_leaf_variant(ctx, task.task_id,
+                                                    result.variant);
+        result.is_replicable = 
+            runtime->is_replicable_variant(ctx, task.task_id, result.variant);
         if (result.is_inner)
         {
           // Default mapper assumes virtual mappings for all inner
@@ -965,237 +1012,8 @@ namespace Legion {
     //--------------------------------------------------------------------------
     {
       log_mapper.spew("Default premap_task in %s", get_mapper_name());
-      // Iterate over the premap regions
-      bool has_variant_info = false;
-      VariantInfo info;
-      bool has_restricted_regions = false;
-      for (std::map<unsigned,std::vector<PhysicalInstance> >::const_iterator
-            it = input.valid_instances.begin();
-            it != input.valid_instances.end(); it++)
-      {
-        // If this region requirements is restricted, then we can just
-        // copy over the instances because we know we have to use them
-        if (task.regions[it->first].is_restricted())
-        {
-          output.premapped_instances.insert(*it);
-          runtime->acquire_instances(ctx, it->second);
-          has_restricted_regions = true;
-          continue;
-        }
-        // These are non-restricted regions which means they have to be
-        // shared by everyone in this task
-        // TODO: some caching here
-        if (total_nodes > 1) {
-          // multi-node, see how big the index space is, if it is big
-          // enough to span more than our node, put it in gasnet memory
-          // otherwise we can fall through to the single node case
-          Memory target_memory = Memory::NO_MEMORY;
-          Machine::MemoryQuery visible_memories(machine);
-          visible_memories.has_affinity_to(task.target_proc)
-            .only_kind(Memory::GLOBAL_MEM);
-          Memory global_memory = Memory::NO_MEMORY;
-          if (visible_memories.count() > 0)
-            global_memory = visible_memories.first();
-          switch (task.target_proc.kind())
-          {
-            case Processor::IO_PROC:
-              {
-                if (task.index_domain.get_volume() > local_ios.size())
-                {
-                  if (!global_memory.exists())
-                  {
-                    log_mapper.error("Default mapper failure. No memory found "
-                        "for I/O task %s (ID %lld) which is visible "
-                        "for all points in the index space.",
-                        task.get_task_name(), task.get_unique_id());
-                    assert(false);
-                  }
-                  else
-                    target_memory = global_memory;
-                }
-                break;
-              }
-            case Processor::PY_PROC:
-              {
-                if (task.index_domain.get_volume() > local_pys.size())
-                {
-                  if (!global_memory.exists())
-                  {
-                    log_mapper.error("Default mapper failure. No memory found "
-                        "for Python task %s (ID %lld) which is visible "
-                        "for all points in the index space.",
-                        task.get_task_name(), task.get_unique_id());
-                    assert(false);
-                  }
-                  else
-                    target_memory = global_memory;
-                }
-                break;
-              }
-            case Processor::LOC_PROC:
-              {
-                if (task.index_domain.get_volume() > local_cpus.size())
-                {
-                  if (!global_memory.exists())
-                  {
-                    log_mapper.error("Default mapper failure. No memory found "
-                        "for CPU task %s (ID %lld) which is visible "
-                        "for all point in the index space.",
-                        task.get_task_name(), task.get_unique_id());
-                    assert(false);
-                  }
-                  else
-                    target_memory = global_memory;
-                }
-                break;
-              }
-            case Processor::TOC_PROC:
-              {
-                if (task.index_domain.get_volume() > local_gpus.size())
-                {
-                  log_mapper.error("Default mapper failure. No memory found "
-                      "for GPU task %s (ID %lld) which is visible "
-                      "for all points in the index space.",
-                      task.get_task_name(), task.get_unique_id());
-                  assert(false);
-                }
-                break;
-              }
-            case Processor::PROC_SET:
-              {
-                if (task.index_domain.get_volume() > local_procsets.size())
-                {
-                  if (!global_memory.exists())
-                  {
-                    log_mapper.error("Default mapper failure. No memory found "
-                        "for ProcessorSet task %s (ID %lld) which is visible "
-                        "for all point in the index space.",
-                        task.get_task_name(), task.get_unique_id());
-                    assert(false);
-                  }
-                  else
-                    target_memory = global_memory;
-                }
-                break;
-              }
-            case Processor::OMP_PROC:
-              {
-                if (task.index_domain.get_volume() > local_omps.size())
-                {
-                  if (!global_memory.exists())
-                  {
-                    log_mapper.error("Default mapper failure. No memory found "
-                        "for OMP task %s (ID %lld) which is visible "
-                        "for all point in the index space.",
-                        task.get_task_name(), task.get_unique_id());
-                    assert(false);
-                  }
-                  else
-                    target_memory = global_memory;
-                }
-                break;
-              }
-            default:
-              assert(false); // unrecognized processor kind
-          }
-          if (target_memory.exists())
-          {
-            if (!has_variant_info)
-            {
-              info = default_find_preferred_variant(task, ctx,
-                  true/*needs tight bound*/, true/*cache*/,
-                  task.target_proc.kind());
-              has_variant_info = true;
-            }
-            // Map into the target memory and we are done
-            std::set<FieldID> needed_fields =
-              task.regions[it->first].privilege_fields;
-            const TaskLayoutConstraintSet &layout_constraints =
-              runtime->find_task_layout_constraints(ctx,
-                                        task.task_id, info.variant);
-            size_t footprint;
-            if (!default_create_custom_instances(ctx, task.target_proc,
-                  target_memory, task.regions[it->first], it->first,
-                  needed_fields, layout_constraints, true/*needs check*/,
-                  output.premapped_instances[it->first], &footprint))
-            {
-              default_report_failed_instance_creation(task, it->first,
-                          task.target_proc, target_memory, footprint);
-            }
-            continue;
-          }
-        }
-        // should be local to a node
-        // see where we are mapping
-        Memory target_memory = Memory::NO_MEMORY;
-        Machine::MemoryQuery visible_memories(machine);
-        visible_memories.has_affinity_to(task.target_proc);
-        switch (task.target_proc.kind())
-        {
-          case Processor::LOC_PROC:
-          case Processor::IO_PROC:
-          case Processor::PROC_SET:
-          case Processor::OMP_PROC:
-          case Processor::PY_PROC:
-            {
-              visible_memories.only_kind(Memory::SYSTEM_MEM);
-              if (visible_memories.count() == 0)
-              {
-                log_mapper.error("Default mapper error. No memory found for "
-                    "CPU task %s (ID %lld) which is visible for all points "
-                    "in the index space.", task.get_task_name(),
-                    task.get_unique_id());
-                assert(false);
-              }
-              target_memory = visible_memories.first();
-              break;
-            }
-          case Processor::TOC_PROC:
-            {
-              // Otherwise for GPUs put the instance in zero-copy memory
-              visible_memories.only_kind(Memory::Z_COPY_MEM);
-              if (visible_memories.count() == 0)
-              {
-                log_mapper.error("Default mapper error. No memory found for "
-                    "GPU task %s (ID %lld) which is visible for all points "
-                    "in the index space.", task.get_task_name(),
-                    task.get_unique_id());
-                assert(false);
-              }
-              target_memory = visible_memories.first();
-              break;
-            }
-          default:
-            assert(false); // unknown processor kind
-        }
-        assert(target_memory.exists());
-        if (!has_variant_info)
-        {
-          info = default_find_preferred_variant(task, ctx,
-              true/*needs tight bound*/, true/*cache*/,
-              task.target_proc.kind());
-          has_variant_info = true;
-        }
-        // Map into the target memory and we are done
-        std::set<FieldID> needed_fields =
-          task.regions[it->first].privilege_fields;
-        const TaskLayoutConstraintSet &layout_constraints =
-          runtime->find_task_layout_constraints(ctx,
-                                    task.task_id, info.variant);
-        size_t footprint;
-        if (!default_create_custom_instances(ctx, task.target_proc,
-              target_memory, task.regions[it->first], it->first,
-              needed_fields, layout_constraints, true/*needs check*/,
-              output.premapped_instances[it->first], &footprint))
-        {
-          default_report_failed_instance_creation(task, it->first,
-                      task.target_proc, target_memory, footprint);
-        }
-      }
-      // If we have any restricted regions, put the task
-      // back on the origin processor
-      if (has_restricted_regions)
-        output.new_target_proc = task.orig_proc;
+      // No more supported for premapping regions in Legion
+      // TODO: add support for premapping futures for index tasks
     }
 
     //--------------------------------------------------------------------------
@@ -1309,10 +1127,19 @@ namespace Legion {
 #if 1
       // The two-level decomposition doesn't work so for now do a
       // simple one-level decomposition across all the processors.
+      // Unless we're doing same address space mapping or this is
+      // a task in a control-replicated root task
       Machine::ProcessorQuery all_procs(machine);
       all_procs.only_kind(local[0].kind());
-      if ((task.tag & SAME_ADDRESS_SPACE) != 0)
+      if (((task.tag & SAME_ADDRESS_SPACE) != 0) || same_address_space)
 	all_procs.local_address_space();
+      else if (replication_enabled && (task.get_depth() == 1))
+      {
+        // Check to see if the parent task is control replicated
+        const Task *parent = task.get_parent_task();
+        if ((parent != NULL) && (parent->get_total_shards() > 1))
+          all_procs.local_address_space();
+      }
       std::vector<Processor> procs(all_procs.begin(), all_procs.end());
 
       switch (input.domain.get_dim())
@@ -1435,17 +1262,43 @@ namespace Legion {
     //--------------------------------------------------------------------------
     {
       log_mapper.spew("Default map_task in %s", get_mapper_name());
+      
       Processor::Kind target_kind = task.target_proc.kind();
       // Get the variant that we are going to use to map this task
-      VariantInfo chosen = default_find_preferred_variant(task, ctx,
+      VariantInfo chosen;
+      if (input.shard_processor.exists())
+      {
+        const std::pair<TaskID,Processor::Kind> key(
+            task.task_id, input.shard_processor.kind());
+        std::map<std::pair<TaskID,Processor::Kind>,VariantInfo>::const_iterator
+          finder = preferred_variants.find(key);
+        if (finder == preferred_variants.end())
+        {
+          chosen.variant = input.shard_variant;
+          chosen.proc_kind = input.shard_processor.kind();
+          chosen.tight_bound = true;
+          chosen.is_inner =
+            runtime->is_inner_variant(ctx, task.task_id, input.shard_variant);
+          chosen.is_leaf =
+            runtime->is_leaf_variant(ctx, task.task_id, input.shard_variant);
+          chosen.is_replicable = true;
+          preferred_variants.emplace(std::make_pair(key, chosen));
+        }
+        else
+          chosen = finder->second;
+      }
+      else
+        chosen = default_find_preferred_variant(task, ctx,
                         true/*needs tight bound*/, true/*cache*/, target_kind);
       output.chosen_variant = chosen.variant;
       output.task_priority = default_policy_select_task_priority(ctx, task);
       output.postmap_task = false;
       // Figure out our target processors
-      default_policy_select_target_processors(ctx, task, output.target_procs);
+      if (input.shard_processor.exists())
+        output.target_procs.resize(1, input.shard_processor);
+      else
+        default_policy_select_target_processors(ctx, task, output.target_procs);
       Processor target_proc = output.target_procs[0];
-
       // See if we have an inner variant, if we do virtually map all the regions
       // We don't even both caching these since they are so simple
       if (chosen.is_inner)
@@ -1463,46 +1316,9 @@ namespace Legion {
         }
         if (!has_relaxed_coherence)
         {
-          std::vector<unsigned> reduction_indexes;
           for (unsigned idx = 0; idx < task.regions.size(); idx++)
-          {
-            // As long as this isn't a reduction-only region requirement
-            // we will do a virtual mapping, for reduction-only instances
-            // we will actually make a physical instance because the runtime
-            // doesn't allow virtual mappings for reduction-only privileges
-            if (task.regions[idx].privilege == LEGION_REDUCE)
-              reduction_indexes.push_back(idx);
-            else
-              output.chosen_instances[idx].push_back(
+            output.chosen_instances[idx].push_back(
                   PhysicalInstance::get_virtual_instance());
-          }
-          if (!reduction_indexes.empty())
-          {
-            const TaskLayoutConstraintSet &layout_constraints =
-                runtime->find_task_layout_constraints(ctx,
-                                      task.task_id, output.chosen_variant);
-            for (std::vector<unsigned>::const_iterator it =
-                  reduction_indexes.begin(); it !=
-                  reduction_indexes.end(); it++)
-            {
-              MemoryConstraint mem_constraint =
-                find_memory_constraint(ctx, task, output.chosen_variant, *it);
-              Memory target_memory = default_policy_select_target_memory(ctx,
-                                                         target_proc,
-                                                         task.regions[*it],
-                                                         mem_constraint);
-              std::set<FieldID> copy = task.regions[*it].privilege_fields;
-              size_t footprint;
-              if (!default_create_custom_instances(ctx, target_proc,
-                  target_memory, task.regions[*it], *it, copy,
-                  layout_constraints, false/*needs constraint check*/,
-                  output.chosen_instances[*it], &footprint))
-              {
-                default_report_failed_instance_creation(task, *it,
-                      target_proc, target_memory, footprint);
-              }
-            }
-          }
           return;
         }
       }
@@ -1533,6 +1349,8 @@ namespace Legion {
             // Have to copy it before we do the external call which
             // might invalidate our iterator
             output.chosen_instances = it->mapping;
+            output.output_targets = it->output_targets;
+            output.output_constraints = it->output_constraints;
             found = true;
             break;
           }
@@ -1591,14 +1409,28 @@ namespace Legion {
                                                          mem_constraint);
         if (task.regions[idx].privilege == LEGION_REDUCE)
         {
-          size_t footprint;
-          if (!default_create_custom_instances(ctx, target_proc,
-                  target_memory, task.regions[idx], idx, missing_fields[idx],
-                  layout_constraints, needs_field_constraint_check,
-                  output.chosen_instances[idx], &footprint))
+          // Only leaf tasks should map their reduction regions to instances
+          if (chosen.is_leaf)
           {
-            default_report_failed_instance_creation(task, idx,
-                  target_proc, target_memory, footprint);
+	    // check task layout constraints are valid before trying to
+	    // create instances for this region req
+	    check_valid_task_layout_constraints(task,ctx,
+		layout_constraints,target_proc, target_memory,
+		task.regions[idx], idx);
+            size_t footprint;
+            if (!default_create_custom_instances(ctx, target_proc,
+                    target_memory, task.regions[idx], idx, missing_fields[idx],
+                    layout_constraints, needs_field_constraint_check,
+                    output.chosen_instances[idx], &footprint))
+            {
+              default_report_failed_instance_creation(task, idx,
+                    target_proc, target_memory, footprint);
+            }
+          }
+          else
+          {
+            PhysicalInstance virt_inst = PhysicalInstance::get_virtual_instance();
+            output.chosen_instances[idx].push_back(virt_inst);
           }
           continue;
         }
@@ -1637,6 +1469,11 @@ namespace Legion {
           if (missing_fields[idx].empty())
             continue;
         }
+	// check task layout constraints are valid before trying to
+	// create instances for this region req
+	check_valid_task_layout_constraints(task,ctx,
+		    layout_constraints,target_proc, target_memory,
+		    task.regions[idx], idx);
         // Otherwise make normal instances for the given region
         size_t footprint;
         if (!default_create_custom_instances(ctx, target_proc,
@@ -1648,6 +1485,17 @@ namespace Legion {
                   target_proc, target_memory, footprint);
         }
       }
+
+      // Finally we set a target memory for output instances
+      Memory target_memory =
+        default_policy_select_output_target(ctx, task.target_proc);
+      for (unsigned i = 0; i < task.output_regions.size(); ++i)
+      {
+        output.output_targets[i] = target_memory;
+        default_policy_select_output_constraints(
+            task, output.output_constraints[i], task.output_regions[i]);
+      }
+
       if (cache_policy == DEFAULT_CACHE_POLICY_ENABLE) {
         // Now that we are done, let's cache the result so we can use it later
         std::list<CachedTaskMapping> &map_list = cached_task_mappings[cache_key];
@@ -1656,7 +1504,142 @@ namespace Legion {
         cached_result.task_hash = task_hash;
         cached_result.variant = output.chosen_variant;
         cached_result.mapping = output.chosen_instances;
+        cached_result.output_targets = output.output_targets;
+        cached_result.output_constraints = output.output_constraints;
       }
+    }
+
+    //--------------------------------------------------------------------------
+    void DefaultMapper::replicate_task(MapperContext              ctx,
+                                       const Task&                task,
+                                       const ReplicateTaskInput&  input,
+                                             ReplicateTaskOutput& output)
+    //--------------------------------------------------------------------------
+    {
+      // Invoke the old version of this method in case users are still
+      // overloading it from the default mapper
+      MapTaskInput old_input;
+      MapTaskOutput old_default;
+      MapReplicateTaskOutput old_output;
+      // We only need to do this if there are no regions since the old
+      // format never actually supported having multiple regions anyway
+      if (task.regions.empty())
+      {
+        // This is the backwards compatibility path for the old way of
+        // mapping (control-)replicated tasks
+        old_default.chosen_variant = 0;
+        old_default.task_priority = 0;
+        old_default.copy_fill_priority = 0;
+        old_default.profiling_priority = 0;
+        old_default.postmap_task = false;
+        // Disable deprecated warnings around map_replicate_task since we're
+        // calling it here for backwards compatibility
+        LEGION_DISABLE_DEPRECATED_WARNINGS
+        map_replicate_task(ctx, task, old_input, old_default, old_output);
+        LEGION_REENABLE_DEPRECATED_WARNINGS
+      }
+      if (old_output.task_mappings.empty())
+      {
+        // These are our own local heuristics for when to replicate a task
+        // We only replicate the task if it is the top-level task and we
+        // can find a replicable task variant
+        if (task.get_depth() > 0)
+          return;
+        const Processor::Kind target_kind = task.target_proc.kind();
+        // Get the variant that we are going to use to map this task
+        const VariantInfo chosen = default_find_preferred_variant(task, ctx,
+                      true/*needs tight bound*/, true/*cache*/, target_kind);
+        if (chosen.is_replicable)
+        {
+          output.chosen_variant = chosen.variant;
+          const std::vector<Processor> &remote_procs = 
+            remote_procs_by_kind(target_kind);
+          // Place on replicate on each node by default
+          assert(remote_procs.size() == total_nodes);
+          output.target_processors.resize(total_nodes, Processor::NO_PROC);
+          // Only check for MPI interop case when dealing with CPUs
+          if ((target_kind == Processor::LOC_PROC) &&
+              runtime->is_MPI_interop_configured(ctx))
+          {
+            // Check to see if we're interoperating with MPI
+            const std::map<AddressSpace,int/*rank*/> &mpi_interop_mapping = 
+              runtime->find_reverse_MPI_mapping(ctx);
+            // If we're interoperating with MPI make the shards align with ranks
+            assert(mpi_interop_mapping.size() == total_nodes);
+            for (std::vector<Processor>::const_iterator it = 
+                  remote_procs.begin(); it != remote_procs.end(); it++)
+            {
+              AddressSpace space = it->address_space();
+              std::map<AddressSpace,int>::const_iterator finder = 
+                mpi_interop_mapping.find(space);
+              assert(finder != mpi_interop_mapping.end());
+              assert(finder->second < int(output.target_processors.size()));
+              assert(!output.target_processors[finder->second].exists());
+              output.target_processors[finder->second] = (*it);
+            }
+          }
+          else
+          {
+            // Otherwise we can just assign shards based on address space
+            if (total_nodes > 1)
+            {
+              for (std::vector<Processor>::const_iterator it = 
+                    remote_procs.begin(); it != remote_procs.end(); it++)
+              {
+                AddressSpace space = it->address_space();
+                assert(space < output.target_processors.size());
+                assert(!output.target_processors[space].exists());
+                output.target_processors[space] = (*it);
+              }
+            }
+#ifdef DEBUG_CTRL_REPL
+            else
+              output.target_processors = local_procs_by_kind(target_kind);
+#endif
+          }
+        }
+        else
+          log_mapper.warning("WARNING: Default mapper was unable to locate "
+                             "a replicable task variant for the top-level "
+                             "task during a multi-node execution! We STRONGLY "
+                             "encourage users to make their top-level tasks "
+                             "replicable to avoid sequential bottlenecks on "
+                             "one node during the execution of an application!");
+      }
+      else if (old_output.task_mappings.size() > 1)
+      {
+        // Translate the result into the new format
+        output.chosen_variant = old_output.task_mappings.front().chosen_variant;
+        for (unsigned idx = 1; idx < old_output.task_mappings.size(); idx++)
+          assert(output.chosen_variant == 
+              old_output.task_mappings[idx].chosen_variant);
+        if (old_output.control_replication_map.empty())
+        {
+          output.target_processors.reserve(old_output.task_mappings.size());
+          for (unsigned idx = 0; old_output.task_mappings.size(); idx++)
+          {
+            assert(!old_output.task_mappings[idx].target_procs.empty());
+            output.target_processors.push_back(
+                old_output.task_mappings[idx].target_procs.front());
+          }
+        }
+        else
+          output.target_processors.swap(old_output.control_replication_map);
+        output.shard_points.swap(old_output.shard_points);
+        output.shard_domain = old_output.shard_domain;
+      }
+    }
+
+    //--------------------------------------------------------------------------
+    void DefaultMapper::map_replicate_task(const MapperContext      ctx,
+                                           const Task&              task,
+                                           const MapTaskInput&      input,
+                                           const MapTaskOutput&     def_output,
+                                           MapReplicateTaskOutput&  output)
+    //--------------------------------------------------------------------------
+    {
+      // Don't do anything here since it is just for backwards compatiblity
+      // in case other users want to override it
     }
 
     //--------------------------------------------------------------------------
@@ -1666,7 +1649,8 @@ namespace Legion {
                                     std::vector<Processor> &target_procs)
     //--------------------------------------------------------------------------
     {
-      if (task.target_proc.address_space() == node_id)
+      if ((task.target_proc.address_space() == node_id) && 
+          !task.concurrent_task)
       {
         switch (task.target_proc.kind())
         {
@@ -1888,6 +1872,209 @@ namespace Legion {
     }
 
     //--------------------------------------------------------------------------
+    void inline DefaultMapper::partition_task_layout_constraint_sets(
+			   const MapperContext ctx,
+			   const unsigned index,
+			   std::set<FieldID> &needed_fields,
+			   const TaskLayoutConstraintSet &layout_constraints,
+			   std::vector<std::vector<FieldID> > &field_arrays,
+			   std::vector<std::vector<FieldID> > &leftover_fields,
+			   std::vector<LayoutConstraintID> &field_layout_ids,
+			   std::vector<LayoutConstraintID> &non_field_layout_ids)
+    //--------------------------------------------------------------------------
+    {
+      // partition task layout constraints sets into 2 - those that have fields
+      // explicitly specified and those that don't
+      for (auto lay_it =
+	     layout_constraints.layouts.lower_bound(index); lay_it !=
+	     layout_constraints.layouts.upper_bound(index); lay_it++)
+      {
+	// Get the layout constraints from the task layout set
+	const LayoutConstraintSet &index_constraints =
+	  runtime->find_layout_constraints(ctx, lay_it->second);
+	bool field_layout_cid = false;
+	// determine overlapping fields between the task layout constraint and needed_fields
+	std::vector<FieldID> overlapping_fields;
+	const std::vector<FieldID> &constraint_fields =
+	  index_constraints.field_constraint.get_field_set();
+
+	// check if there are any field constraints in the current task layout constraint
+	if (!constraint_fields.empty()) {
+	  field_layout_cid = true;
+	  for (FieldID fid: constraint_fields)
+	  {
+	    // check if the field is included in the needed_fields i.e. overlaps
+	    auto finder = needed_fields.find(fid);
+	    if (finder != needed_fields.end()) {
+	      overlapping_fields.push_back(fid);
+	      // Remove from the needed fields since we're going to handle it
+	      needed_fields.erase(finder);
+	    }
+	  }
+	}
+	// alignment constraints may have an explicit field
+	if (!index_constraints.alignment_constraints.empty()) {
+	  field_layout_cid = true;
+	  for (unsigned idx = 0; idx < index_constraints.alignment_constraints.size(); idx++) {
+	    auto fid = index_constraints.alignment_constraints[idx].fid;
+	    auto finder = needed_fields.find(fid);
+	    if (finder != needed_fields.end()) {
+	      overlapping_fields.push_back(fid);
+	      // Remove from the needed fields since we're going to handle it
+	      needed_fields.erase(finder);
+	    }
+	  }
+	}
+	// offset constraints may have an explicit field
+	if (!index_constraints.offset_constraints.empty()) {
+	  field_layout_cid = true;
+	  for (unsigned idx = 0; idx < index_constraints.offset_constraints.size(); idx++) {
+	    auto fid = index_constraints.offset_constraints[idx].fid;
+	    auto finder = needed_fields.find(fid);
+	    if (finder != needed_fields.end()) {
+	      overlapping_fields.push_back(fid);
+	      // Remove from the needed fields since we're going to handle it
+	      needed_fields.erase(finder);
+	    }
+	  }
+	}
+	// If we don't have any overlapping fields, then keep going
+	if (field_layout_cid && overlapping_fields.empty())
+	  continue;
+	if (!field_layout_cid)  { // constraint_field empty
+	  non_field_layout_ids.push_back(lay_it->second);
+	}
+	if (!overlapping_fields.empty()) {
+	  field_arrays.push_back(overlapping_fields);
+	  field_layout_ids.push_back(lay_it->second);
+	}
+      }
+      // after all explicit field related constraints have been identified
+      // leftover fields is the remaining fields
+      if (!needed_fields.empty()) {
+	std::vector<FieldID> fields;
+	fields.insert(fields.end(), needed_fields.begin(),needed_fields.end());
+	leftover_fields.push_back(fields);
+      }
+    }
+
+    //--------------------------------------------------------------------------
+    inline bool
+    DefaultMapper::create_instances_from_partitioned_task_layout_constraint_set(
+		      const MapperContext ctx,
+		      const Memory target_memory,
+		      const std::vector<std::vector<FieldID> > &field_arrays,
+		      const std::vector<LayoutConstraintID> &layout_ids,
+		      const unsigned int layout_ids_size,
+		      std::vector<PhysicalInstance> &instances,
+		      const RegionRequirement &req,
+		      const bool force_new_instances,
+		      size_t *footprint,
+		      const bool is_field_constraints,
+		      const bool all_fields_opt)
+    //--------------------------------------------------------------------------
+    {
+
+      for (unsigned idx = 0; idx < layout_ids_size; idx++)
+      {
+	instances.resize(instances.size()+1);
+	LayoutConstraintID lay_id = layout_ids[idx];
+	std::vector<FieldID> overlapping_fields;
+	const LayoutConstraintSet &index_constraints =
+	  runtime->find_layout_constraints(ctx, lay_id);
+	overlapping_fields = field_arrays[idx];
+	LayoutConstraintSet creation_constraints = index_constraints;
+	if (is_field_constraints && (!index_constraints.field_constraint.get_field_set().empty()))
+	{
+	  // add field constraints
+	  creation_constraints.add_constraint(
+				 FieldConstraint(overlapping_fields,
+				 index_constraints.field_constraint.contiguous,
+				 index_constraints.field_constraint.inorder));
+	}
+
+	else {
+	  // default case - constraint applied to remaining fields
+	  // leftover_fields
+	  // if not optimizing for all fields in the field space, add the
+	  // overlapping_fields in the field constraint
+	  if (!all_fields_opt)
+	    creation_constraints.add_constraint(
+		      FieldConstraint(overlapping_fields, false/*contig*/, false/*inorder*/));
+	  else
+	    {
+	      assert(creation_constraints.field_constraint.field_set.size() == 0);
+	      std::vector<FieldID> creation_fields;
+	      default_policy_select_constraint_fields(ctx, req, creation_fields);
+	      creation_constraints.add_constraint(
+		  FieldConstraint(creation_fields, false/*contig*/, false/*inorder*/));
+	    }
+	}
+	// let the default mapper add any additional constraints
+	default_policy_select_constraints(ctx, creation_constraints,
+					  target_memory, req);
+	if (!default_make_instance(ctx, target_memory, creation_constraints,
+				   instances.back(), TASK_MAPPING, force_new_instances,
+				   true/*meets*/, req, footprint))
+	  return false;
+      }
+      return true;
+    }
+
+    //--------------------------------------------------------------------------
+    void DefaultMapper::check_valid_task_layout_constraints(const Task &task,
+				    MapperContext ctx,
+				    const TaskLayoutConstraintSet &layout_constraints,
+				    const Processor target_proc, const Memory target_memory,
+				    const RegionRequirement &req, const unsigned index)
+    //--------------------------------------------------------------------------
+    {
+      // if we have reduce privileges on region requirements - check if the
+      // req.redop is same as that in 'specialized constraints'
+      if (req.privilege == LEGION_REDUCE)
+	{
+	  for (auto lay_it =
+	   layout_constraints.layouts.lower_bound(index); lay_it !=
+	   layout_constraints.layouts.upper_bound(index); lay_it++)
+	    {
+	      // Get the layout constraints from the task layout set
+	      const LayoutConstraintSet &index_constraints =
+		runtime->find_layout_constraints(ctx, lay_it->second);
+	      std::vector<FieldID> overlapping_fields;
+	      const std::vector<FieldID> &constraint_fields =
+		index_constraints.field_constraint.get_field_set();
+	      // check if there are any field constraints in the current task layout constraint
+	      if (!constraint_fields.empty()) {
+
+		for (FieldID fid: constraint_fields)
+		  {
+		    // check if the field is included in the privilege fields
+		    auto finder =  req.privilege_fields.find(fid);
+		    if (finder != req.privilege_fields.end()) {
+		      // check specialized constraint
+                      const SpecializedConstraint constraint(
+                          LEGION_AFFINE_REDUCTION_SPECIALIZE, req.redop); 
+                      if (index_constraints.specialized_constraint.conflicts(constraint))
+			{
+			  log_mapper.error("Default mapper failed allocation for "
+			   "region requirement %d of task %s (UID %lld) in memory "
+			   IDFMT " (%s) for processor " IDFMT " (%s). Mismatch between "
+			   "reduction type in task layout constraint "
+			   "and region requirement for FieldID (%u)",
+			   index,
+			   task.get_task_name(), task.get_unique_id(),
+			   target_memory.id, Utilities::to_string(target_memory.kind()),
+			   target_proc.id, Utilities::to_string(target_proc.kind()), fid);
+			  assert(false);
+			}
+		    }
+		  }
+	      }
+	    }
+	}
+    }
+
+    //--------------------------------------------------------------------------
     bool DefaultMapper::default_create_custom_instances(MapperContext ctx,
                           Processor target_proc, Memory target_memory,
                           const RegionRequirement &req, unsigned index,
@@ -1898,134 +2085,85 @@ namespace Legion {
                           size_t *footprint /*= NULL*/)
     //--------------------------------------------------------------------------
     {
-      // Special case for reduction instances, no point in checking
-      // for existing ones and we also know that currently we can only
-      // make a single instance for each field of a reduction
-      if (req.privilege == LEGION_REDUCE)
-      {
-        // Iterate over the fields one by one for now, once Realm figures
-        // out how to deal with reduction instances that contain
-        bool force_new_instances = true; // always have to force new instances
-        LayoutConstraintID our_layout_id =
-         default_policy_select_layout_constraints(ctx, target_memory, req,
-               TASK_MAPPING, needs_field_constraint_check, force_new_instances);
-        LayoutConstraintSet our_constraints =
-                      runtime->find_layout_constraints(ctx, our_layout_id);
-        instances.resize(instances.size() + req.privilege_fields.size());
-        unsigned idx = 0;
-        for (std::set<FieldID>::const_iterator it =
-              req.privilege_fields.begin(); it !=
-              req.privilege_fields.end(); it++, idx++)
-        {
-          our_constraints.field_constraint.field_set.clear();
-          our_constraints.field_constraint.field_set.push_back(*it);
-          if (!default_make_instance(ctx, target_memory, our_constraints,
-                       instances[idx], TASK_MAPPING, force_new_instances,
-                       true/*meets*/, req, footprint))
-            return false;
-        }
-        return true;
-      }
-      // Before we do anything else figure out our
-      // constraints for any instances of this task, then we'll
-      // see if these constraints conflict with or are satisfied by
-      // any of the other constraints
       bool force_new_instances = false;
+      // include all the fields in the region req for reduce privileges
+      if (req.privilege == LEGION_REDUCE) {
+	force_new_instances = default_policy_select_reduction_instance_reuse(ctx) ? false: true;
+	needed_fields.clear();
+	needed_fields.insert(req.privilege_fields.begin(), req.privilege_fields.end());
+      }
+      // preprocess all the task constraint sets
+      // partition them into field/non-field constraint sets + fields
+      std::vector<std::vector<FieldID> > field_arrays, leftover_fields;
+      std::vector<LayoutConstraintID> field_layout_ids, non_field_layout_ids;
+      unsigned needed_fields_size = needed_fields.size();
+      partition_task_layout_constraint_sets(ctx, index, needed_fields,
+					    layout_constraints,
+					    field_arrays, leftover_fields,
+					    field_layout_ids,
+					    non_field_layout_ids);
+      // case 1 - create instances for fields with explicit constraints
+      if (!field_layout_ids.empty())
+      {
+	bool ok = create_instances_from_partitioned_task_layout_constraint_set(
+		           ctx,
+			   target_memory,
+			   field_arrays,
+			   field_layout_ids,
+			   field_layout_ids.size(),
+			   instances,
+			   req,
+			   force_new_instances,
+			   footprint,
+			   /* field constraints */true);
+	if (!ok)
+	  return false;
+      }
+
+      // case 2 - non-field constraints + needed fields not empty
+      if((!non_field_layout_ids.empty()) && (!needed_fields.empty()))
+      {
+	// all_fields_opt ->  creates an instance with all fields
+	// in a region requirement is not valid for region req with reduce privileges.
+	bool all_fields_opt = ((needed_fields.size() == needed_fields_size)
+			       && (req.privilege != LEGION_REDUCE)) ? true: false;
+	// we will process all the needed_fields and use one non-field layout set
+	needed_fields.clear();
+	bool ok = create_instances_from_partitioned_task_layout_constraint_set(
+			   ctx,
+			   target_memory,
+			   leftover_fields,
+			   non_field_layout_ids,
+			   1,
+			   instances,
+			   req,
+			   force_new_instances,
+			   footprint,
+			   /* non-field constraints */ false, all_fields_opt);
+	if (!ok)
+	  return false;
+      }
+      if (needed_fields.empty())
+	return true;
+
+      // case 3 - no constraints + needed_fields is not empty
+      // There are no constraints for these fields so we get to do what we want
+      instances.resize(instances.size()+1);
       LayoutConstraintID our_layout_id =
        default_policy_select_layout_constraints(ctx, target_memory, req,
                TASK_MAPPING, needs_field_constraint_check, force_new_instances);
-      const LayoutConstraintSet &our_constraints =
-                    runtime->find_layout_constraints(ctx, our_layout_id);
-      for (std::multimap<unsigned,LayoutConstraintID>::const_iterator lay_it =
-            layout_constraints.layouts.lower_bound(index); lay_it !=
-            layout_constraints.layouts.upper_bound(index); lay_it++)
-      {
-        // Get the constraints
-        const LayoutConstraintSet &index_constraints =
-                  runtime->find_layout_constraints(ctx, lay_it->second);
-        std::vector<FieldID> overlapping_fields;
-        const std::vector<FieldID> &constraint_fields =
-          index_constraints.field_constraint.get_field_set();
-        if (!constraint_fields.empty())
-        {
-          for (unsigned idx = 0; idx < constraint_fields.size(); idx++)
-          {
-            FieldID fid = constraint_fields[idx];
-            std::set<FieldID>::iterator finder = needed_fields.find(fid);
-            if (finder != needed_fields.end())
-            {
-              overlapping_fields.push_back(fid);
-              // Remove from the needed fields since we're going to handle it
-              needed_fields.erase(finder);
-            }
-          }
-          // If we don't have any overlapping fields, then keep going
-          if (overlapping_fields.empty())
-            continue;
-        }
-        else // otherwise it applies to all the fields
-        {
-          overlapping_fields.insert(overlapping_fields.end(),
-              needed_fields.begin(), needed_fields.end());
-          needed_fields.clear();
-        }
-        // Now figure out how to make an instance
-        instances.resize(instances.size()+1);
-        // Check to see if these constraints conflict with our constraints
-        // or whether they entail our mapper preferred constraints
-        if (runtime->do_constraints_conflict(ctx, our_layout_id, lay_it->second)
-            || runtime->do_constraints_entail(ctx, lay_it->second, our_layout_id))
-        {
-          // They conflict or they entail our constraints so we're just going
-          // to make an instance using these constraints
-          // Check to see if they have fields and if not constraints with fields
-          if (constraint_fields.empty())
-          {
-            LayoutConstraintSet creation_constraints = index_constraints;
-            default_policy_select_constraints(ctx, creation_constraints,
-                                              target_memory, req);
-            creation_constraints.add_constraint(
-                FieldConstraint(overlapping_fields,
-                  index_constraints.field_constraint.contiguous,
-                  index_constraints.field_constraint.inorder));
-            if (!default_make_instance(ctx, target_memory, creation_constraints,
-                         instances.back(), TASK_MAPPING, force_new_instances,
-                         true/*meets*/, req, footprint))
-              return false;
-          }
-          else if (!default_make_instance(ctx, target_memory, index_constraints,
-                     instances.back(), TASK_MAPPING, force_new_instances,
-                     false/*meets*/, req, footprint))
-            return false;
-        }
-        else
-        {
-          // These constraints don't do as much as we want but don't
-          // conflict so make an instance with them and our constraints
-          LayoutConstraintSet creation_constraints = index_constraints;
-          default_policy_select_constraints(ctx, creation_constraints,
-                                            target_memory, req);
-          creation_constraints.add_constraint(
-              FieldConstraint(overlapping_fields,
-                creation_constraints.field_constraint.contiguous ||
-                index_constraints.field_constraint.contiguous,
-                creation_constraints.field_constraint.inorder ||
-                index_constraints.field_constraint.inorder));
-          if (!default_make_instance(ctx, target_memory, creation_constraints,
-                         instances.back(), TASK_MAPPING, force_new_instances,
-                         true/*meets*/, req, footprint))
-            return false;
-        }
-      }
-      // If we don't have anymore needed fields, we are done
-      if (needed_fields.empty())
-        return true;
-      // There are no constraints for these fields so we get to do what we want
-      instances.resize(instances.size()+1);
+      LayoutConstraintSet our_constraints =
+	runtime->find_layout_constraints(ctx, our_layout_id);
       LayoutConstraintSet creation_constraints = our_constraints;
       std::vector<FieldID> creation_fields;
-      default_policy_select_instance_fields(ctx, req, needed_fields,
-          creation_fields);
+      // for reduce privileges disable adding all fields in the field space
+      if ((needed_fields.size() != needed_fields_size) || (req.privilege == LEGION_REDUCE))
+	default_policy_select_instance_fields(ctx, req, needed_fields,
+					      creation_fields);
+      else
+	// if we don't have any fields in task layout constraints
+	// as an optimization, add all fields in the field space
+	default_policy_select_constraint_fields(ctx, req, creation_fields);
       creation_constraints.add_constraint(
           FieldConstraint(creation_fields, false/*contig*/, false/*inorder*/));
       if (!default_make_instance(ctx, target_memory, creation_constraints,
@@ -2120,6 +2258,40 @@ namespace Legion {
     }
 
     //--------------------------------------------------------------------------
+    Memory DefaultMapper::default_policy_select_output_target(
+                                       MapperContext ctx, Processor target_proc)
+    //--------------------------------------------------------------------------
+    {
+      // Find the visible memories from the processor for the given kind
+      Machine::MemoryQuery visible_memories(machine);
+      visible_memories.has_affinity_to(target_proc);
+      if (visible_memories.count() == 0)
+      {
+        log_mapper.error("No visible memories from processor " IDFMT "! "
+                         "This machine is really messed up!", target_proc.id);
+        assert(false);
+      }
+      // Figure out the memory with the highest-bandwidth
+      Memory best_memory = Memory::NO_MEMORY;
+      unsigned best_bandwidth = 0;
+      std::vector<Machine::ProcessorMemoryAffinity> affinity(1);
+      for (Machine::MemoryQuery::iterator it = visible_memories.begin();
+            it != visible_memories.end(); it++)
+      {
+        affinity.clear();
+        machine.get_proc_mem_affinity(affinity, target_proc, *it,
+				      false /*not just local affinities*/);
+        assert(affinity.size() == 1);
+        if (!best_memory.exists() || (affinity[0].bandwidth > best_bandwidth)) {
+          best_memory = *it;
+          best_bandwidth = affinity[0].bandwidth;
+        }
+      }
+      assert(best_memory.exists());
+      return best_memory;
+    }
+
+    //--------------------------------------------------------------------------
     LayoutConstraintID DefaultMapper::default_policy_select_layout_constraints(
                                     MapperContext ctx, Memory target_memory,
                                     const RegionRequirement &req,
@@ -2128,12 +2300,17 @@ namespace Legion {
                                     bool &force_new_instances)
     //--------------------------------------------------------------------------
     {
-      // Do something special for reductions and
-      // it is not an explicit region-to-region copy
+      // We always set force_new_instances to false since we are
+      // deciding to optimize for minimizing memory usage instead
+      // of avoiding Write-After-Read (WAR) dependences
+      // for reduc privileges - we use the default policy
+      if (req.privilege == LEGION_REDUCE)
+	force_new_instances =
+	  default_policy_select_reduction_instance_reuse(ctx) ? false: true;
+      else
+	force_new_instances = false;
       if ((req.privilege == LEGION_REDUCE) && (mapping_kind != COPY_MAPPING))
       {
-        // Always make new reduction instances
-        force_new_instances = true;
         std::pair<Memory::Kind,ReductionOpID> constraint_key(
             target_memory.kind(), req.redop);
         std::map<std::pair<Memory::Kind,ReductionOpID>,LayoutConstraintID>::
@@ -2151,10 +2328,6 @@ namespace Legion {
         reduction_constraint_cache[constraint_key] = result;
         return result;
       }
-      // We always set force_new_instances to false since we are
-      // deciding to optimize for minimizing memory usage instead
-      // of avoiding Write-After-Read (WAR) dependences
-      force_new_instances = false;
       // See if we've already made a constraint set for this layout
       std::pair<Memory::Kind,FieldSpace> constraint_key(target_memory.kind(),
                                                req.region.get_field_space());
@@ -2259,6 +2432,24 @@ namespace Legion {
     }
 
     //--------------------------------------------------------------------------
+    void DefaultMapper::default_policy_select_output_constraints(
+                                               const Task &task,
+                                               LayoutConstraintSet &constraints,
+                                               const RegionRequirement &req)
+    //--------------------------------------------------------------------------
+    {
+      IndexSpace is = req.region.get_index_space();
+      int dim = is.get_dim();
+      std::vector<DimensionKind> dimension_ordering(dim + 1);
+      for (int i = 0; i < dim; ++i)
+        dimension_ordering[i] =
+          static_cast<DimensionKind>(static_cast<int>(LEGION_DIM_X) + i);
+      dimension_ordering[dim] = LEGION_DIM_F;
+      constraints.add_constraint(OrderingConstraint(dimension_ordering,
+                                                    false/*contigous*/));
+    }
+
+    //--------------------------------------------------------------------------
     void DefaultMapper::default_policy_select_constraint_fields(
                                     MapperContext ctx,
                                     const RegionRequirement &req,
@@ -2287,8 +2478,7 @@ namespace Legion {
       // TODO: deal with task layout constraints that require multiple
       // region requirements to be mapped to the same instance
       std::vector<LogicalRegion> target_regions(1, target_region);
-      if (force_new ||
-          ((req.privilege == LEGION_REDUCE) && (kind != COPY_MAPPING))) {
+      if (force_new){
         if (!runtime->create_physical_instance(ctx, target_memory,
               constraints, target_regions, result, true/*acquire*/,
               0/*priority*/, tight_region_bounds, footprint))
@@ -2406,15 +2596,7 @@ namespace Legion {
                                     std::vector<FieldID> &fields)
     //--------------------------------------------------------------------------
     {
-      if (total_nodes == 1)
-      {
-        FieldSpace handle = req.region.get_field_space();
-        runtime->get_field_space_fields(ctx, handle, fields);
-      }
-      else
-      {
-        fields.insert(fields.end(), needed_fields.begin(), needed_fields.end());
-      }
+      fields.insert(fields.end(), needed_fields.begin(), needed_fields.end());
     }
 
 
@@ -2545,17 +2727,6 @@ namespace Legion {
     }
 
     //--------------------------------------------------------------------------
-    void DefaultMapper::speculate(const MapperContext      ctx,
-                                  const Task&              task,
-                                        SpeculativeOutput& output)
-    //--------------------------------------------------------------------------
-    {
-      log_mapper.spew("Default speculate for Task in %s", get_mapper_name());
-      // Default mapper doesn't speculate
-      output.speculate = false;
-    }
-
-    //--------------------------------------------------------------------------
     void DefaultMapper::report_profiling(const MapperContext      ctx,
                                          const Task&              task,
                                          const TaskProfilingInfo& input)
@@ -2565,6 +2736,19 @@ namespace Legion {
                       get_mapper_name());
       // We don't ask for any task profiling right now so assert if we see this
       assert(false);
+    }
+
+    //--------------------------------------------------------------------------
+    void DefaultMapper::select_sharding_functor(
+                                 const MapperContext                ctx,
+                                 const Task&                        task,
+                                 const SelectShardingFunctorInput&  input,
+                                       SelectShardingFunctorOutput& output)
+    //--------------------------------------------------------------------------
+    {
+      log_mapper.spew("Default select_sharding_functor for Task in %s",
+                      get_mapper_name());
+      output.chosen_functor = 0; // use the default functor
     }
 
     //--------------------------------------------------------------------------
@@ -2810,17 +2994,6 @@ namespace Legion {
     }
 
     //--------------------------------------------------------------------------
-    void DefaultMapper::speculate(const MapperContext      ctx,
-                                  const Copy& copy,
-                                        SpeculativeOutput& output)
-    //--------------------------------------------------------------------------
-    {
-      log_mapper.spew("Default speculate for Copy in %s", get_mapper_name());
-      // Default mapper doesn't speculate
-      output.speculate = false;
-    }
-
-    //--------------------------------------------------------------------------
     void DefaultMapper::report_profiling(const MapperContext      ctx,
                                          const Copy&              copy,
                                          const CopyProfilingInfo& input)
@@ -2833,66 +3006,30 @@ namespace Legion {
     }
 
     //--------------------------------------------------------------------------
-    void DefaultMapper::map_close(const MapperContext       ctx,
-                                  const Close&              close,
-                                  const MapCloseInput&      input,
-                                        MapCloseOutput&     output)
+    void DefaultMapper::select_sharding_functor(
+                                 const MapperContext                ctx,
+                                 const Copy&                        copy,
+                                 const SelectShardingFunctorInput&  input,
+                                       SelectShardingFunctorOutput& output)
     //--------------------------------------------------------------------------
     {
-      log_mapper.spew("Default map_close in %s", get_mapper_name());
-      // Simple heuristic for closes, if we have an instance use it,
-      // otherwise see if we should make a composite or a real instance.
-      output.chosen_instances = input.valid_instances;
-      if (!output.chosen_instances.empty())
-        runtime->acquire_and_filter_instances(ctx,
-                                                  output.chosen_instances);
-
-      if (default_policy_select_close_virtual(ctx, close)) {
-        output.chosen_instances.push_back(
-                                  PhysicalInstance::get_virtual_instance());
-      } else {
-        // Make one big instance at the location where the parent task
-        // is running.
-        Memory target_memory =
-          default_policy_select_target_memory(ctx,
-                                              close.parent_task->current_proc,
-                                              close.requirement);
-        LayoutConstraintSet constraints;
-        default_policy_select_constraints(ctx, constraints, target_memory,
-                                          close.requirement);
-
-        output.chosen_instances.resize(output.chosen_instances.size()+1);
-        size_t footprint;
-        if (!default_make_instance(ctx, target_memory, constraints,
-              output.chosen_instances.back(), CLOSE_MAPPING,
-              false/*force*/, true/*meets*/, close.requirement, &footprint))
-        {
-          // If we failed to make it that is bad
-          log_mapper.error("Default mapper failed allocation of size %zd bytes "
-                         "for region requirement of close in task %s (UID %lld)"
-                         " in memory " IDFMT " (%s) for processor " IDFMT " (%s). This "
-                         "means the working set of your application is too big "
-                         "for the allotted capacity of the given memory under "
-                         "the default mapper's mapping scheme. You have three "
-                         "choices: ask Realm to allocate more memory, write a "
-                         "custom mapper to better manage working sets, or find "
-                         "a bigger machine.", footprint,
-                         close.parent_task->get_task_name(),
-                         close.parent_task->get_unique_id(),
-                         target_memory.id,
-                         Utilities::to_string(target_memory.kind()),
-                         close.parent_task->current_proc.id,
-                         Utilities::to_string(close.parent_task->current_proc.kind())
-                         );
-          assert(false);
-        }
-      }
+      log_mapper.spew("Default select_sharding_functor for Copy in %s",
+                      get_mapper_name());
+      output.chosen_functor = 0; // use the default functor
     }
 
     //--------------------------------------------------------------------------
     bool DefaultMapper::default_policy_select_close_virtual(
                           const MapperContext ctx,
                           const Close&        close)
+    //--------------------------------------------------------------------------
+    {
+      return true;
+    }
+
+    //--------------------------------------------------------------------------
+    bool DefaultMapper::default_policy_select_reduction_instance_reuse(
+					       const MapperContext ctx)
     //--------------------------------------------------------------------------
     {
       return true;
@@ -2923,6 +3060,19 @@ namespace Legion {
     }
 
     //--------------------------------------------------------------------------
+    void DefaultMapper::select_sharding_functor(
+                                 const MapperContext                ctx,
+                                 const Close&                       close,
+                                 const SelectShardingFunctorInput&  input,
+                                       SelectShardingFunctorOutput& output)
+    //--------------------------------------------------------------------------
+    {
+      log_mapper.spew("Default select_sharding_functor for Close in %s",
+                      get_mapper_name());
+      output.chosen_functor = 0; // use the default functor
+    }
+
+    //--------------------------------------------------------------------------
     void DefaultMapper::map_acquire(const MapperContext         ctx,
                                     const Acquire&              acquire,
                                     const MapAcquireInput&      input,
@@ -2931,17 +3081,6 @@ namespace Legion {
     {
       log_mapper.spew("Default map_acquire in %s", get_mapper_name());
       // Nothing to do here for now until we start using profiling
-    }
-
-    //--------------------------------------------------------------------------
-    void DefaultMapper::speculate(const MapperContext         ctx,
-                                  const Acquire&              acquire,
-                                        SpeculativeOutput&    output)
-    //--------------------------------------------------------------------------
-    {
-      log_mapper.spew("Default speculate for Acquire in %s", get_mapper_name());
-      // Default mapper doesn't speculate
-      output.speculate = false;
     }
 
     //--------------------------------------------------------------------------
@@ -2954,6 +3093,19 @@ namespace Legion {
                       get_mapper_name());
       // We don't ask for any task profiling right now so assert if we see this
       assert(false);
+    }
+
+    //--------------------------------------------------------------------------
+    void DefaultMapper::select_sharding_functor(
+                                 const MapperContext                ctx,
+                                 const Acquire&                     acquire,
+                                 const SelectShardingFunctorInput&  input,
+                                       SelectShardingFunctorOutput& output)
+    //--------------------------------------------------------------------------
+    {
+      log_mapper.spew("Default select_sharding_functor for Acquire in %s",
+                      get_mapper_name());
+      output.chosen_functor = 0; // use the default functor
     }
 
     //--------------------------------------------------------------------------
@@ -2980,17 +3132,6 @@ namespace Legion {
     }
 
     //--------------------------------------------------------------------------
-    void DefaultMapper::speculate(const MapperContext         ctx,
-                                  const Release&              release,
-                                        SpeculativeOutput&    output)
-    //--------------------------------------------------------------------------
-    {
-      log_mapper.spew("Default speculate for Release in %s", get_mapper_name());
-      // Default mapper doesn't speculate
-      output.speculate = false;
-    }
-
-    //--------------------------------------------------------------------------
     void DefaultMapper::report_profiling(const MapperContext         ctx,
                                          const Release&              release,
                                          const ReleaseProfilingInfo& input)
@@ -3000,6 +3141,19 @@ namespace Legion {
                       get_mapper_name());
       // We don't ask for any task profiling right now so assert if we see this
       assert(false);
+    }
+
+    //--------------------------------------------------------------------------
+    void DefaultMapper::select_sharding_functor(
+                                 const MapperContext                ctx,
+                                 const Release&                     release,
+                                 const SelectShardingFunctorInput&  input,
+                                       SelectShardingFunctorOutput& output)
+    //--------------------------------------------------------------------------
+    {
+      log_mapper.spew("Default select_sharding_functor for Release in %s",
+                      get_mapper_name());
+      output.chosen_functor = 0; // use the default functor
     }
 
     //--------------------------------------------------------------------------
@@ -3126,6 +3280,32 @@ namespace Legion {
     }
 
     //--------------------------------------------------------------------------
+    void DefaultMapper::select_sharding_functor(
+                                 const MapperContext                ctx,
+                                 const Partition&                   partition,
+                                 const SelectShardingFunctorInput&  input,
+                                       SelectShardingFunctorOutput& output)
+    //--------------------------------------------------------------------------
+    {
+      log_mapper.spew("Default select_sharding_functor for Partition in %s",
+                      get_mapper_name());
+      output.chosen_functor = 0; // use the default functor
+    }
+
+    //--------------------------------------------------------------------------
+    void DefaultMapper::select_sharding_functor(
+                                 const MapperContext                ctx,
+                                 const Fill&                        fill,
+                                 const SelectShardingFunctorInput&  input,
+                                       SelectShardingFunctorOutput& output)
+    //--------------------------------------------------------------------------
+    {
+      log_mapper.spew("Default select_sharding_functor for Fill in %s",
+                      get_mapper_name());
+      output.chosen_functor = 0; // use the default functor
+    }
+
+    //--------------------------------------------------------------------------
     void DefaultMapper::configure_context(const MapperContext         ctx,
                                           const Task&                 task,
                                                 ContextConfigOutput&  output)
@@ -3235,6 +3415,56 @@ namespace Legion {
 	  return true;
       }
       return false;
+    }
+
+    //--------------------------------------------------------------------------
+    const std::vector<Processor>& DefaultMapper::local_procs_by_kind(
+                                                           Processor::Kind kind)
+    //--------------------------------------------------------------------------
+    {
+      switch (kind)
+      {
+        case Processor::LOC_PROC:
+          return local_cpus;
+        case Processor::TOC_PROC:
+          return local_gpus;
+        case Processor::IO_PROC:
+          return local_ios;
+        case Processor::PROC_SET:
+          return local_procsets;
+        case Processor::OMP_PROC:
+          return local_omps;
+        case Processor::PY_PROC:
+          return local_pys;
+        default:
+          assert(0);
+      }
+      return local_cpus;
+    }
+
+    //--------------------------------------------------------------------------
+    const std::vector<Processor>& DefaultMapper::remote_procs_by_kind(
+                                                           Processor::Kind kind)
+    //--------------------------------------------------------------------------
+    {
+      switch (kind)
+      {
+        case Processor::LOC_PROC:
+          return remote_cpus;
+        case Processor::TOC_PROC:
+          return remote_gpus;
+        case Processor::IO_PROC:
+          return remote_ios;
+        case Processor::PROC_SET:
+          return remote_procsets;
+        case Processor::OMP_PROC:
+          return remote_omps;
+        case Processor::PY_PROC:
+          return remote_pys;
+        default:
+          assert(0);
+      }
+      return remote_cpus;
     }
 
     //--------------------------------------------------------------------------
@@ -3368,9 +3598,12 @@ namespace Legion {
                             << " tasks to AS " << curr_as->first;
 
 	  // assign tasks in this group to processors in this space
-	  for(std::set<const Task *>::const_iterator it2 = it->begin();
-	      it2 != it->end();
-	      ++it2) {
+          // we sort them by their index point in order to ensure that
+          // this process is deterministic for dynamic control replication
+          std::vector<const Task*> point_tasks(it->begin(), it->end());
+          std::sort(point_tasks.begin(), point_tasks.end(), point_sort_func);
+          for (std::vector<const Task*>::const_iterator it2 = 
+                point_tasks.begin(); it2 != point_tasks.end(); ++it2) {
 	    target_procs[*it2] = curr_as->second.front();
 	    curr_as->second.pop_front();
 	    n_left--;
@@ -3454,6 +3687,23 @@ namespace Legion {
 	}
       }
       return target_memory;
+    }
+
+    //--------------------------------------------------------------------------
+    void DefaultMapper::select_sharding_functor(
+                                 const MapperContext                   ctx,
+                                 const MustEpoch&                      epoch,
+                                 const SelectShardingFunctorInput&     input,
+                                       MustEpochShardingFunctorOutput& output)
+    //--------------------------------------------------------------------------
+    {
+      log_mapper.spew("Default select_sharding_functor for Must Epoch in %s",
+                      get_mapper_name());
+      output.chosen_functor = 0; // use the default functor
+      // The default mapper currently doesn't support a collective
+      // map_must_epoch call as its algorithm requires global information
+      // about the must epoch launch to work correctly
+      output.collective_map_must_epoch_call = false;
     }
 
     //--------------------------------------------------------------------------
