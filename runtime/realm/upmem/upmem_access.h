@@ -25,6 +25,14 @@
 #define CHECK_UPMEM(x) DPU_ASSERT(x)
 #endif
 
+// this is disgusting
+#define PADDING(x)                                                                       \
+private:                                                                                 \
+  union {                                                                                \
+    char padding[x];                                                                     \
+    alignas(x) struct { } _; };                                                          \
+  static_assert(sizeof(padding) >= sizeof(_), "Padding is too small");
+
 namespace Realm {
   namespace Upmem {
     REALM_PUBLIC_API void LaunchKernel(const char *bin, void *args[],

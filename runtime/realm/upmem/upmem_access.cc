@@ -30,16 +30,26 @@ namespace Realm {
       stream = mod->get_task_upmem_stream();
 
       dpu_set_t dpu_proc;
+
+#ifdef DEBUG_REALM
       printf("load: %s\n", bin);
+      printf("debug me: arg_size = %ld\n", arg_size);
+      assert(arg_size % 8 == 0 && "args_size must be multiple of 8 bytes");
+#endif
+
       CHECK_UPMEM(dpu_load(*stream, bin, NULL));
-      // printf("debug me: arg_size = %ld\n", arg_size);
 
       DPU_FOREACH(*stream, dpu_proc) { CHECK_UPMEM(dpu_prepare_xfer(dpu_proc, args)); }
 
-      CHECK_UPMEM(dpu_push_xfer(*stream, DPU_XFER_TO_DPU, DPU_MRAM_HEAP_POINTER_NAME, 0,
-                                arg_size, DPU_XFER_ASYNC));
+      CHECK_UPMEM(dpu_push_xfer(*stream, DPU_XFER_TO_DPU, symbol_name, 0, arg_size,
+                                DPU_XFER_ASYNC));
 
-      CHECK_UPMEM(dpu_launch(*stream, DPU_ASYNCHRONOUS));
+      // CHECK_UPMEM(dpu_launch(*stream, DPU_ASYNCHRONOUS));
+
+      CHECK_UPMEM(dpu_launch(*stream, DPU_SYNCHRONOUS));
+
+      printf("Display DPU Logs\n");
+      DPU_FOREACH(*stream, dpu_proc) { DPU_ASSERT(dpu_log_read(dpu_proc, stdout)); }
     }
 
   }; // namespace Upmem

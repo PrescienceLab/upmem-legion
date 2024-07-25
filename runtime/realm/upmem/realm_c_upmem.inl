@@ -603,19 +603,30 @@ inline FT *AffineAccessor<FT, N, T>::ptr(const Point<N, T> &p) const
 template <typename FT, int N, typename T>
 inline FT AffineAccessor<FT, N, T>::read(const Point<N, T> &p) const
 {
-  return *(this->get_ptr(p));
+  FT *buffff;
+  mram_read((__mram_ptr void const *)((uintptr_t)DPU_MRAM_HEAP_POINTER +
+                                      (uintptr_t)(this->get_ptr(p))),
+            (void *)(buffff), sizeof(FT));
+  return *buffff;
 }
 
 template <typename FT, int N, typename T>
 inline void AffineAccessor<FT, N, T>::write(const Point<N, T> &p, FT newval) const
 {
-  *(this->get_ptr(p)) = newval;
+  mram_write((const void *)(&newval),
+             (__mram_ptr void *)((uintptr_t)DPU_MRAM_HEAP_POINTER +
+                                 (uintptr_t)(this->get_ptr(p))),
+             sizeof(FT));
 }
 
 template <typename FT, int N, typename T>
 inline FT &AffineAccessor<FT, N, T>::operator[](const Point<N, T> &p) const
 {
-  return *(this->get_ptr(p));
+  FT *buffff;
+  mram_read((__mram_ptr void const *)((uintptr_t)DPU_MRAM_HEAP_POINTER +
+                                      (uintptr_t)(this->get_ptr(p))),
+            (void *)(buffff), sizeof(FT));
+  return *buffff;
 }
 
 template <typename FT, int N, typename T>

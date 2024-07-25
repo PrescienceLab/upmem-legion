@@ -34,7 +34,17 @@ extern "C" {
 #define EXTERNC
 #endif
 
+EXTERNC int printf(const char *, ...);
+
 EXTERNC inline int __cxa_atexit(void (*func)(void *), void *arg, void *d) { return 0; }
+
+// this is disgusting
+#define PADDING(x)                                                                       \
+private:                                                                                 \
+  union {                                                                                \
+    char padding[x];                                                                     \
+    alignas(x) struct { } _; };                                                          \
+  static_assert(sizeof(padding) >= sizeof(_), "Padding is too small");
 
 namespace Realm {
 
@@ -51,8 +61,7 @@ namespace Realm {
   // type"
   //  for each dimension is int, but 64-bit indices are supported as well
   template <int N, typename T>
-  struct __attribute__((aligned(8))) Point {
-
+  struct Point {
     typedef T value_type;
     value_type values[N]; // use operator[] instead
 
@@ -128,7 +137,7 @@ namespace Realm {
   //  the bounds are INCLUSIVE
 
   template <int N, typename T>
-  struct __attribute__((aligned(8))) Rect {
+  struct Rect {
     Point<N, T> lo, hi;
 
     Rect(void);
@@ -213,7 +222,7 @@ namespace Realm {
   Rect<N, T> &operator-=(Rect<N, T> &lhs, const Rect<N, T2> &rhs);
 
   template <int M, int N, typename T>
-  struct __attribute__((aligned(8))) Matrix {
+  struct Matrix {
     Point<N, T> rows[M];
 
     Matrix(void);
@@ -236,7 +245,7 @@ namespace Realm {
   Matrix<M, N, T> operator*(const Matrix<M, P, T> &m, const Matrix<P, N, T2> &n);
 
   template <int N, typename T>
-  class __attribute__((aligned(8))) PointInRectIterator {
+  class PointInRectIterator {
   public:
     Point<N, T> p;
     bool valid;
@@ -261,7 +270,7 @@ namespace Realm {
    * The random-access look-ups are O(1) in the size of the instance.
    */
   template <typename FT, int N, typename T = int>
-  class __attribute__((aligned(8))) AffineAccessor {
+  class AffineAccessor {
   public:
     // NOTE: even when compiling with nvcc, non-default constructors are only
     //  available in host code

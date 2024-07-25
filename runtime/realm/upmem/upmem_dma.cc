@@ -672,20 +672,6 @@ namespace Realm {
       input_control.current_io_port = -1;
       input_control.remaining_count = _fill_total;
       input_control.eos_received = true;
-
-      // cuda memsets are ideally 8/16/32 bits, so try to _reduce_ the fill
-      //  size if there's duplication
-      if((fill_size > 1) &&
-         (memcmp(fill_data, static_cast<char *>(fill_data) + 1, fill_size - 1) == 0))
-        reduced_fill_size = 1; // can use memset8
-      else if((fill_size > 2) && ((fill_size >> 1) == 0) &&
-              (memcmp(fill_data, static_cast<char *>(fill_data) + 2, fill_size - 2) == 0))
-        reduced_fill_size = 2; // can use memset16
-      else if((fill_size > 4) && ((fill_size >> 2) == 0) &&
-              (memcmp(fill_data, static_cast<char *>(fill_data) + 4, fill_size - 4) == 0))
-        reduced_fill_size = 4; // can use memset32
-      else
-        reduced_fill_size = fill_size; // will have to do it in pieces
     }
 
     long DPUfillXferDes::get_requests(Request **requests, long nr)
@@ -742,38 +728,25 @@ namespace Realm {
             //  line, and then we can use logarithmic doublings to deal with
             //  multiple lines and/or planes
             size_t bytes = out_alc.remaining(0);
-            size_t elems = bytes / reduced_fill_size;
+            size_t elems = bytes / fill_size;
 
 #ifdef DEBUG_REALM
-            assert((bytes % reduced_fill_size) == 0);
+            assert((bytes % fill_size) == 0);
 #endif
 
-            size_t partial_bytes = 0;
+            void *buffer = (void *)malloc(elems * fill_size);
 
-            void *buffer = (void *)malloc(elems * reduced_fill_size);
-            // this is done because fill_data is a void* that has a reduced_fill_size
-            // length in bytes
-            while(partial_bytes < reduced_fill_size) {
+            const char *fill_buffer = reinterpret_cast<const char *>(fill_data);
 
-              uint8_t fill_u8;
-              memcpy(&fill_u8,
-                     reinterpret_cast<const uint8_t *>(fill_data) + partial_bytes, 1);
+            for(unsigned int i = 0; i < elems; i++) {
+              memcpy((void *)((char *)buffer + fill_size * i), fill_buffer, fill_size);
+            }
 
-              memset(buffer, (int)fill_u8, elems * reduced_fill_size);
-
-              {
-                CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()), buffer));
-                CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), DPU_XFER_TO_DPU,
-                                          DPU_MRAM_HEAP_POINTER_NAME,
-                                          out_base + out_offset + partial_bytes,
-                                          elems * reduced_fill_size, DPU_XFER_ASYNC));
-              }
-
-              // CHECK_HIP(hipMemset2DAsync(
-              //     (void *)(out_base + out_offset + partial_bytes), reduced_fill_size,
-              //     fill_u8, 1 /*"width"*/, elems /*"height"*/, (stream->get_stream())));
-
-              partial_bytes += 1;
+            {
+              CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()), buffer));
+              CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), DPU_XFER_TO_DPU,
+                                        DPU_MRAM_HEAP_POINTER_NAME, out_base + out_offset,
+                                        elems * fill_size, DPU_XFER_ASYNC));
             }
 
             // need to make sure the async transfer is done before we free the buffer
