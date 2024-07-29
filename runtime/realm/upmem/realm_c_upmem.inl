@@ -695,7 +695,6 @@ inline void AffineAccessor<FT, N, T>::write(const Point<N, T> &p, FT newval) con
 template <typename FT, int N, typename T>
 inline FT &AffineAccessor<FT, N, T>::operator[](const Point<N, T> &p) const
 {
-  printf("accessing: %d\n", (uintptr_t)this->get_ptr(p));
   FT buffff;
   mram_read((__mram_ptr void const *)((uintptr_t)DPU_MRAM_HEAP_POINTER +
                                       (uintptr_t)(this->get_ptr(p))),
