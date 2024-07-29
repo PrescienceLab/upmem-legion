@@ -5286,7 +5286,7 @@ namespace Realm {
         free_stream = true;
       }
       CHECK_CU(CUDA_DRIVER_FNPTR(cuStreamWaitEvent)(cuda_stream, cuda_event,
-                                                    CU_EVENT_WAIT_DEFAULT));
+                                                    CU_EVENT_DEFAULT));
       CHECK_CU(CUDA_DRIVER_FNPTR(cuLaunchHostFunc)(
           cuda_stream, event_trigger_callback, reinterpret_cast<void *>(realm_event.id)));
       if(free_stream) {

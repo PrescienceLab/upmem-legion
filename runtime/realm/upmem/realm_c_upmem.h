@@ -73,9 +73,9 @@ namespace Realm {
     Point(Arg0 val0, Arg1 val1, Args... vals);
     // construct from any integral value
     template <typename T2>
-    explicit Point(T2 val, T2); // same value for all dimensions
+    explicit Point(T2 val); // same value for all dimensions
     template <typename T2>
-    explicit Point(T2 vals[N], T2);
+    explicit Point(T2 vals[N]);
 
     // copies allow type coercion (assuming the underlying type does)
     template <typename T2>
@@ -105,6 +105,14 @@ namespace Realm {
 
     static constexpr Point<N, T> ONES(void);
   };
+
+  /// @brief Helper function to initialize Point from a list of types without needing to
+  /// explicitly specify the dimension or type of the resulting Point.
+  template <typename T = int, typename... U>
+  [[nodiscard]] constexpr auto make_point(const U &...rest) -> Point<sizeof...(rest), T>
+  {
+    return Point<sizeof...(rest), T>(rest...);
+  }
 
   // component-wise operators defined on Point<N,T> (with optional coercion)
   template <int N, typename T, typename T2>

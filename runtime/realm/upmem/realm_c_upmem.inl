@@ -17,14 +17,19 @@ inline Point<N, T>::Point(Arg0 val0, Arg1 val1, Args... vals)
   // TODO(cperry): Very bad!  We should not static_cast these for the user, as it can
   // hide sign and casting issues.  Kept here for compatibility while we weed out all
   // the cases in our codebase
-  : values{static_cast<value_type>(val0), static_cast<value_type>(val1),
-           static_cast<value_type>(vals)...}
-{}
+  // : values{static_cast<value_type>(val0), static_cast<value_type>(val1),
+  //          static_cast<value_type>(vals)...}
+{ 
+  // for(int i = 0; i < N; i++)
+  // values = mem_alloc(N * value_type)
+  values[0] = val0;
+  values[1] = val1;
+}
 
 template <int N, typename T>
 template <typename T2>
 
-inline Point<N, T>::Point(T2 val, T2)
+inline Point<N, T>::Point(T2 val)
 {
   for(int i = 0; i < N; i++)
     values[i] = val;
@@ -33,7 +38,7 @@ inline Point<N, T>::Point(T2 val, T2)
 template <int N, typename T>
 template <typename T2>
 
-inline Point<N, T>::Point(T2 vals[N], T2)
+inline Point<N, T>::Point(T2 vals[N])
 {
   for(int i = 0; i < N; i++)
     values[i] = vals[i];
@@ -60,6 +65,7 @@ template <int N, typename T>
 inline T &Point<N, T>::operator[](int index)
 {
   assert(index < N);
+  assert((uint64_t)values % 8 == 0);
   return values[index];
 }
 
@@ -141,6 +147,73 @@ template <int N, typename T>
 {
   return Point<N, T>(static_cast<T>(1));
 }
+  // 1D specialization (needed for implicit conversion of coordinate to 1D point)
+  template <typename T>
+  struct  Point<1, T> {
+    typedef T value_type;
+    value_type value;
+
+    
+    Point(void) {}
+    
+    Point(value_type val)
+      : value(val)
+    {}
+    template <typename T2>
+     explicit Point(T2 vals[1])
+      : value(vals[0])
+    {}
+    // construct from any integral value
+    template <typename T2>
+     explicit Point(T2 val)
+      : value(val)
+    {}
+    // copies allow type coercion (assuming the underlying type does)
+    template <typename T2>
+     Point(const Point<1, T2> &copy_from)
+      : value(copy_from.value)
+    {}
+    template <typename T2>
+     Point<1, T> &operator=(const Point<1, T2> &copy_from)
+    {
+      value = copy_from.value;
+      return *this;
+    }
+
+    
+    T &operator[](int index)
+    {
+      assert(index == 0);
+      return value;
+    }
+    
+    const T &operator[](int index) const
+    {
+      assert(index == 0);
+      assert((uint64_t)value % 8 == 0);
+      return value;
+    }
+
+    template <typename T2>
+     T dot(const Point<1, T2> &rhs) const
+    {
+      return value * rhs.value;
+    }
+
+    // 1-4D accessors.  These will only be available if the class's dimensioned allow for
+    // it, otherwise it is a compiler error to use them
+     T &x() { return value; }
+     const T &x() const { return value; }
+
+    
+    operator T() const { return value; }
+
+    
+    static constexpr Point<1, T> ZEROES(void) { return Point<1, T>(0); }
+    
+    static constexpr Point<1, T> ONES(void) { return Point<1, T>(1); }
+  };
+  
 
 // component-wise operators defined on Point<N,T> (with optional coercion)
 template <int N, typename T, typename T2>
@@ -592,7 +665,7 @@ inline AffineAccessor<FT, N, T>::~AffineAccessor(void)
 template <typename FT, int N, typename T>
 inline void AffineAccessor<FT, N, T>::reset()
 {
-  base = 0;
+  base = 8;
 }
 template <typename FT, int N, typename T>
 inline FT *AffineAccessor<FT, N, T>::ptr(const Point<N, T> &p) const
@@ -622,11 +695,12 @@ inline void AffineAccessor<FT, N, T>::write(const Point<N, T> &p, FT newval) con
 template <typename FT, int N, typename T>
 inline FT &AffineAccessor<FT, N, T>::operator[](const Point<N, T> &p) const
 {
-  FT *buffff;
+  printf("accessing: %d\n", (uintptr_t)this->get_ptr(p));
+  FT buffff;
   mram_read((__mram_ptr void const *)((uintptr_t)DPU_MRAM_HEAP_POINTER +
                                       (uintptr_t)(this->get_ptr(p))),
-            (void *)(buffff), sizeof(FT));
-  return *buffff;
+            (void *)(&buffff), sizeof(FT));
+  return buffff;
 }
 
 template <typename FT, int N, typename T>
@@ -717,8 +791,14 @@ inline bool AffineAccessor<FT, N, T>::is_dense_row_major(const Rect<N, T> &bound
 template <typename FT, int N, typename T>
 inline FT *AffineAccessor<FT, N, T>::get_ptr(const Point<N, T> &p) const
 {
-  uintptr_t rawptr = base;
+  uintptr_t rawptr = base; // 8 
+  // assert(p % 8 == 0);
+  // assert(strides % 8 == 0);
+
+
   for(int i = 0; i < N; i++)
     rawptr += p[i] * strides[i];
+  assert(rawptr % 8 == 0);
+  
   return reinterpret_cast<FT *>(rawptr);
 }
