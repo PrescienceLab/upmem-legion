@@ -32,8 +32,6 @@ namespace Realm {
       dpu_set_t dpu_proc;
 
 #ifdef DEBUG_REALM
-      printf("load: %s\n", bin);
-      printf("debug me: arg_size = %ld\n", arg_size);
       assert(arg_size % 8 == 0 && "args_size must be multiple of 8 bytes");
 #endif
 
@@ -44,12 +42,14 @@ namespace Realm {
       CHECK_UPMEM(dpu_push_xfer(*stream, DPU_XFER_TO_DPU, symbol_name, 0, arg_size,
                                 DPU_XFER_ASYNC));
 
-      // CHECK_UPMEM(dpu_launch(*stream, DPU_ASYNCHRONOUS));
-
+      #ifdef PRINT_UPMEM
+      // printing is a blocking operation. we need to read buffer once available.
       CHECK_UPMEM(dpu_launch(*stream, DPU_SYNCHRONOUS));
-
-      printf("Display DPU Logs\n");
+      printf("Display DPU logs for %s\n", bin);
       DPU_FOREACH(*stream, dpu_proc) { DPU_ASSERT(dpu_log_read(dpu_proc, stdout)); }
+      #else
+      CHECK_UPMEM(dpu_launch(*stream, DPU_ASYNCHRONOUS));
+      #endif
     }
 
   }; // namespace Upmem

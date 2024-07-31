@@ -17,14 +17,9 @@ inline Point<N, T>::Point(Arg0 val0, Arg1 val1, Args... vals)
   // TODO(cperry): Very bad!  We should not static_cast these for the user, as it can
   // hide sign and casting issues.  Kept here for compatibility while we weed out all
   // the cases in our codebase
-  // : values{static_cast<value_type>(val0), static_cast<value_type>(val1),
-  //          static_cast<value_type>(vals)...}
-{ 
-  // for(int i = 0; i < N; i++)
-  // values = mem_alloc(N * value_type)
-  values[0] = val0;
-  values[1] = val1;
-}
+  : values{static_cast<value_type>(val0), static_cast<value_type>(val1),
+           static_cast<value_type>(vals)...}
+{ }
 
 template <int N, typename T>
 template <typename T2>
@@ -676,11 +671,11 @@ inline FT *AffineAccessor<FT, N, T>::ptr(const Point<N, T> &p) const
 template <typename FT, int N, typename T>
 inline FT AffineAccessor<FT, N, T>::read(const Point<N, T> &p) const
 {
-  FT *buffff;
+  FT buffff;
   mram_read((__mram_ptr void const *)((uintptr_t)DPU_MRAM_HEAP_POINTER +
                                       (uintptr_t)(this->get_ptr(p))),
-            (void *)(buffff), sizeof(FT));
-  return *buffff;
+            (void *)(&buffff), sizeof(FT));
+  return buffff;
 }
 
 template <typename FT, int N, typename T>
@@ -790,10 +785,7 @@ inline bool AffineAccessor<FT, N, T>::is_dense_row_major(const Rect<N, T> &bound
 template <typename FT, int N, typename T>
 inline FT *AffineAccessor<FT, N, T>::get_ptr(const Point<N, T> &p) const
 {
-  uintptr_t rawptr = base; // 8 
-  // assert(p % 8 == 0);
-  // assert(strides % 8 == 0);
-
+  uintptr_t rawptr = (uintptr_t)base;
 
   for(int i = 0; i < N; i++)
     rawptr += p[i] * strides[i];

@@ -87,7 +87,7 @@ namespace Realm {
       task_streams[0] = new DPUStream(this, worker);
       task_streams[0]->set_stream(single_dpu);
 
-      // stream =  task_streams[0];
+      stream =  task_streams[0];
 
       // for(unsigned i = 0; i < module->config->cfg_task_streams; i++)
       //   task_streams[i] = new DPUStream(this, worker);
@@ -115,7 +115,6 @@ namespace Realm {
       proc = new DPUProcessor(this, p, runtime->core_reservation_set(), stack_size);
       runtime->add_processor(proc);
 
-      // this processor is able to access its own FB and the ZC mem (if any)
       Machine::ProcessorMemoryAffinity pma;
       pma.p = p;
       pma.m = mram->me;

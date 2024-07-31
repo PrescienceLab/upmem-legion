@@ -16,13 +16,14 @@
 #ifndef REALM_UPMEM_INT_H
 #define REALM_UPMEM_INT_H
 
+#define HERE() fprintf(stderr, "\nwe are at line %d in file %s\n", __LINE__, __FILE__)
+
+
 #ifndef DPURT
 #define DPURT
 #include <dpu> // UPMEM rt syslib
-#define CHECK_UPMEM(x) DPU_ASSERT(x)
+#define CHECK_UPMEM(x) {dpu_error_t _drc = x; HERE(); printf("upmem returns %d DPU_OK = %d " #x "\n", _drc, DPU_OK); DPU_ASSERT(_drc);}
 #endif
-
-#define HERE() fprintf(stderr, "we are at line %d in file %s\n", __LINE__, __FILE__)
 
 #include "realm/upmem/upmem_module.h"
 
