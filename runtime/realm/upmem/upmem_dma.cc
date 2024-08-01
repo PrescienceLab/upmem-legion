@@ -687,14 +687,11 @@ namespace Realm {
       WriteSequenceCache wseqcache(this, 2 << 20);
 
       DPUStream *stream = channel->dpu->get_next_task_stream(false);
-      CHECK_UPMEM(dpu_load(*(stream->get_stream()),
-                           "/home/david/temp/upmem_realm_test/dpu/dpu_mem_transfer.up.o",
-                           NULL));
 
       while(true) {
         size_t min_xfer_size = 4096; // TODO: make controllable
         size_t max_bytes = get_addresses(min_xfer_size, &rseqcache);
-        if(max_bytes == 0) { break;}
+        if(max_bytes == 0) { break; }
 
         XferPort *out_port = 0;
         size_t out_span_start = 0;
@@ -751,9 +748,6 @@ namespace Realm {
               CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), DPU_XFER_TO_DPU,
                                         DPU_MRAM_HEAP_POINTER_NAME, out_base + out_offset,
                                         elems * fill_size, DPU_XFER_ASYNC));
-
-
-              CHECK_UPMEM(dpu_launch(*(stream->get_stream()), DPU_ASYNCHRONOUS));
             }
 
             // need to make sure the async transfer is done before we free the buffer

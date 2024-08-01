@@ -21,21 +21,30 @@ namespace Realm {
   namespace Upmem {
 
     extern Logger log_upmem;
-    REALM_PUBLIC_API void LaunchKernel(const char *bin, void *args[],
-                                       const char *symbol_name, size_t arg_size,
-                                       dpu_set_t *stream)
-    {
 
+    Kernel::Kernel(void) 
+    {}
+    
+    Kernel::Kernel(const char *_bin, dpu_set_t *_stream) 
+    : bin(_bin)
+    , stream(_stream)
+    {}
+
+    void Kernel::load(void) 
+    {
       UpmemModule *mod = get_runtime()->get_module<UpmemModule>("UpmemModule");
-      stream = mod->get_task_upmem_stream();
+      this->stream = mod->get_task_upmem_stream();
+      CHECK_UPMEM(dpu_load(*this->stream, this->bin, NULL));
+    }
+
+    void Kernel::launch(void *args[], const char *symbol_name, size_t arg_size)
+    {
 
       dpu_set_t dpu_proc;
 
 #ifdef DEBUG_REALM
       assert(arg_size % 8 == 0 && "args_size must be multiple of 8 bytes");
 #endif
-
-      CHECK_UPMEM(dpu_load(*stream, bin, NULL));
 
       DPU_FOREACH(*stream, dpu_proc) { CHECK_UPMEM(dpu_prepare_xfer(dpu_proc, args)); }
 

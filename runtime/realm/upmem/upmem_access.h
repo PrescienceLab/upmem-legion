@@ -35,11 +35,23 @@ private:                                                                        
 
 namespace Realm {
   namespace Upmem {
-    REALM_PUBLIC_API void LaunchKernel(const char *bin, void *args[],
-                                       const char *symbol_name, size_t arg_size,
-                                       dpu_set_t *stream);
 
-  }
-} // namespace Realm
+    class REALM_PUBLIC_API Kernel {
+    public:
+      Kernel(const char *bin, dpu_set_t *stream);
+      Kernel(void);
+      virtual ~Kernel(void) {}
+
+    public:
+      virtual void launch(void *args[], const char *symbol_name, size_t arg_size);
+      virtual void load(void);
+
+    protected:
+      const char *bin;
+      const char *symbol_name;
+      dpu_set_t *stream;
+    }; // end class DPUMemcpy
+  };
+}; // namespace Realm
 
 #endif
