@@ -729,12 +729,6 @@ namespace Realm {
             assert((bytes % fill_size) == 0);
 #endif
 
-            printf("elems = %ld\n", elems);
-            printf("fill_size = %ld\n", fill_size);
-            printf("out_base = %ld\n", out_base);
-            printf("out_offset = %ld\n", out_offset);
-
-
             void *buffer = (void *)malloc(elems * fill_size);
 
             const char *fill_buffer = reinterpret_cast<const char *>(fill_data);
