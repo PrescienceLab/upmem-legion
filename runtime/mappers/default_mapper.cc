@@ -59,13 +59,13 @@ namespace Legion {
         node_id(local.address_space()), machine(m),
         mapper_name((name == NULL) ? create_default_name(local) :
                       own ? name : strdup(name)),
-        next_local_gpu(0), next_local_cpu(0), next_local_io(0),
+        next_local_dpu(0), next_local_gpu(0), next_local_cpu(0), next_local_io(0),
         next_local_procset(0), next_local_omp(0), next_local_py(0),
-        next_global_gpu(Processor::NO_PROC),
+        next_global_dpu(Processor::NO_PROC), next_global_gpu(Processor::NO_PROC),
         next_global_cpu(Processor::NO_PROC), next_global_io(Processor::NO_PROC),
         next_global_procset(Processor::NO_PROC),
         next_global_omp(Processor::NO_PROC), next_global_py(Processor::NO_PROC),
-        global_gpu_query(NULL), global_cpu_query(NULL), global_io_query(NULL),
+        global_dpu_query(NULL), global_gpu_query(NULL), global_cpu_query(NULL), global_io_query(NULL),
         global_procset_query(NULL), global_omp_query(NULL),
         global_py_query(NULL),
         max_steals_per_theft(STATIC_MAX_PERMITTED_STEALS),
@@ -135,6 +135,11 @@ namespace Legion {
         {
           switch (it->kind())
           {
+            case Processor::DPU_PROC:
+              {
+                local_dpus.push_back(*it);
+                break;
+              }
             case Processor::TOC_PROC:
               {
                 local_gpus.push_back(*it);
@@ -171,6 +176,15 @@ namespace Legion {
         }
         switch (it->kind())
         {
+          case Processor::DPU_PROC:
+            {
+              // See if we already have a target GPU processor for this node
+              if (node >= remote_dpus.size())
+                remote_dpus.resize(node+1, Processor::NO_PROC);
+              if (!remote_dpus[node].exists())
+                remote_dpus[node] = *it;
+              break;
+            }
           case Processor::TOC_PROC:
             {
               // See if we already have a target GPU processor for this node
@@ -253,6 +267,20 @@ namespace Legion {
           }
         }
         if (total_nodes == 0) total_nodes = remote_gpus.size();
+      }
+      if (!local_dpus.empty()) {
+        for (unsigned idx = 0; idx < remote_gpus.size(); idx++) {
+	  if (idx == node_id) continue;  // ignore our own node
+          if (!remote_dpus[idx].exists())
+          {
+            log_mapper.error("Default mapper has DPUs on node %d, but "
+                             "could not detect DPUs on node %d. The "
+                             "current default mapper implementation "
+                             "assumes symmetric heterogeneity.", node_id, idx);
+            assert(false);
+          }
+        }
+        if (total_nodes == 0) total_nodes = remote_dpus.size();
       }
       if (!local_ios.empty()) {
         for (unsigned idx = 0; idx < remote_ios.size(); idx++) {
@@ -447,6 +475,8 @@ namespace Legion {
             return default_get_next_local_omp();
           case Processor::PY_PROC:
             return default_get_next_local_py();
+          case Processor::DPU_PROC:
+            return default_get_next_local_dpu();
           default: // make warnings go away
             break;
         }
@@ -476,6 +506,8 @@ namespace Legion {
                 return default_get_next_local_omp();
               case Processor::PY_PROC:
                 return default_get_next_local_py();
+              case Processor::DPU_PROC:
+                return default_get_next_local_dpu();
               default: // make warnings go away
                 break;
             }
@@ -501,6 +533,8 @@ namespace Legion {
                   return default_get_next_global_omp();
                 case Processor::PY_PROC:
                   return default_get_next_global_py();
+                case Processor::DPU_PROC:
+                  return default_get_next_global_dpu();
                 default: // make warnings go away
                   break;
               }
@@ -523,6 +557,8 @@ namespace Legion {
                 return default_get_next_local_omp();
               case Processor::PY_PROC:
                 return default_get_next_local_py();
+              case Processor::DPU_PROC:
+                return default_get_next_local_dpu();
               default: // make warnings go away
                 break;
             }
@@ -606,6 +642,39 @@ namespace Legion {
       }
       return result;
     }
+
+    //--------------------------------------------------------------------------
+    Processor DefaultMapper::default_get_next_local_dpu(void)
+    //--------------------------------------------------------------------------
+    {
+      Processor result = local_dpus[next_local_dpu++];
+      if (next_local_dpu == local_dpus.size())
+        next_local_dpu = 0;
+      return result;
+    }
+
+    //--------------------------------------------------------------------------
+    Processor DefaultMapper::default_get_next_global_dpu(void)
+    //--------------------------------------------------------------------------
+    {
+      if (total_nodes == 1)
+        return default_get_next_local_dpu();
+      if (!next_global_dpu.exists())
+      {
+        global_dpu_query = new Machine::ProcessorQuery(machine);
+        global_dpu_query->only_kind(Processor::TOC_PROC);
+        next_global_dpu = global_dpu_query->first();
+      }
+      Processor result = next_global_dpu;
+      next_global_dpu = global_dpu_query->next(result);
+      if (!next_global_dpu.exists())
+      {
+        delete global_dpu_query;
+        global_dpu_query = NULL;
+      }
+      return result;
+    }
+
 
     //--------------------------------------------------------------------------
     Processor DefaultMapper::default_get_next_local_io(void)
@@ -800,6 +869,14 @@ namespace Legion {
             // Next see if we have any local processor of this kind
             switch (ranking[idx])
             {
+               case Processor::DPU_PROC:
+                {
+                  kindString += "DPU_PROC ";
+                  if (local_dpus.empty())
+                    continue;
+                  break;
+                }
+
               case Processor::TOC_PROC:
                 {
                   kindString += "TOC_PROC ";
@@ -976,12 +1053,14 @@ namespace Legion {
       bool prefer_cpu = ((task.tag & PREFER_CPU_VARIANT) != 0);
       if ((local_gpus.size() > 0) && !prefer_cpu)
        ranking.push_back(Processor::TOC_PROC);
+      if ((local_dpus.size() > 0) && !prefer_cpu)
+        ranking.push_back(Processor::DPU_PROC);
       if (local_omps.size() > 0) ranking.push_back(Processor::OMP_PROC);
       if (local_procsets.size() > 0) ranking.push_back(Processor::PROC_SET);
       ranking.push_back(Processor::LOC_PROC);
       if (local_ios.size() > 0) ranking.push_back(Processor::IO_PROC);
       if (local_pys.size() > 0) ranking.push_back(Processor::PY_PROC);
-      if ((local_gpus.size() > 0) && prefer_cpu)
+      if ((local_dpus.size() > 0) && prefer_cpu)
        ranking.push_back(Processor::TOC_PROC);
     }
 
@@ -1070,6 +1149,12 @@ namespace Legion {
           {
             default_slice_task(task, local_cpus, remote_cpus,
                                input, output, cpu_slices_cache);
+            break;
+          }
+        case Processor::DPU_PROC:
+          {
+            default_slice_task(task, local_dpus, remote_dpus,
+                               input, output, dpu_slices_cache);
             break;
           }
         case Processor::TOC_PROC:
@@ -3333,6 +3418,11 @@ namespace Legion {
             *result = total_nodes;
             break;
           }
+        case DEFAULT_TUNABLE_LOCAL_DPUS:
+          {
+            *result = local_dpus.size();
+            break;
+          }
         case DEFAULT_TUNABLE_LOCAL_GPUS:
           {
             *result = local_gpus.size();
@@ -3356,6 +3446,12 @@ namespace Legion {
         case DEFAULT_TUNABLE_LOCAL_PYS:
           {
             *result = local_pys.size();
+            break;
+          }
+        case DEFAULT_TUNABLE_GLOBAL_DPUS:
+          {
+            // TODO: deal with machine asymmetry here
+            *result = (local_dpus.size() * total_nodes);
             break;
           }
         case DEFAULT_TUNABLE_GLOBAL_GPUS:
@@ -3426,6 +3522,8 @@ namespace Legion {
       {
         case Processor::LOC_PROC:
           return local_cpus;
+        case Processor::DPU_PROC:
+          return local_dpus;
         case Processor::TOC_PROC:
           return local_gpus;
         case Processor::IO_PROC:
@@ -3451,6 +3549,8 @@ namespace Legion {
       {
         case Processor::LOC_PROC:
           return remote_cpus;
+        case Processor::DPU_PROC:
+          return remote_dpus;
         case Processor::TOC_PROC:
           return remote_gpus;
         case Processor::IO_PROC:
@@ -3730,6 +3830,15 @@ namespace Legion {
           // Check to see if we actually have processors of this kind
           switch (*it)
           {
+            case Processor::DPU_PROC:
+              {
+                if (local_dpus.empty())
+                {
+                  ++it;
+                  continue;
+                }
+                break;
+              }
             case Processor::TOC_PROC:
               {
                 if (local_gpus.empty())

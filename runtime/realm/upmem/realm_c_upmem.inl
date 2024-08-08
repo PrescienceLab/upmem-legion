@@ -702,10 +702,10 @@ inline void AffineAccessor<FT, N, T>::write(const Point<N, T> &p, FT newval) con
       }
       break;
     case 2:
-      buffff = (uint64_t)newval | (buffff & ~0xFFFFULL);
+      // buffff = (uint64_t)newval | (buffff & ~0xFFFFULL);
       break;
     case 1:
-      buffff = (uint64_t)newval | (buffff & ~0xFFULL);
+      // buffff = (uint64_t)newval | (buffff & ~0xFFULL);
       break;
     default:
       assert(0 && "not supported type");
