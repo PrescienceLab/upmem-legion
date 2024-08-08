@@ -22,15 +22,14 @@ namespace Realm {
 
     extern Logger log_upmem;
 
-    Kernel::Kernel(void) 
-    {}
-    
-    Kernel::Kernel(const char *_bin, dpu_set_t *_stream) 
-    : bin(_bin)
-    , stream(_stream)
+    Kernel::Kernel(void) {}
+
+    Kernel::Kernel(const char *_bin, dpu_set_t *_stream)
+      : bin(_bin)
+      , stream(_stream)
     {}
 
-    void Kernel::load(void) 
+    void Kernel::load(void)
     {
       UpmemModule *mod = get_runtime()->get_module<UpmemModule>("UpmemModule");
       this->stream = mod->get_task_upmem_stream();
@@ -51,14 +50,14 @@ namespace Realm {
       CHECK_UPMEM(dpu_push_xfer(*stream, DPU_XFER_TO_DPU, symbol_name, 0, arg_size,
                                 DPU_XFER_ASYNC));
 
-      #ifdef PRINT_UPMEM
+#ifdef PRINT_UPMEM
       // printing is a blocking operation. we need to read buffer once available.
       CHECK_UPMEM(dpu_launch(*stream, DPU_SYNCHRONOUS));
       printf("Display DPU logs for %s\n", bin);
       DPU_FOREACH(*stream, dpu_proc) { DPU_ASSERT(dpu_log_read(dpu_proc, stdout)); }
-      #else
+#else
       CHECK_UPMEM(dpu_launch(*stream, DPU_ASYNCHRONOUS));
-      #endif
+#endif
     }
 
   }; // namespace Upmem

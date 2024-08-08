@@ -18,11 +18,16 @@
 
 #define HERE() fprintf(stderr, "\nwe are at line %d in file %s\n", __LINE__, __FILE__)
 
-
 #ifndef DPURT
 #define DPURT
 #include <dpu> // UPMEM rt syslib
-#define CHECK_UPMEM(x) {dpu_error_t _drc = x; HERE(); printf("upmem returns %d DPU_OK = %d " #x "\n", _drc, DPU_OK); DPU_ASSERT(_drc);}
+#define CHECK_UPMEM(x)                                                                   \
+  {                                                                                      \
+    dpu_error_t _drc = x;                                                                \
+    HERE();                                                                              \
+    printf("upmem returns %d DPU_OK = %d " #x "\n", _drc, DPU_OK);                       \
+    DPU_ASSERT(_drc);                                                                    \
+  }
 #endif
 
 #include "realm/upmem/upmem_module.h"

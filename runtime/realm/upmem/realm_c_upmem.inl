@@ -1,3 +1,6 @@
+#define ALIGN8(X) (((X) >> 3) << 3)
+#define ISALIGNED8(X) (!((X)&0x7))
+
 using namespace Realm;
 
 ////////////////////////////////////////////////////////////////////////
@@ -19,7 +22,7 @@ inline Point<N, T>::Point(Arg0 val0, Arg1 val1, Args... vals)
   // the cases in our codebase
   : values{static_cast<value_type>(val0), static_cast<value_type>(val1),
            static_cast<value_type>(vals)...}
-{ }
+{}
 
 template <int N, typename T>
 template <typename T2>
@@ -142,73 +145,68 @@ template <int N, typename T>
 {
   return Point<N, T>(static_cast<T>(1));
 }
-  // 1D specialization (needed for implicit conversion of coordinate to 1D point)
-  template <typename T>
-  struct  Point<1, T> {
-    typedef T value_type;
-    value_type value;
+// 1D specialization (needed for implicit conversion of coordinate to 1D point)
+template <typename T>
+struct Point<1, T> {
+  typedef T value_type;
+  value_type value;
 
-    
-    Point(void) {}
-    
-    Point(value_type val)
-      : value(val)
-    {}
-    template <typename T2>
-     explicit Point(T2 vals[1])
-      : value(vals[0])
-    {}
-    // construct from any integral value
-    template <typename T2>
-     explicit Point(T2 val)
-      : value(val)
-    {}
-    // copies allow type coercion (assuming the underlying type does)
-    template <typename T2>
-     Point(const Point<1, T2> &copy_from)
-      : value(copy_from.value)
-    {}
-    template <typename T2>
-     Point<1, T> &operator=(const Point<1, T2> &copy_from)
-    {
-      value = copy_from.value;
-      return *this;
-    }
+  Point(void) {}
 
-    
-    T &operator[](int index)
-    {
-      assert(index == 0);
-      return value;
-    }
-    
-    const T &operator[](int index) const
-    {
-      assert(index == 0);
-      assert((uint64_t)value % 8 == 0);
-      return value;
-    }
+  Point(value_type val)
+    : value(val)
+  {}
+  template <typename T2>
+  explicit Point(T2 vals[1])
+    : value(vals[0])
+  {}
+  // construct from any integral value
+  template <typename T2>
+  explicit Point(T2 val)
+    : value(val)
+  {}
+  // copies allow type coercion (assuming the underlying type does)
+  template <typename T2>
+  Point(const Point<1, T2> &copy_from)
+    : value(copy_from.value)
+  {}
+  template <typename T2>
+  Point<1, T> &operator=(const Point<1, T2> &copy_from)
+  {
+    value = copy_from.value;
+    return *this;
+  }
 
-    template <typename T2>
-     T dot(const Point<1, T2> &rhs) const
-    {
-      return value * rhs.value;
-    }
+  T &operator[](int index)
+  {
+    assert(index == 0);
+    return value;
+  }
 
-    // 1-4D accessors.  These will only be available if the class's dimensioned allow for
-    // it, otherwise it is a compiler error to use them
-     T &x() { return value; }
-     const T &x() const { return value; }
+  const T &operator[](int index) const
+  {
+    assert(index == 0);
+    assert((uint64_t)value % 8 == 0);
+    return value;
+  }
 
-    
-    operator T() const { return value; }
+  template <typename T2>
+  T dot(const Point<1, T2> &rhs) const
+  {
+    return value * rhs.value;
+  }
 
-    
-    static constexpr Point<1, T> ZEROES(void) { return Point<1, T>(0); }
-    
-    static constexpr Point<1, T> ONES(void) { return Point<1, T>(1); }
-  };
-  
+  // 1-4D accessors.  These will only be available if the class's dimensioned allow for
+  // it, otherwise it is a compiler error to use them
+  T &x() { return value; }
+  const T &x() const { return value; }
+
+  operator T() const { return value; }
+
+  static constexpr Point<1, T> ZEROES(void) { return Point<1, T>(0); }
+
+  static constexpr Point<1, T> ONES(void) { return Point<1, T>(1); }
+};
 
 // component-wise operators defined on Point<N,T> (with optional coercion)
 template <int N, typename T, typename T2>
@@ -671,30 +669,92 @@ inline FT *AffineAccessor<FT, N, T>::ptr(const Point<N, T> &p) const
 template <typename FT, int N, typename T>
 inline FT AffineAccessor<FT, N, T>::read(const Point<N, T> &p) const
 {
-  FT buffff;
+  uint64_t buffff;
   mram_read((__mram_ptr void const *)((uintptr_t)DPU_MRAM_HEAP_POINTER +
                                       (uintptr_t)(this->get_ptr(p))),
-            (void *)(&buffff), sizeof(FT));
-  return buffff;
+            (void *)(&buffff), sizeof(uint64_t));
+  FT ret = (FT)buffff;
+  return ret;
 }
 
 template <typename FT, int N, typename T>
 inline void AffineAccessor<FT, N, T>::write(const Point<N, T> &p, FT newval) const
 {
-  mram_write((const void *)(&newval),
-             (__mram_ptr void *)((uintptr_t)DPU_MRAM_HEAP_POINTER +
-                                 (uintptr_t)(this->get_ptr(p))),
-             sizeof(FT));
+  if(sizeof(FT) == 8) {
+    mram_write((const void *)(&newval),
+               (__mram_ptr void *)((uintptr_t)DPU_MRAM_HEAP_POINTER +
+                                   (uintptr_t)(this->get_ptr(p))),
+               sizeof(uint64_t));
+  } else {
+    uint64_t buffff;
+    uint64_t desired_addr =
+        ((uintptr_t)DPU_MRAM_HEAP_POINTER + (uintptr_t)(this->get_ptr(p)));
+    uint64_t actual_addr = ALIGN8(desired_addr);
+
+    mram_read((__mram_ptr void const *)actual_addr, (void *)(&buffff), sizeof(uint64_t));
+
+    switch(sizeof(FT)) {
+    case 4:
+      if(ISALIGNED8(desired_addr)) {
+        buffff = (uint64_t)newval | (buffff & (~0xFFFFFFFFULL));
+      } else {
+        buffff = (((uint64_t)newval) << 32) | (buffff & (~0xFFFFFFFF00000000ULL));
+      }
+      break;
+    case 2:
+      buffff = (uint64_t)newval | (buffff & ~0xFFFFULL);
+      break;
+    case 1:
+      buffff = (uint64_t)newval | (buffff & ~0xFFULL);
+      break;
+    default:
+      assert(0 && "not supported type");
+    }
+
+    mram_write((const void *)(&buffff), (__mram_ptr void *)(actual_addr),
+               sizeof(uint64_t));
+  }
 }
 
 template <typename FT, int N, typename T>
 inline FT &AffineAccessor<FT, N, T>::operator[](const Point<N, T> &p) const
 {
-  FT buffff;
-  mram_read((__mram_ptr void const *)((uintptr_t)DPU_MRAM_HEAP_POINTER +
-                                      (uintptr_t)(this->get_ptr(p))),
-            (void *)(&buffff), sizeof(FT));
-  return buffff;
+  if(sizeof(FT) == 8) {
+    uint64_t buffff;
+    mram_read((__mram_ptr void const *)((uintptr_t)DPU_MRAM_HEAP_POINTER +
+                                        (uintptr_t)(this->get_ptr(p))),
+              (void *)(&buffff), sizeof(uint64_t));
+    FT ret = (FT)buffff;
+    return ret;
+  } else {
+    uint64_t buffff;
+    uint64_t desired_addr =
+        ((uintptr_t)DPU_MRAM_HEAP_POINTER + (uintptr_t)(this->get_ptr(p)));
+    uint64_t actual_addr = ALIGN8(desired_addr);
+
+    mram_read((__mram_ptr void const *)actual_addr, (void *)(&buffff), sizeof(uint64_t));
+
+    switch(sizeof(FT)) {
+    case 4:
+      if(!ISALIGNED8(desired_addr)) {
+        buffff = buffff >> 32;
+      }
+      break;
+    case 2:
+      if(!ISALIGNED8(desired_addr)) {
+      }
+      break;
+    case 1:
+      if(!ISALIGNED8(desired_addr)) {
+      }
+      break;
+    default:
+      assert(0 && "not supported type");
+    }
+
+    FT ret = (FT)buffff;
+    return ret;
+  }
 }
 
 template <typename FT, int N, typename T>
@@ -789,7 +849,6 @@ inline FT *AffineAccessor<FT, N, T>::get_ptr(const Point<N, T> &p) const
 
   for(int i = 0; i < N; i++)
     rawptr += p[i] * strides[i];
-  assert(rawptr % 8 == 0);
-  
+
   return reinterpret_cast<FT *>(rawptr);
 }

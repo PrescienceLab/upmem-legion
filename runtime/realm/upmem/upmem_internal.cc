@@ -87,7 +87,7 @@ namespace Realm {
       task_streams[0] = new DPUStream(this, worker);
       task_streams[0]->set_stream(single_dpu);
 
-      stream =  task_streams[0];
+      stream = task_streams[0];
 
       // for(unsigned i = 0; i < module->config->cfg_task_streams; i++)
       //   task_streams[i] = new DPUStream(this, worker);

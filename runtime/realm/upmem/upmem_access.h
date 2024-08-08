@@ -51,7 +51,7 @@ namespace Realm {
       const char *symbol_name;
       dpu_set_t *stream;
     }; // end class DPUMemcpy
-  };
-}; // namespace Realm
+  };   // namespace Upmem
+};     // namespace Realm
 
 #endif

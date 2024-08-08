@@ -103,7 +103,9 @@ namespace Realm {
       while(true) {
         size_t min_xfer_size = 4096; // TODO: make controllable
         size_t max_bytes = get_addresses(min_xfer_size, &rseqcache);
-        if(max_bytes == 0) {break;}
+        if(max_bytes == 0) {
+          break;
+        }
 
         XferPort *in_port = 0, *out_port = 0;
         size_t in_span_start = 0, out_span_start = 0;
@@ -141,7 +143,7 @@ namespace Realm {
               out_base = reinterpret_cast<uintptr_t>(out_port->mem->get_direct_ptr(0, 0));
 
             DPUStream *stream = in_dpu->stream;
-            
+
             if(in_dpu) {
               if(out_dpu == in_dpu) {
                 memcpy_kind = "d2d";
@@ -195,7 +197,9 @@ namespace Realm {
                 bytes = contig_bytes;
 
                 // check rate limit on stream
-                if(!stream->ok_to_submit_copy(bytes, this)) { break; }
+                if(!stream->ok_to_submit_copy(bytes, this)) {
+                  break;
+                }
 
                 // grr...  prototypes of these differ slightly...
                 DPUMemcpyKind copy_type;
@@ -212,8 +216,8 @@ namespace Realm {
                 CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()),
                                              (void *)(out_base + out_offset)));
                 CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), copy_type,
-                                          DPU_MRAM_HEAP_POINTER_NAME,
-                                          in_base + in_offset, bytes, DPU_XFER_ASYNC));
+                                          DPU_MRAM_HEAP_POINTER_NAME, in_base + in_offset,
+                                          bytes, DPU_XFER_ASYNC));
 
                 // CHECK_HIP(
                 //     hipMemcpyAsync(reinterpret_cast<void *>(out_base + out_offset),
@@ -683,7 +687,7 @@ namespace Realm {
     bool DPUfillXferDes::progress_xd(DPUfillChannel *channel, TimeLimit work_until)
     {
       bool did_work = false;
-      ReadSequenceCache rseqcache(this,  2 << 20);
+      ReadSequenceCache rseqcache(this, 2 << 20);
       WriteSequenceCache wseqcache(this, 2 << 20);
 
       DPUStream *stream = channel->dpu->get_next_task_stream(false);
@@ -691,7 +695,9 @@ namespace Realm {
       while(true) {
         size_t min_xfer_size = 4096; // TODO: make controllable
         size_t max_bytes = get_addresses(min_xfer_size, &rseqcache);
-        if(max_bytes == 0) { break; }
+        if(max_bytes == 0) {
+          break;
+        }
 
         XferPort *out_port = 0;
         size_t out_span_start = 0;
@@ -736,7 +742,7 @@ namespace Realm {
             for(unsigned int i = 0; i < elems; i++) {
               memcpy((void *)((char *)buffer + fill_size * i), fill_buffer, fill_size);
             }
-            
+
             {
               CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()), buffer));
               CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), DPU_XFER_TO_DPU,
@@ -747,7 +753,7 @@ namespace Realm {
             // need to make sure the async transfer is done before we free the buffer
             CHECK_UPMEM(dpu_sync(*(stream->get_stream())));
             free(buffer);
-            
+
             if(out_dim == 1) {
               // all done
               out_alc.advance(0, bytes);
