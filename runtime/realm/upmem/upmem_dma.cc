@@ -142,7 +142,7 @@ namespace Realm {
             } else
               out_base = reinterpret_cast<uintptr_t>(out_port->mem->get_direct_ptr(0, 0));
 
-            DPUStream *stream = in_dpu->stream;
+            DPUStream *stream = NULL;
 
             if(in_dpu) {
               if(out_dpu == in_dpu) {
@@ -203,20 +203,29 @@ namespace Realm {
 
                 // grr...  prototypes of these differ slightly...
                 DPUMemcpyKind copy_type;
+                size_t baseoffset_src = 0;
+                size_t baseoffset_dst = 0;
+
                 if(in_dpu) {
                   if(out_dpu == in_dpu || (out_ipc_index >= 0)) {
                     printf("device to device not currently supported\n");
                   } else if(!out_dpu) {
                     copy_type = DPU_XFER_FROM_DPU;
+                    stream = in_dpu->stream;
+                    baseoffset_src = out_base + out_offset;
+                    baseoffset_dst = in_base + in_offset;
                   }
                 } else {
                   copy_type = DPU_XFER_TO_DPU;
+                  stream = out_dpu->stream;
+                  baseoffset_src = in_base + in_offset;
+                  baseoffset_dst = out_base + out_offset;
                 }
 
                 CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()),
-                                             (void *)(out_base + out_offset)));
+                                             (void *)(baseoffset_src)));
                 CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), copy_type,
-                                          DPU_MRAM_HEAP_POINTER_NAME, in_base + in_offset,
+                                          DPU_MRAM_HEAP_POINTER_NAME, baseoffset_dst,
                                           bytes, DPU_XFER_ASYNC));
 
                 // CHECK_HIP(

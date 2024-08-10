@@ -1739,6 +1739,12 @@ namespace Legion {
       {
         switch (task.target_proc.kind())
         {
+			case Processor::DPU_PROC:
+				{
+			target_procs.push_back(task.target_proc);
+			break;
+			
+				}
           case Processor::TOC_PROC:
             {
               // GPUs have their own memories so they only get one
