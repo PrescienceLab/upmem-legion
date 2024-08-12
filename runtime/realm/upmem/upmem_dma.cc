@@ -539,15 +539,15 @@ namespace Realm {
             peer_dpu_mems.push_back((*it)->me);
         }
       }
-
+      
       std::vector<Memory> mapped_cpu_mems;
-      mapped_cpu_mems.insert(mapped_cpu_mems.end(), src_dpu->pinned_sysmems.begin(),
+      mapped_cpu_mems.insert(mapped_cpu_mems.end(),
+                             src_dpu->pinned_sysmems.begin(),
                              src_dpu->pinned_sysmems.end());
-      // TODO:managed memory
-      // // treat managed memory as usually being on the host as well
-      // mapped_cpu_mems.insert(mapped_cpu_mems.end(),
-      //                        src_dpu->managed_mems.begin(),
+      // treat managed memory as usually being on the host as well
+      // mapped_cpu_mems.insert(mapped_cpu_mems.end(), src_dpu->managed_mems.begin(),
       //                        src_dpu->managed_mems.end());
+
 
       switch(_kind) {
       case XFER_DPU_TO_MRAM:

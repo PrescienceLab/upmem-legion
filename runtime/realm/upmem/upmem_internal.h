@@ -110,6 +110,8 @@ namespace Realm {
 
       // which system memories have been registered and can be used for cuMemcpyAsync
       std::set<Memory> pinned_sysmems;
+      // std::set<Memory> managed_mems;
+
       // which other mram we have peer access to
       std::set<Memory> peer_mram;
 

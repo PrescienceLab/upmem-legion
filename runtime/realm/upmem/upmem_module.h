@@ -52,6 +52,8 @@ namespace Realm {
     // dma.h
     class DPUChannel;
     class DPUfillChannel;
+    // memory.h
+    class DPUZCMemory;
 
     class UpmemModuleConfig : public ModuleConfig {
       friend class UpmemModule;
@@ -66,7 +68,8 @@ namespace Realm {
       // configurations
       int cfg_num_dpus = 64;
       int cfg_tasklets = 16;
-      int cfg_mram_mem_size = 64 * MEGABYTE;
+      size_t cfg_mram_mem_size = 64 * MEGABYTE;
+      size_t cfg_zc_mem_size = 64 << 20, cfg_zc_ib_size = 256 << 20;
 
       int cfg_task_streams = 16;
 
@@ -136,6 +139,9 @@ namespace Realm {
       std::map<DPU *, DPUWorker *> dedicated_workers;
       std::vector<DPUInfo *> dpu_info;
       std::vector<DPU *> dpus;
+      DPUZCMemory *zcmem;
+
+      void *zcmem_cpu_base, *zcib_cpu_base;
 
       std::vector<void *> registered_host_ptrs;
       DPUReplHeapListener *rh_listener;

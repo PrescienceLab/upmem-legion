@@ -45,6 +45,23 @@ namespace Realm {
     class DPUStream;
     // workers.h
     class DPUWorkFence;
+    
+    class DPUZCMemory : public LocalManagedMemory {
+    public:
+      DPUZCMemory(Memory _me, char *_base, size_t _size);
+
+      virtual ~DPUZCMemory(void);
+
+      // these work, but they are SLOW
+      virtual void get_bytes(off_t offset, void *dst, size_t size);
+      virtual void put_bytes(off_t offset, const void *src, size_t size);
+
+      virtual void *get_direct_ptr(off_t offset, size_t size);
+
+    public:
+      char *base;
+    }; // end class DPUZCMemory
+
 
     class DPUMRAMMemory : public LocalManagedMemory {
     public:

@@ -185,6 +185,46 @@ namespace Realm {
           (*it)->create_mram_memory(runtime, config->cfg_mram_mem_size);
         }
       }
+      // a single ZC memory for everybody
+      if((config->cfg_zc_mem_size > 0) && !dpus.empty()) {
+        char *zcmem_dpu_base;
+        {
+          zcmem_dpu_base = (char *)malloc(config->cfg_zc_ib_size);
+        }
+        if (zcmem_dpu_base == NULL) {
+              log_dpu.fatal() << "insufficient device-mappable host memory: "
+                  << config->cfg_zc_mem_size << " bytes needed (from -ll:zsize)";
+          
+            abort();
+        }
+
+        Memory m = runtime->next_local_memory_id();
+        zcmem = new DPUZCMemory(m, zcmem_dpu_base, 
+                                config->cfg_zc_mem_size);
+        runtime->add_memory(zcmem);
+
+        // add the ZC memory as a pinned memory to all GPUs
+        for(unsigned i = 0; i < dpus.size(); i++) {
+          dpus[i]->pinned_sysmems.insert(zcmem->me);
+        }
+      }
+
+      // allocate intermediate buffers in ZC memory for DMA engine
+      if ((config->cfg_zc_ib_size > 0) && !dpus.empty()) {
+        char *zcib_cpu_base;
+        {
+          zcib_cpu_base = (char *)malloc(config->cfg_zc_ib_size);
+        }
+        Memory m = runtime->next_local_ib_memory_id();
+        IBMemory* ib_mem;
+        ib_mem = new IBMemory(m, config->cfg_zc_ib_size,
+			      MemoryImpl::MKIND_ZEROCOPY, Memory::Z_COPY_MEM,
+			      zcib_cpu_base, 0);
+        runtime->add_ib_memory(ib_mem);
+        for (unsigned i = 0; i < dpus.size(); i++) {
+          dpus[i]->pinned_sysmems.insert(ib_mem->me);
+        }
+      }
     }
 
     // create any processors provided by the module (default == do nothing)
@@ -256,14 +296,14 @@ namespace Realm {
                            << " successfully registered with GPU " << dpus[i]->proc->me;
             dpus[i]->pinned_sysmems.insert((*it)->me);
 
-            // char *gpuptr;
+            // char *dpuptr;
             // hipError_t ret;
             // {
             //   AutoGPUContext agc(dpus[i]);
-            //   ret = hipHostGetDevicePointer((void **)&gpuptr, base, 0);
+            //   ret = hipHostGetDevicePointer((void **)&dpuptr, base, 0);
             // }
             // if(ret == hipSuccess) {
-            //   // no test for && ((void *)gpuptr == base)) {
+            //   // no test for && ((void *)dpuptr == base)) {
             //   log_dpu.info() << "memory " << (*it)->me << " successfully registered
             //   with GPU " << dpus[i]->proc->me;
             //   dpus[i]->pinned_sysmems.insert((*it)->me);

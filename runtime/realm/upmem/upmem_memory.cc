@@ -20,6 +20,30 @@ namespace Realm {
   namespace Upmem {
     extern Logger log_stream;
 
+    DPUZCMemory::DPUZCMemory(Memory _me, char *_base,
+                                 size_t _size)
+      : LocalManagedMemory(_me, _size, MKIND_ZEROCOPY, 512, Memory::Z_COPY_MEM, 0)
+      , base(_base)
+    {}
+
+    DPUZCMemory::~DPUZCMemory(void) {}
+
+    // these work, but they are SLOW
+    void DPUZCMemory::get_bytes(off_t offset, void *dst, size_t size)
+    {
+      assert(0);
+    }
+
+    void DPUZCMemory::put_bytes(off_t offset, const void *src, size_t size)
+    {
+      assert(0);
+    }
+
+    void *DPUZCMemory::get_direct_ptr(off_t offset, size_t size)
+    {
+      return (void *)(base + offset);
+    }
+
     DPUMRAMMemory::DPUMRAMMemory(Memory _me, DPU *_dpu, DPUStream *_stream, char *_base,
                                  size_t _size)
       : LocalManagedMemory(_me, _size, MKIND_MRAM, 512, Memory::DPU_MRAM_MEM, 0)

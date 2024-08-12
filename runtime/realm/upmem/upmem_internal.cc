@@ -114,14 +114,80 @@ namespace Realm {
       Processor p = runtime->next_local_processor_id();
       proc = new DPUProcessor(this, p, runtime->core_reservation_set(), stack_size);
       runtime->add_processor(proc);
+      if (mram) {
+        Machine::ProcessorMemoryAffinity pma;
+        pma.p = p;
+        pma.m = mram->me;
+        pma.bandwidth = 20;
+        pma.latency   = 200;
+        runtime->add_proc_mem_affinity(pma);
+      }
 
-      Machine::ProcessorMemoryAffinity pma;
-      pma.p = p;
-      pma.m = mram->me;
-      // pma.bandwidth = info->logical_peer_bandwidth[info->index];
-      // pma.latency   = info->logical_peer_latency[info->index];
-      runtime->add_proc_mem_affinity(pma);
+      for(std::set<Memory>::const_iterator it = pinned_sysmems.begin();
+          it != pinned_sysmems.end(); ++it) {
+        // no processor affinity to IB memories
+        if(!ID(*it).is_memory())
+          continue;
+
+        Machine::ProcessorMemoryAffinity pma;
+        pma.p = p;
+        pma.m = *it;
+        pma.bandwidth = 20; // "medium"
+        pma.latency = 200;  // "bad"
+        runtime->add_proc_mem_affinity(pma);
+      }
+
+      // peer access
+      for(std::vector<DPU *>::iterator it = module->dpus.begin();
+          it != module->dpus.end();
+          it++) {
+        // ignore ourselves
+        if(*it == this) continue;
+
+        // ignore dpus that we don't expect to be able to peer with
+        if(info->peers.count((*it)->info->device) == 0)
+          continue;
+
+      	peer_mram.insert((*it)->mram->me);
+
+      	{
+      	  Machine::ProcessorMemoryAffinity pma;
+      	  pma.p = p;
+      	  pma.m = (*it)->mram->me;
+      	  pma.bandwidth = 10; // assuming pcie, this should be ~half the bw and
+      	  pma.latency = 400;  // ~twice the latency as zcmem
+      	  runtime->add_proc_mem_affinity(pma);
+      	}
+      }
+
+      // look for any other local memories that belong to our context or
+      //  peer-able contexts
+      const Node& n = get_runtime()->nodes[Network::my_node_id];
+      for(std::vector<MemoryImpl *>::const_iterator it = n.memories.begin();
+          it != n.memories.end();
+          ++it) {
+        UpmemDeviceMemoryInfo *cdm = (*it)->find_module_specific<UpmemDeviceMemoryInfo>();
+        if(!cdm) continue;
+        if(cdm->device_id == device_id) {
+          Machine::ProcessorMemoryAffinity pma;
+          pma.p = p;
+          pma.m = (*it)->me;
+          pma.bandwidth = 200;  // "big"
+          pma.latency = 5;      // "ok"
+          runtime->add_proc_mem_affinity(pma);
+        } else {
+          if(cdm->dpu && (info->peers.count(cdm->dpu->info->device) > 0)) {
+            Machine::ProcessorMemoryAffinity pma;
+            pma.p = p;
+            pma.m = (*it)->me;
+            pma.bandwidth = 10; // assuming pcie, this should be ~half the bw and
+            pma.latency = 400;  // ~twice the latency as zcmem
+            runtime->add_proc_mem_affinity(pma);
+          }
+        }
+     }
     }
+
     const DPU::UpmemIpcMapping *DPU::find_ipc_mapping(Memory mem) const
     {
       for(std::vector<UpmemIpcMapping>::const_iterator it = upmemipc_mappings.begin();
