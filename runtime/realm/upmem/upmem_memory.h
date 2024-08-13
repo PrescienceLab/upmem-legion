@@ -45,7 +45,7 @@ namespace Realm {
     class DPUStream;
     // workers.h
     class DPUWorkFence;
-    
+
     class DPUZCMemory : public LocalManagedMemory {
     public:
       DPUZCMemory(Memory _me, char *_base, size_t _size);
@@ -61,7 +61,6 @@ namespace Realm {
     public:
       char *base;
     }; // end class DPUZCMemory
-
 
     class DPUMRAMMemory : public LocalManagedMemory {
     public:

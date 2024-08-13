@@ -2,7 +2,6 @@
 #define ISALIGNED8(X) (!((X)&0x7))
 
 using namespace Realm;
-
 ////////////////////////////////////////////////////////////////////////
 //
 // class Point<N,T>
@@ -851,4 +850,40 @@ inline FT *AffineAccessor<FT, N, T>::get_ptr(const Point<N, T> &p) const
     rawptr += p[i] * strides[i];
 
   return reinterpret_cast<FT *>(rawptr);
+}
+
+////////////////////////////////////////////////////////////////////////
+//
+// class AccessorRefHelper<FT>
+
+template <typename FT>
+inline AccessorRefHelper<FT>::AccessorRefHelper(RegionInstance _inst, size_t _offset)
+  : inst(_inst)
+  , offset(_offset)
+{}
+
+// "read"
+template <typename FT>
+inline AccessorRefHelper<FT>::operator FT(void) const
+{
+  FT val;
+  inst.read_untyped(offset, &val, sizeof(FT));
+  return val;
+}
+
+// "write"
+template <typename FT>
+inline AccessorRefHelper<FT> &AccessorRefHelper<FT>::operator=(const FT &newval)
+{
+  inst.write_untyped(offset, &newval, sizeof(FT));
+  return *this;
+}
+
+template <typename FT>
+inline AccessorRefHelper<FT> &
+AccessorRefHelper<FT>::operator=(const AccessorRefHelper<FT> &rhs)
+{
+  const FT newval = rhs;
+  inst.write_untyped(offset, &newval, sizeof(FT));
+  return *this;
 }

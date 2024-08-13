@@ -222,8 +222,8 @@ namespace Realm {
                   baseoffset_dst = out_base + out_offset;
                 }
 
-                CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()),
-                                             (void *)(baseoffset_src)));
+                CHECK_UPMEM(
+                    dpu_prepare_xfer(*(stream->get_stream()), (void *)(baseoffset_src)));
                 CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), copy_type,
                                           DPU_MRAM_HEAP_POINTER_NAME, baseoffset_dst,
                                           bytes, DPU_XFER_ASYNC));
@@ -304,27 +304,27 @@ namespace Realm {
                   if(in_dpu) {
                     if(out_dpu == in_dpu || (out_ipc_index >= 0)) {
                       printf("device to device not currently supported\n");
-                  } else if(!out_dpu) {
-                    copy_type = DPU_XFER_FROM_DPU;
-                    stream = in_dpu->stream;
-                    baseoffset_src = out_base + out_offset;
-                    baseoffset_dst = in_base + in_offset;
+                    } else if(!out_dpu) {
+                      copy_type = DPU_XFER_FROM_DPU;
+                      stream = in_dpu->stream;
+                      baseoffset_src = out_base + out_offset;
+                      baseoffset_dst = in_base + in_offset;
+                    }
+                  } else {
+                    copy_type = DPU_XFER_TO_DPU;
+                    stream = out_dpu->stream;
+                    baseoffset_src = in_base + in_offset;
+                    baseoffset_dst = out_base + out_offset;
                   }
-                } else {
-                  copy_type = DPU_XFER_TO_DPU;
-                  stream = out_dpu->stream;
-                  baseoffset_src = in_base + in_offset;
-                  baseoffset_dst = out_base + out_offset;
-                }
 
                   const void *src = reinterpret_cast<const void *>(baseoffset_src);
                   size_t dst = (baseoffset_dst);
 
                   log_dpudma.info()
-                      << "dpu memcpy 2d: dst=" << std::hex << (baseoffset_dst)
-                      << std::dec << "+" << out_lstride << " src=" << std::hex
-                      << (baseoffset_src) << std::dec << "+" << in_lstride
-                      << " bytes=" << bytes << " lines=" << lines << " stream=" << stream
+                      << "dpu memcpy 2d: dst=" << std::hex << (baseoffset_dst) << std::dec
+                      << "+" << out_lstride << " src=" << std::hex << (baseoffset_src)
+                      << std::dec << "+" << in_lstride << " bytes=" << bytes
+                      << " lines=" << lines << " stream=" << stream
                       << " kind=" << memcpy_kind;
 
                   CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()), (void *)src));
@@ -546,15 +546,13 @@ namespace Realm {
             peer_dpu_mems.push_back((*it)->me);
         }
       }
-      
+
       std::vector<Memory> mapped_cpu_mems;
-      mapped_cpu_mems.insert(mapped_cpu_mems.end(),
-                             src_dpu->pinned_sysmems.begin(),
+      mapped_cpu_mems.insert(mapped_cpu_mems.end(), src_dpu->pinned_sysmems.begin(),
                              src_dpu->pinned_sysmems.end());
       // treat managed memory as usually being on the host as well
       // mapped_cpu_mems.insert(mapped_cpu_mems.end(), src_dpu->managed_mems.begin(),
       //                        src_dpu->managed_mems.end());
-
 
       switch(_kind) {
       case XFER_DPU_TO_MRAM:

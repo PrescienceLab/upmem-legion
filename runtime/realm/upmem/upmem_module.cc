@@ -191,16 +191,15 @@ namespace Realm {
         {
           zcmem_dpu_base = (char *)malloc(config->cfg_zc_ib_size);
         }
-        if (zcmem_dpu_base == NULL) {
-              log_dpu.fatal() << "insufficient device-mappable host memory: "
-                  << config->cfg_zc_mem_size << " bytes needed (from -ll:zsize)";
-          
-            abort();
+        if(zcmem_dpu_base == NULL) {
+          log_dpu.fatal() << "insufficient device-mappable host memory: "
+                          << config->cfg_zc_mem_size << " bytes needed (from -ll:zsize)";
+
+          abort();
         }
 
         Memory m = runtime->next_local_memory_id();
-        zcmem = new DPUZCMemory(m, zcmem_dpu_base, 
-                                config->cfg_zc_mem_size);
+        zcmem = new DPUZCMemory(m, zcmem_dpu_base, config->cfg_zc_mem_size);
         runtime->add_memory(zcmem);
 
         // add the ZC memory as a pinned memory to all GPUs
@@ -210,18 +209,17 @@ namespace Realm {
       }
 
       // allocate intermediate buffers in ZC memory for DMA engine
-      if ((config->cfg_zc_ib_size > 0) && !dpus.empty()) {
+      if((config->cfg_zc_ib_size > 0) && !dpus.empty()) {
         char *zcib_cpu_base;
         {
           zcib_cpu_base = (char *)malloc(config->cfg_zc_ib_size);
         }
         Memory m = runtime->next_local_ib_memory_id();
-        IBMemory* ib_mem;
-        ib_mem = new IBMemory(m, config->cfg_zc_ib_size,
-			      MemoryImpl::MKIND_ZEROCOPY, Memory::Z_COPY_MEM,
-			      zcib_cpu_base, 0);
+        IBMemory *ib_mem;
+        ib_mem = new IBMemory(m, config->cfg_zc_ib_size, MemoryImpl::MKIND_ZEROCOPY,
+                              Memory::Z_COPY_MEM, zcib_cpu_base, 0);
         runtime->add_ib_memory(ib_mem);
-        for (unsigned i = 0; i < dpus.size(); i++) {
+        for(unsigned i = 0; i < dpus.size(); i++) {
           dpus[i]->pinned_sysmems.insert(ib_mem->me);
         }
       }

@@ -394,6 +394,33 @@ namespace Realm {
     FT *get_ptr(const Point<N, T> &p) const;
   };
 
+  class RegionInstance {
+  public:
+    RegionInstance();
+    void read_untyped() { assert(0 && "read_untyped not implemented"); }
+    void write_untyped() { assert(0 && "write_untyped not implemented"); }
+
+  protected:
+  };
+
+  template <typename FT>
+  class AccessorRefHelper {
+  public:
+    AccessorRefHelper(RegionInstance _inst, size_t _offset);
+
+    // "read"
+    operator FT(void) const;
+
+    // "write"
+    AccessorRefHelper(const AccessorRefHelper &) = default;
+    AccessorRefHelper(AccessorRefHelper &&) noexcept = default;
+    AccessorRefHelper<FT> &operator=(const FT &newval);
+    AccessorRefHelper<FT> &operator=(const AccessorRefHelper<FT> &rhs);
+
+  protected:
+    RegionInstance inst;
+    size_t offset;
+  };
 }; // namespace Realm
 #include "realm/upmem/realm_c_upmem.inl"
 
