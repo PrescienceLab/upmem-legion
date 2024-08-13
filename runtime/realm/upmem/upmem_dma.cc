@@ -300,23 +300,30 @@ namespace Realm {
                     break;
 
                   DPUMemcpyKind copy_type;
+                  size_t baseoffset_src, baseoffset_dst;
                   if(in_dpu) {
                     if(out_dpu == in_dpu || (out_ipc_index >= 0)) {
                       printf("device to device not currently supported\n");
-                    } else if(!out_dpu) {
-                      copy_type = DPU_XFER_FROM_DPU;
-                    }
-                  } else {
-                    copy_type = DPU_XFER_TO_DPU;
+                  } else if(!out_dpu) {
+                    copy_type = DPU_XFER_FROM_DPU;
+                    stream = in_dpu->stream;
+                    baseoffset_src = out_base + out_offset;
+                    baseoffset_dst = in_base + in_offset;
                   }
+                } else {
+                  copy_type = DPU_XFER_TO_DPU;
+                  stream = out_dpu->stream;
+                  baseoffset_src = in_base + in_offset;
+                  baseoffset_dst = out_base + out_offset;
+                }
 
-                  const void *src = reinterpret_cast<const void *>(in_base + in_offset);
-                  size_t dst = (out_base + out_offset);
+                  const void *src = reinterpret_cast<const void *>(baseoffset_src);
+                  size_t dst = (baseoffset_dst);
 
                   log_dpudma.info()
-                      << "dpu memcpy 2d: dst=" << std::hex << (out_base + out_offset)
+                      << "dpu memcpy 2d: dst=" << std::hex << (baseoffset_dst)
                       << std::dec << "+" << out_lstride << " src=" << std::hex
-                      << (in_base + in_offset) << std::dec << "+" << in_lstride
+                      << (baseoffset_src) << std::dec << "+" << in_lstride
                       << " bytes=" << bytes << " lines=" << lines << " stream=" << stream
                       << " kind=" << memcpy_kind;
 
@@ -768,6 +775,7 @@ namespace Realm {
               out_alc.advance(0, bytes);
               total_bytes += bytes;
             } else {
+              assert(0 && "Not implemented correctly");
               size_t lines = out_alc.remaining(1);
               size_t lstride = out_alc.get_stride(1);
 
@@ -792,6 +800,7 @@ namespace Realm {
                 out_alc.advance(1, lines);
                 total_bytes += bytes * lines;
               } else {
+                assert(0 && "Not implemented correctly");
                 size_t planes = out_alc.remaining(2);
                 size_t pstride = out_alc.get_stride(2);
 
