@@ -575,6 +575,10 @@ namespace ArraySyntax {
   };
 }; // namespace ArraySyntax
 
+////////////////////////////////////////////////////////////
+// Specializations for Affine Accessors
+////////////////////////////////////////////////////////////
+
 // Read-only FieldAccessor specialization
 template <typename FT, int N, typename T, bool CB>
 class FieldAccessor<LEGION_READ_ONLY, FT, N, T, Realm::AffineAccessor<FT, N, T>, CB> {
@@ -586,21 +590,26 @@ public:
 
 public:
   inline FT read(const Point<N, T> &p) const { return accessor.read(p); }
-
-  inline FT operator[](const Point<N, T> &p) const { return accessor.read(p); }
-
-  // inline const ArraySyntax::AccessorRefHelper<FT,LEGION_READ_ONLY>
-  //     operator[](const Point<N,T>& p) const
-  //   {
-  //     return ArraySyntax::AccessorRefHelper<FT,LEGION_READ_ONLY>(
-  //                                                     accessor[p]);
-  //   }
-  inline ArraySyntax::GenericSyntaxHelper<
+  inline const FT *ptr(const Point<N, T> &p) const { return accessor.ptr(p); }
+  inline const FT *ptr(const Rect<N, T> &r, size_t field_size = sizeof(FT)) const
+  {
+    assert(Internal::is_dense_layout(r, accessor.strides, field_size));
+    return accessor.ptr(r.lo);
+  }
+  inline const FT *ptr(const Rect<N, T> &r, size_t strides[N],
+                       size_t field_size = sizeof(FT)) const
+  {
+    for(int i = 0; i < N; i++)
+      strides[i] = accessor.strides[i] / field_size;
+    return accessor.ptr(r.lo);
+  }
+  inline const FT &operator[](const Point<N, T> &p) const { return accessor[p]; }
+  inline ArraySyntax::AffineSyntaxHelper<
       FieldAccessor<LEGION_READ_ONLY, FT, N, T, Realm::AffineAccessor<FT, N, T>, CB>, FT,
       N, T, 2, LEGION_READ_ONLY>
   operator[](T index) const
   {
-    return ArraySyntax::GenericSyntaxHelper<
+    return ArraySyntax::AffineSyntaxHelper<
         FieldAccessor<LEGION_READ_ONLY, FT, N, T, Realm::AffineAccessor<FT, N, T>, CB>,
         FT, N, T, 2, LEGION_READ_ONLY>(*this, Point<1, T>(index));
   }
@@ -626,36 +635,41 @@ public:
   FieldAccessor(void) {}
 
 public:
-  inline FT read(const Point<N, T> &p) const { return accessor.read(p); }
-
-  inline FT operator[](const Point<N, T> &p) const { return accessor.read(p); }
-
-  // inline FT read(const Point<N,T>& p) const
-  //   {
-  //     if (!bounds.contains(p)) {
-  //       assert(0 && "Failed fail_bounds_check. Not Implemeneted");
-  //       // PhysicalRegion::fail_bounds_check(DomainPoint(p), field,
-  //       //                                   LEGION_READ_ONLY);
-  //     }
-  //     return accessor.read(p);
-  //   }
-  // inline const ArraySyntax::AccessorRefHelper<FT,LEGION_READ_ONLY>
-  //     operator[](const Point<N,T>& p) const
-  //   {
-  //     if (!bounds.contains(p)) {
-  //       assert(0 && "Failed fail_bounds_check. Not Implemeneted");
-  //       // PhysicalRegion::fail_bounds_check(DomainPoint(p), field,
-  //       //                                   LEGION_READ_ONLY);
-  //     }
-  //     return ArraySyntax::AccessorRefHelper<FT,LEGION_READ_ONLY>(
-  //                                                     accessor[p]);
-  //   }
-  inline ArraySyntax::GenericSyntaxHelper<
+  inline FT read(const Point<N, T> &p) const
+  {
+    assert(bounds.contains(p));
+    return accessor.read(p);
+  }
+  inline const FT *ptr(const Point<N, T> &p) const
+  {
+    assert(bounds.contains(p));
+    return accessor.ptr(p);
+  }
+  inline const FT *ptr(const Rect<N, T> &r, size_t field_size = sizeof(FT)) const
+  {
+    assert(bounds.contains_all(r));
+    assert(Internal::is_dense_layout(r, accessor.strides, field_size));
+    return accessor.ptr(r.lo);
+  }
+  inline const FT *ptr(const Rect<N, T> &r, size_t strides[N],
+                       size_t field_size = sizeof(FT)) const
+  {
+    assert(bounds.contains_all(r));
+    for(int i = 0; i < N; i++)
+      strides[i] = accessor.strides[i] / field_size;
+    return accessor.ptr(r.lo);
+  }
+  inline const FT &operator[](const Point<N, T> &p) const
+  {
+    assert(bounds.contains(p));
+    return accessor[p];
+  }
+  inline ArraySyntax::AffineSyntaxHelper<
       FieldAccessor<LEGION_READ_ONLY, FT, N, T, Realm::AffineAccessor<FT, N, T>, true>,
       FT, N, T, 2, LEGION_READ_ONLY>
   operator[](T index) const
   {
-    return ArraySyntax::GenericSyntaxHelper<
+    return ArraySyntax::AffineSyntaxHelper<
         FieldAccessor<LEGION_READ_ONLY, FT, N, T, Realm::AffineAccessor<FT, N, T>, true>,
         FT, N, T, 2, LEGION_READ_ONLY>(*this, Point<1, T>(index));
   }
@@ -681,14 +695,19 @@ public:
 
 public:
   inline FT read(const Point<1, T> &p) const { return accessor.read(p); }
-
-  inline FT operator[](const Point<1, T> &p) const { return accessor.read(p); }
-
-  // inline const ArraySyntax::AccessorRefHelper<FT,LEGION_READ_ONLY>
-  //     operator[](const Point<1,T>& p) const
-  //   {
-  //     return ArraySyntax::AccessorRefHelper<FT,LEGION_READ_ONLY>(accessor[p]);
-  //   }
+  inline const FT *ptr(const Point<1, T> &p) const { return accessor.ptr(p); }
+  inline const FT *ptr(const Rect<1, T> &r, size_t field_size = sizeof(FT)) const
+  {
+    assert(Internal::is_dense_layout(r, accessor.strides, field_size));
+    return accessor.ptr(r.lo);
+  }
+  inline const FT *ptr(const Rect<1, T> &r, size_t strides[1],
+                       size_t field_size = sizeof(FT)) const
+  {
+    strides[0] = accessor.strides[0] / field_size;
+    return accessor.ptr(r.lo);
+  }
+  inline const FT &operator[](const Point<1, T> &p) const { return accessor[p]; }
 
 public:
   mutable Realm::AffineAccessor<FT, 1, T> accessor;
@@ -709,30 +728,36 @@ public:
   FieldAccessor(void) {}
 
 public:
-  inline FT read(const Point<1, T> &p) const { return accessor.read(p); }
+  inline FT read(const Point<1, T> &p) const
+  {
+    assert(bounds.contains(p));
+    return accessor.read(p);
+  }
 
-  inline FT operator[](const Point<1, T> &p) const { return accessor.read(p); }
+  inline const FT *ptr(const Point<1, T> &p) const
+  {
+    assert(bounds.contains(p));
+    return accessor.ptr(p);
+  }
+  inline const FT *ptr(const Rect<1, T> &r, size_t field_size = sizeof(FT)) const
+  {
+    assert(bounds.contains_all(r));
+    assert(Internal::is_dense_layout(r, accessor.strides, field_size));
+    return accessor.ptr(r.lo);
+  }
+  inline const FT *ptr(const Rect<1, T> &r, size_t strides[1],
+                       size_t field_size = sizeof(FT)) const
+  {
+    assert(bounds.contains_all(r));
+    strides[0] = accessor.strides[0] / field_size;
+    return accessor.ptr(r.lo);
+  }
+  inline const FT &operator[](const Point<1, T> &p) const
+  {
+    assert(bounds.contains(p));
+    return accessor[p];
+  }
 
-  // inline FT read(const Point<1,T>& p) const
-  //   {
-  //     if (!bounds.contains(p)) {
-  //       assert(0 && "Failed fail_bounds_check. Not Implemeneted");
-  //       // PhysicalRegion::fail_bounds_check(DomainPoint(p), field,
-  //       //                                   LEGION_READ_ONLY);
-  //     }
-  //     return accessor.read(p);
-  //   }
-  // inline const ArraySyntax::AccessorRefHelper<FT,LEGION_READ_ONLY>
-  //     operator[](const Point<1,T>& p) const
-  //   {
-  //     if (!bounds.contains(p)) {
-  //       assert(0 && "Failed fail_bounds_check. Not Implemeneted");
-  //       // PhysicalRegion::fail_bounds_check(DomainPoint(p), field,
-  //       //                                   LEGION_READ_ONLY);
-  //     }
-  //     return ArraySyntax::AccessorRefHelper<FT,LEGION_READ_ONLY>(
-  //                                                     accessor[p]);
-  //   }
 public:
   mutable Realm::AffineAccessor<FT, 1, T> accessor;
   FieldID field;

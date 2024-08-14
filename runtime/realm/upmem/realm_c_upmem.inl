@@ -721,14 +721,14 @@ template <typename FT, int N, typename T>
 inline FT &AffineAccessor<FT, N, T>::operator[](const Point<N, T> &p) const
 {
   if(sizeof(FT) == 8) {
-    uint64_t buffff;
+    double buffff = 0.0;
     mram_read((__mram_ptr void const *)((uintptr_t)DPU_MRAM_HEAP_POINTER +
                                         (uintptr_t)(this->get_ptr(p))),
               (void *)(&buffff), sizeof(uint64_t));
     FT ret = (FT)buffff;
     return ret;
   } else {
-    uint64_t buffff;
+    uint64_t buffff = 0;
     uint64_t desired_addr =
         ((uintptr_t)DPU_MRAM_HEAP_POINTER + (uintptr_t)(this->get_ptr(p)));
     uint64_t actual_addr = ALIGN8(desired_addr);
