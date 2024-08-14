@@ -103,6 +103,29 @@ namespace Legion {
     static const int dim = N;
   };
 
+
+  template<int DIM, typename COORD_T = coord_t>
+  class PointInRectIterator {
+  private:
+    static_assert(DIM > 0, "DIM must be positive");
+  public:
+    PointInRectIterator(void);
+    PointInRectIterator(const Rect<DIM,COORD_T> &r,
+                        bool column_major_order = true);
+  public:
+    inline bool valid(void) const;
+    inline bool step(void);
+  public:
+    inline bool operator()(void) const;
+    inline Point<DIM,COORD_T> operator*(void) const;
+    inline COORD_T operator[](unsigned index) const;
+    inline const Point<DIM,COORD_T>* operator->(void) const;
+    inline PointInRectIterator<DIM,COORD_T>& operator++(void);
+    inline PointInRectIterator<DIM,COORD_T> operator++(int/*postfix*/);
+  protected:
+    Realm::PointInRectIterator<DIM,COORD_T> itr;
+  };
+
 }; // namespace Legion
 
 #include "realm/upmem/legion_c_upmem.inl"

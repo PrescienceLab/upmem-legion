@@ -640,6 +640,8 @@ inline bool PointInRectIterator<N, T>::step(void)
       }
     }
   }
+  valid = false;
+  return false;
 }
 
 ////////////////////////////////////////////////////////////////////////

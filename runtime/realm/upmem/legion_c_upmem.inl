@@ -1,5 +1,97 @@
 using namespace Legion;
 
+//----------------------------------------------------------------------------
+  template<int DIM, typename COORD_T> 
+  inline Legion::PointInRectIterator<DIM,COORD_T>::PointInRectIterator(void)
+  //----------------------------------------------------------------------------
+  {
+  }
+
+  //----------------------------------------------------------------------------
+  template<int DIM, typename COORD_T> 
+  inline Legion::PointInRectIterator<DIM,COORD_T>::PointInRectIterator(
+             const Rect<DIM,COORD_T> &r, bool column_major_order)
+    : itr(Realm::PointInRectIterator<DIM,COORD_T>(r, column_major_order))
+  //----------------------------------------------------------------------------
+  {
+    assert(valid());
+  }
+
+  //----------------------------------------------------------------------------
+  template<int DIM, typename COORD_T> 
+  inline bool Legion::PointInRectIterator<DIM,COORD_T>::valid(void) const
+  //----------------------------------------------------------------------------
+  {
+    return itr.valid;
+  }
+
+  //----------------------------------------------------------------------------
+  template<int DIM, typename COORD_T> 
+  inline bool Legion::PointInRectIterator<DIM,COORD_T>::step(void)
+  //----------------------------------------------------------------------------
+  {
+    assert(valid());
+    itr.step();
+    return valid();
+  }
+
+  //----------------------------------------------------------------------------
+  template<int DIM, typename COORD_T> 
+  inline bool Legion::PointInRectIterator<DIM,COORD_T>::operator()(void) const
+  //----------------------------------------------------------------------------
+  {
+    return valid();
+  }
+
+  //----------------------------------------------------------------------------
+  template<int DIM, typename COORD_T> 
+  inline Point<DIM,COORD_T> 
+                         Legion::PointInRectIterator<DIM,COORD_T>::operator*(void) const
+  //----------------------------------------------------------------------------
+  {
+    return itr.p;
+  }
+
+  //----------------------------------------------------------------------------
+  template<int DIM, typename COORD_T> 
+  inline COORD_T 
+              Legion::PointInRectIterator<DIM,COORD_T>::operator[](unsigned index) const
+  //----------------------------------------------------------------------------
+  {
+    return itr.p[index];
+  }
+
+  //----------------------------------------------------------------------------
+  template<int DIM, typename COORD_T> 
+  inline const Point<DIM,COORD_T>* 
+                        Legion::PointInRectIterator<DIM,COORD_T>::operator->(void) const
+  //----------------------------------------------------------------------------
+  {
+    return &(itr.p);
+  }
+
+  //----------------------------------------------------------------------------
+  template<int DIM, typename COORD_T> 
+  inline Legion::PointInRectIterator<DIM,COORD_T>&
+                              Legion::PointInRectIterator<DIM,COORD_T>::operator++(void)
+  //----------------------------------------------------------------------------
+  {
+    step();
+    return *this;
+  }
+
+  //----------------------------------------------------------------------------
+  template<int DIM, typename COORD_T> 
+  inline Legion::PointInRectIterator<DIM,COORD_T>
+                    Legion::PointInRectIterator<DIM,COORD_T>::operator++(int/*postfix*/)
+  //----------------------------------------------------------------------------
+  {
+    Legion::PointInRectIterator<DIM,COORD_T> result(*this);
+    step();
+    return result;
+  }
+
+
 // Some helper methods for accessors and deferred buffers
 namespace Internal {
   template <int N, typename T>
@@ -485,7 +577,199 @@ namespace ArraySyntax {
     Point<N, T> point;
   };
 }; // namespace ArraySyntax
-   // Read-write FieldAccessor specialization
+   
+ // Read-only FieldAccessor specialization
+    template<typename FT, int N, typename T, bool CB>
+    class FieldAccessor<LEGION_READ_ONLY,FT,N,T,
+                        Realm::AffineAccessor<FT,N,T>,CB> {
+    private:
+      static_assert(N > 0, "DIM must be positive");
+    public:
+      FieldAccessor(void) { }
+    public:
+      inline FT read(const Point<N,T>& p) const 
+        { 
+          return accessor.read(p); 
+        }
+      
+      inline FT operator[](const Point<N,T>& p) const
+        { 
+          return accessor.read(p); 
+        }
+
+      // inline const ArraySyntax::AccessorRefHelper<FT,LEGION_READ_ONLY> 
+      //     operator[](const Point<N,T>& p) const
+      //   { 
+      //     return ArraySyntax::AccessorRefHelper<FT,LEGION_READ_ONLY>(
+      //                                                     accessor[p]);
+      //   }
+      inline ArraySyntax::GenericSyntaxHelper<
+          FieldAccessor<LEGION_READ_ONLY,FT,N,T,
+            Realm::AffineAccessor<FT,N,T>,CB>,FT,N,T,2,LEGION_READ_ONLY>
+          operator[](T index) const
+      {
+        return ArraySyntax::GenericSyntaxHelper<
+            FieldAccessor<LEGION_READ_ONLY,FT,N,T,
+               Realm::AffineAccessor<FT,N,T>,CB>,FT,N,T,2,LEGION_READ_ONLY>(
+              *this, Point<1,T>(index));
+      }
+    public:
+      mutable Realm::AffineAccessor<FT,N,T> accessor;
+    public:
+      typedef FT value_type;
+      typedef FT& reference;
+      typedef const FT& const_reference;
+      static const int dim = N;
+    };
+
+    // Read-only FieldAccessor specialization
+    // with bounds checks
+    template<typename FT, int N, typename T>
+    class FieldAccessor<LEGION_READ_ONLY,FT,N,T,
+                        Realm::AffineAccessor<FT,N,T>,true> {
+    private:
+      static_assert(N > 0, "DIM must be positive");
+    public:
+      FieldAccessor(void) { }
+    public:
+
+          inline FT read(const Point<N,T>& p) const 
+        { 
+          return accessor.read(p); 
+        }
+            
+      inline FT operator[](const Point<N,T>& p) const
+        { 
+          return accessor.read(p); 
+        }
+
+      // inline FT read(const Point<N,T>& p) const 
+      //   { 
+      //     if (!bounds.contains(p)) {
+      //       assert(0 && "Failed fail_bounds_check. Not Implemeneted");
+      //       // PhysicalRegion::fail_bounds_check(DomainPoint(p), field, 
+      //       //                                   LEGION_READ_ONLY);
+      //     }
+      //     return accessor.read(p); 
+      //   }
+      // inline const ArraySyntax::AccessorRefHelper<FT,LEGION_READ_ONLY>
+      //     operator[](const Point<N,T>& p) const
+      //   { 
+      //     if (!bounds.contains(p)) {
+      //       assert(0 && "Failed fail_bounds_check. Not Implemeneted");
+      //       // PhysicalRegion::fail_bounds_check(DomainPoint(p), field, 
+      //       //                                   LEGION_READ_ONLY);
+      //     }
+      //     return ArraySyntax::AccessorRefHelper<FT,LEGION_READ_ONLY>(
+      //                                                     accessor[p]);
+      //   }
+      inline ArraySyntax::GenericSyntaxHelper<
+          FieldAccessor<LEGION_READ_ONLY,FT,N,T,
+             Realm::AffineAccessor<FT,N,T>,true>,FT,N,T,2,LEGION_READ_ONLY>
+          operator[](T index) const
+      {
+        return ArraySyntax::GenericSyntaxHelper<
+            FieldAccessor<LEGION_READ_ONLY,FT,N,T,
+              Realm::AffineAccessor<FT,N,T>,true>,FT,N,T,2,LEGION_READ_ONLY>(
+              *this, Point<1,T>(index));
+      }
+    public:
+      mutable Realm::AffineAccessor<FT,N,T> accessor;
+      FieldID field;
+      Rect<N,T> bounds;
+    public:
+      typedef FT value_type;
+      typedef FT& reference;
+      typedef const FT& const_reference;
+      static const int dim = N;
+    };
+
+    // Read-only FieldAccessor specialization 
+    // with N==1 to avoid array ambiguity
+    template<typename FT, typename T, bool CB>
+    class FieldAccessor<LEGION_READ_ONLY,FT,1,T,
+                        Realm::AffineAccessor<FT,1,T>,CB> {
+    public:
+      FieldAccessor(void) { }
+    public:
+      inline FT read(const Point<1,T>& p) const 
+        { 
+          return accessor.read(p); 
+        }
+            
+      inline FT operator[](const Point<1,T>& p) const
+        { 
+          return accessor.read(p); 
+        }
+
+      // inline const ArraySyntax::AccessorRefHelper<FT,LEGION_READ_ONLY>
+      //     operator[](const Point<1,T>& p) const
+      //   { 
+      //     return ArraySyntax::AccessorRefHelper<FT,LEGION_READ_ONLY>(accessor[p]);
+      //   }
+
+    public:
+      mutable Realm::AffineAccessor<FT,1,T> accessor;
+    public:
+      typedef FT value_type;
+      typedef FT& reference;
+      typedef const FT& const_reference;
+      static const int dim = 1;
+    };
+
+    // Read-only FieldAccessor specialization 
+    // with N==1 to avoid array ambiguity and bounds checks
+    template<typename FT, typename T>
+    class FieldAccessor<LEGION_READ_ONLY,FT,1,T,
+                        Realm::AffineAccessor<FT,1,T>,true> {
+    public:
+      // No CUDA support due to PhysicalRegion constructor
+      FieldAccessor(void) { }
+    public:
+
+          inline FT read(const Point<1,T>& p) const 
+        { 
+          return accessor.read(p); 
+        }
+            
+      inline FT operator[](const Point<1,T>& p) const
+        { 
+          return accessor.read(p); 
+        }
+
+
+      // inline FT read(const Point<1,T>& p) const 
+      //   { 
+      //     if (!bounds.contains(p)) {
+      //       assert(0 && "Failed fail_bounds_check. Not Implemeneted");
+      //       // PhysicalRegion::fail_bounds_check(DomainPoint(p), field, 
+      //       //                                   LEGION_READ_ONLY);
+      //     }
+      //     return accessor.read(p); 
+      //   }
+      // inline const ArraySyntax::AccessorRefHelper<FT,LEGION_READ_ONLY> 
+      //     operator[](const Point<1,T>& p) const
+      //   { 
+      //     if (!bounds.contains(p)) {
+      //       assert(0 && "Failed fail_bounds_check. Not Implemeneted");
+      //       // PhysicalRegion::fail_bounds_check(DomainPoint(p), field, 
+      //       //                                   LEGION_READ_ONLY);
+      //     }
+      //     return ArraySyntax::AccessorRefHelper<FT,LEGION_READ_ONLY>(
+      //                                                     accessor[p]);
+      //   }
+    public:
+      mutable Realm::AffineAccessor<FT,1,T> accessor;
+      FieldID field;
+      Rect<1,T> bounds;
+    public:
+      typedef FT value_type;
+      typedef FT& reference;
+      typedef const FT& const_reference;
+      static const int dim = 1;
+    };
+   
+// Read-write FieldAccessor specialization
 template <typename FT, int N, typename T, bool CB>
 class FieldAccessor<LEGION_READ_WRITE, FT, N, T, Realm::AffineAccessor<FT, N, T>, CB> {
 private:
