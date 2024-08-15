@@ -1313,8 +1313,10 @@ INSTALL_HEADERS += realm/simpletest/simpletest_access.h
 endif
 ifeq ($(strip $(USE_UPMEM)),1)
 INSTALL_HEADERS += realm/upmem/upmem_access.h \
-                   realm/upmem/realm_c_upmem.h \
-                   realm/upmem/realm_c_upmem.inl
+                         realm/upmem/realm_c_upmem.h \
+                         realm/upmem/realm_c_upmem.inl \
+                         realm/upmem/legion_c_upmem.h \
+                         realm/upmem/legion_c_upmem.inl
 endif
 ifeq ($(strip $(USE_FORTRAN)),1)
 INSTALL_HEADERS += legion_fortran_types.mod \
@@ -1382,7 +1384,7 @@ ifndef NO_BUILD_RULES
 # Provide an all unless the user asks us not to
 ifndef NO_BUILD_ALL
 .PHONY: all
-all: $(OUTFILE) $(SLIB_LEGION) $(SLIB_REALM) $(SLIB_REALM_CUHOOK)
+all: $(OUTFILE) $(SLIB_LEGION) $(SLIB_REALM) $(SLIB_REALM_CUHOOK) $(UPMEM_OBJS)
 endif
 # Provide support for installing legion with the make build system
 .PHONY: install COPY_FILES_AFTER_BUILD
@@ -1428,7 +1430,7 @@ DEP_FILES += $(LEGION_INST_OBJS:.o=.d)
 DEP_FILES += $(MAPPER_OBJS:.o=.d)
 -include $(DEP_FILES)
 
-$(OUTFILE) : $(APP_OBJS) $(SLIB_LEGION) $(SLIB_REALM) $(UPMEM_OBJS)
+$(OUTFILE) : $(APP_OBJS) $(SLIB_LEGION) $(SLIB_REALM)
 	@echo "---> Linking objects into one binary: $(OUTFILE)"
 	$(CXX) -o $(OUTFILE) $(APP_OBJS) $(LEGION_LIBS) $(LEGION_LD_FLAGS) $(LD_FLAGS) 
 
@@ -1549,30 +1551,7 @@ $(filter %.up.o, $(UPMEM_OBJS)) : %.up.o : %.cc
 
 ###########################################################################################
 
-
-# CUSTOM_CXX 	= -nostdlib++ -static $(UPMEM_HOME)/lib/libc++.a
-
-# $(filter %.up.o, $(UPMEM_OBJS)) : %.up.o : %.c $(UPMEM_ACCESS)
-# 	$(UPMEM_CC) $(CUSTOM_CXX) -o $@ $(UPMEMCC_FLAGS) $(INC_FLAGS) $^
-
-# $(UPMEM_ACCESS): $(REALM_UPMEM_SRC)
-# 	$(UPMEM_CC) -x c++ -nostdinc++ -o $(UPMEM_ACCESS) -isystem $(UPMEM_HOME)/share/upmem/include/c++/v1 \
-#   -c $(UPMEMCC_FLAGS) $(INC_FLAGS) $^
-
-
-###########################################################################################
-# $(filter %.up.o, $(UPMEM_OBJS)) : %.up.o : %.cc $(UPMEM_ACCESS_OBJ)
-# 	$(UPMEM_CC) -o $@  $(UPMEMCC_FLAGS) $(INC_FLAGS) $^ 
-
-# $(UPMEM_ACCESS_OBJ): $(UPMEM_ACCESS)
-# 	$(UPMEM_CC) -o $@ -c $^
-
-# $(UPMEM_ACCESS): $(REALM_UPMEM_SRC) 
-# 	clang++ -x c++ -emit-llvm -S -O0 -o $(UPMEM_ACCESS) -c $(UPMEMCC_FLAGS) $(INC_FLAGS) $^ 
-###########################################################################################
-
-
-$(REALM_UPMEM_SRC) : $(REALM_DEFINES_HEADER)
+$(REALM_UPMEM_SRC) : $(REALM_DEFINES_HEADER) 
 
 endif
 
