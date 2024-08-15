@@ -62,7 +62,6 @@ template <int N, typename T>
 inline T &Point<N, T>::operator[](int index)
 {
   assert(index < N);
-  assert((uint64_t)values % 8 == 0);
   return values[index];
 }
 
@@ -185,7 +184,6 @@ struct Point<1, T> {
   const T &operator[](int index) const
   {
     assert(index == 0);
-    assert((uint64_t)value % 8 == 0);
     return value;
   }
 
@@ -205,7 +203,7 @@ struct Point<1, T> {
   static constexpr Point<1, T> ZEROES(void) { return Point<1, T>(0); }
 
   static constexpr Point<1, T> ONES(void) { return Point<1, T>(1); }
-};
+} __attribute__((aligned(8)));
 
 // component-wise operators defined on Point<N,T> (with optional coercion)
 template <int N, typename T, typename T2>
