@@ -830,8 +830,6 @@ namespace Realm {
           // however many fills/copies we submitted, put in a single fence that
           //  will tell us that they're all done
           add_reference(); // released by transfer completion
-          CHECK_UPMEM(dpu_sync(*(stream->get_stream())));
-
           stream->add_notification(
               new DPUTransferCompletion(this, -1, 0, 0, output_control.current_io_port,
                                         out_span_start, total_bytes));
