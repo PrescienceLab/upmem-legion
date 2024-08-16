@@ -49,7 +49,6 @@ namespace Realm {
     protected:
       const char *bin;
       const char *symbol_name;
-      std::vector<dpu_set_t *> streams;
     }; // end class Kernel
 
   }; // namespace Upmem

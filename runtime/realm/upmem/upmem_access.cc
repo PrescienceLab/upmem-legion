@@ -28,7 +28,7 @@ namespace Realm {
       : bin(_bin)
     {}
 
-    void Kernel::load(void)
+    void Kernel::load(void) // top level task will call this
     {
       UpmemModule *mod = get_runtime()->get_module<UpmemModule>("upmem");
       assert(mod != NULL && "Kernel::load Upmem Module NULL");
@@ -36,37 +36,32 @@ namespace Realm {
       for(std::vector<DPU *>::iterator it = mod->dpus.begin(); it != mod->dpus.end();
           it++) {
         stream = ((*it)->stream)->get_stream();
-        this->streams.push_back(stream);
         CHECK_UPMEM(dpu_load(*stream, this->bin, NULL));
       }
     }
 
     void Kernel::launch(void *args[], const char *symbol_name, size_t arg_size)
     {
-      for(dpu_set_t *stream : streams) {
-        if(stream == NULL) {
-          continue;
-        }
-        dpu_set_t dpu_proc;
-
+      UpmemModule *mod = get_runtime()->get_module<UpmemModule>("upmem");
+      dpu_set_t *stream = mod->get_task_upmem_stream(); // need to be right context
+      dpu_set_t dpu_proc;
 #ifdef DEBUG_REALM
-        assert(arg_size % 8 == 0 && "args_size must be multiple of 8 bytes");
+      assert(arg_size % 8 == 0 && "args_size must be multiple of 8 bytes");
 #endif
 
-        DPU_FOREACH(*stream, dpu_proc) { CHECK_UPMEM(dpu_prepare_xfer(dpu_proc, args)); }
+      DPU_FOREACH(*stream, dpu_proc) { CHECK_UPMEM(dpu_prepare_xfer(dpu_proc, args)); }
 
-        CHECK_UPMEM(dpu_push_xfer(*stream, DPU_XFER_TO_DPU, symbol_name, 0, arg_size,
-                                  DPU_XFER_ASYNC));
+      CHECK_UPMEM(dpu_push_xfer(*stream, DPU_XFER_TO_DPU, symbol_name, 0, arg_size,
+                                DPU_XFER_ASYNC));
 
 #ifdef PRINT_UPMEM
-        // printing is a blocking operation. we need to read buffer once available.
-        CHECK_UPMEM(dpu_launch(*stream, DPU_SYNCHRONOUS));
-        CHECK_UPMEM(dpu_sync(*stream));
-        DPU_FOREACH(*stream, dpu_proc) { DPU_ASSERT(dpu_log_read(dpu_proc, stdout)); }
+      // printing is a blocking operation. we need to read buffer once available.
+      CHECK_UPMEM(dpu_launch(*stream, DPU_SYNCHRONOUS));
+      CHECK_UPMEM(dpu_sync(*stream));
+      DPU_FOREACH(*stream, dpu_proc) { DPU_ASSERT(dpu_log_read(dpu_proc, stdout)); }
 #else
-        CHECK_UPMEM(dpu_launch(*stream, DPU_ASYNCHRONOUS));
+      CHECK_UPMEM(dpu_launch(*stream, DPU_ASYNCHRONOUS));
 #endif
-      }
     }
 
   }; // namespace Upmem

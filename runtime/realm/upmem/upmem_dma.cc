@@ -16,7 +16,7 @@
 
 #include "realm/upmem/upmem_dma.h"
 
-#define XFER_SYNC_TYPE DPU_XFER_ASYNC
+#define XFER_SYNC_TYPE DPU_XFER_DEFAULT
 
 namespace Realm {
 
@@ -454,7 +454,6 @@ namespace Realm {
               log_dpudma.info()
                   << "dpu memcpy fence: stream=" << stream << " xd=" << std::hex << guid
                   << std::dec << " bytes=" << total_bytes;
-              CHECK_UPMEM(dpu_sync(*(stream->get_stream())));
               stream->add_notification(new DPUTransferCompletion(
                   this, input_control.current_io_port, in_span_start, total_bytes,
                   output_control.current_io_port, out_span_start, total_bytes));

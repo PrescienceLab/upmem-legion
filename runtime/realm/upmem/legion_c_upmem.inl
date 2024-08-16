@@ -603,7 +603,7 @@ public:
       strides[i] = accessor.strides[i] / field_size;
     return accessor.ptr(r.lo);
   }
-  inline const FT &operator[](const Point<N, T> &p) const { return accessor[p]; }
+  inline const FT operator[](const Point<N, T> &p) const { return accessor[p]; }
   inline ArraySyntax::AffineSyntaxHelper<
       FieldAccessor<LEGION_READ_ONLY, FT, N, T, Realm::AffineAccessor<FT, N, T>, CB>, FT,
       N, T, 2, LEGION_READ_ONLY>
@@ -659,7 +659,7 @@ public:
       strides[i] = accessor.strides[i] / field_size;
     return accessor.ptr(r.lo);
   }
-  inline const FT &operator[](const Point<N, T> &p) const
+  inline const FT operator[](const Point<N, T> &p) const
   {
     assert(bounds.contains(p));
     return accessor[p];
@@ -752,7 +752,7 @@ public:
     strides[0] = accessor.strides[0] / field_size;
     return accessor.ptr(r.lo);
   }
-  inline const FT &operator[](const Point<1, T> &p) const
+  inline const FT operator[](const Point<1, T> &p) const
   {
     assert(bounds.contains(p));
     return accessor[p];
@@ -795,7 +795,7 @@ public:
       strides[i] = accessor.strides[i] / field_size;
     return accessor.ptr(r.lo);
   }
-  inline FT &operator[](const Point<N, T> &p) const { return accessor[p]; }
+  inline FT operator[](const Point<N, T> &p) const { return accessor[p]; }
   inline ArraySyntax::AffineSyntaxHelper<
       FieldAccessor<LEGION_READ_WRITE, FT, N, T, Realm::AffineAccessor<FT, N, T>, CB>, FT,
       N, T, 2, LEGION_READ_WRITE>
@@ -862,7 +862,7 @@ public:
       strides[i] = accessor.strides[i] / field_size;
     return accessor.ptr(r.lo);
   }
-  inline FT &operator[](const Point<N, T> &p) const
+  inline FT operator[](const Point<N, T> &p) const
   {
     assert(bounds.contains(p));
     return accessor[p];
@@ -917,7 +917,7 @@ public:
     strides[0] = accessor.strides[0] / field_size;
     return accessor.ptr(r.lo);
   }
-  inline FT &operator[](const Point<1, T> &p) const { return accessor[p]; }
+  inline FT operator[](const Point<1, T> &p) const { return accessor[p]; }
   template <typename REDOP, bool EXCLUSIVE>
   inline void reduce(const Point<1, T> &p, typename REDOP::RHS val) const
   {
@@ -971,7 +971,7 @@ public:
     strides[0] = accessor.strides[0] / field_size;
     return accessor.ptr(r.lo);
   }
-  inline FT &operator[](const Point<1, T> &p) const
+  inline FT operator[](const Point<1, T> &p) const
   {
     assert(bounds.contains(p));
     return accessor[p];
@@ -1020,7 +1020,7 @@ public:
       strides[i] = accessor.strides[i] / field_size;
     return accessor.ptr(r.lo);
   }
-  inline FT &operator[](const Point<N, T> &p) const { return accessor[p]; }
+  inline FT operator[](const Point<N, T> &p) const { return accessor[p]; }
   inline ArraySyntax::AffineSyntaxHelper<
       FieldAccessor<LEGION_WRITE_DISCARD, FT, N, T, Realm::AffineAccessor<FT, N, T>, CB>,
       FT, N, T, 2, LEGION_WRITE_DISCARD>
@@ -1084,7 +1084,7 @@ public:
       strides[i] = accessor.strides[i] / field_size;
     return accessor.ptr(r.lo);
   }
-  inline FT &operator[](const Point<N, T> &p) const
+  inline FT operator[](const Point<N, T> &p) const
   {
     assert(bounds.contains(p));
     return accessor[p];
@@ -1135,7 +1135,7 @@ public:
     strides[0] = accessor.strides[0] / field_size;
     return accessor.ptr(r.lo);
   }
-  inline FT &operator[](const Point<1, T> &p) const { return accessor[p]; }
+  inline FT operator[](const Point<1, T> &p) const { return accessor[p]; }
 
 public:
   Realm::AffineAccessor<FT, 1, T> accessor;
@@ -1185,7 +1185,7 @@ public:
     strides[0] = accessor.strides[0] / field_size;
     return accessor.ptr(r.lo);
   }
-  inline FT &operator[](const Point<1, T> &p) const
+  inline FT operator[](const Point<1, T> &p) const
   {
     assert(bounds.contains(p));
     return accessor[p];
@@ -1227,7 +1227,7 @@ public:
       strides[i] = accessor.strides[i] / field_size;
     return accessor.ptr(r.lo);
   }
-  inline FT &operator[](const Point<N, T> &p) const { return accessor[p]; }
+  inline FT operator[](const Point<N, T> &p) const { return accessor[p]; }
   inline ArraySyntax::AffineSyntaxHelper<
       FieldAccessor<LEGION_WRITE_DISCARD, FT, N, T, Realm::AffineAccessor<FT, N, T>, CB>,
       FT, N, T, 2, LEGION_WRITE_DISCARD>
@@ -1285,7 +1285,7 @@ public:
       strides[i] = accessor.strides[i] / field_size;
     return accessor.ptr(r.lo);
   }
-  inline FT &operator[](const Point<N, T> &p) const
+  inline FT operator[](const Point<N, T> &p) const
   {
     assert(bounds.contains(p));
     return accessor[p];
@@ -1335,7 +1335,7 @@ public:
     strides[0] = accessor.strides[0] / field_size;
     return accessor.ptr(r.lo);
   }
-  inline FT &operator[](const Point<1, T> &p) const { return accessor[p]; }
+  inline FT operator[](const Point<1, T> &p) const { return accessor[p]; }
 
 public:
   Realm::AffineAccessor<FT, 1, T> accessor;
@@ -1379,7 +1379,7 @@ public:
     strides[0] = accessor.strides[0] / field_size;
     return accessor.ptr(r.lo);
   }
-  inline FT &operator[](const Point<1, T> &p) const
+  inline FT operator[](const Point<1, T> &p) const
   {
     assert(bounds.contains(p));
     return accessor[p];
