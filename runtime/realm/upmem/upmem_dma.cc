@@ -16,6 +16,8 @@
 
 #include "realm/upmem/upmem_dma.h"
 
+#define XFER_SYNC_TYPE DPU_XFER_ASYNC
+
 namespace Realm {
 
   extern Logger log_xd;
@@ -226,7 +228,7 @@ namespace Realm {
                     dpu_prepare_xfer(*(stream->get_stream()), (void *)(baseoffset_src)));
                 CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), copy_type,
                                           DPU_MRAM_HEAP_POINTER_NAME, baseoffset_dst,
-                                          bytes, DPU_XFER_ASYNC));
+                                          bytes, XFER_SYNC_TYPE));
 
                 // CHECK_HIP(
                 //     hipMemcpyAsync(reinterpret_cast<void *>(out_base + out_offset),
@@ -330,7 +332,7 @@ namespace Realm {
                   CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()), (void *)src));
                   CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), copy_type,
                                             DPU_MRAM_HEAP_POINTER_NAME, dst,
-                                            lines * contig_bytes, DPU_XFER_ASYNC));
+                                            lines * contig_bytes, XFER_SYNC_TYPE));
 
                   // CHECK_HIP(hipMemcpy2DAsync(dst, out_lstride, src, in_lstride,
                   //                                contig_bytes, lines, copy_type,
@@ -405,7 +407,7 @@ namespace Realm {
                     CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()), (void *)src));
                     CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), copy_type,
                                               DPU_MRAM_HEAP_POINTER_NAME, dst,
-                                              lines * contig_bytes, DPU_XFER_ASYNC));
+                                              lines * contig_bytes, XFER_SYNC_TYPE));
 
                     // CHECK_HIP(hipMemcpy2DAsync(dst, out_lstride, src, in_lstride,
                     //                                contig_bytes, lines, copy_type,
@@ -761,7 +763,7 @@ namespace Realm {
               CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()), buffer));
               CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), DPU_XFER_TO_DPU,
                                         DPU_MRAM_HEAP_POINTER_NAME, out_base + out_offset,
-                                        elems * fill_size, DPU_XFER_ASYNC));
+                                        elems * fill_size, XFER_SYNC_TYPE));
             }
 
             // need to make sure the async transfer is done before we free the buffer
@@ -787,7 +789,7 @@ namespace Realm {
                 CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()), (void *)srcDevice));
                 CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), DPU_XFER_TO_DPU,
                                           DPU_MRAM_HEAP_POINTER_NAME, dstDevice,
-                                          bytes * todo, DPU_XFER_ASYNC));
+                                          bytes * todo, XFER_SYNC_TYPE));
 
                 // CHECK_HIP(hipMemcpy2DAsync(dstDevice, lstride, srcDevice, lstride,
                 //                                bytes, todo, , (stream->get_stream())));
@@ -809,7 +811,7 @@ namespace Realm {
                       dpu_prepare_xfer(*(stream->get_stream()), (void *)srcDevice));
                   CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), DPU_XFER_TO_DPU,
                                             DPU_MRAM_HEAP_POINTER_NAME, dstDevice,
-                                            bytes * lines, DPU_XFER_ASYNC));
+                                            bytes * lines, XFER_SYNC_TYPE));
 
                   // CHECK_HIP(hipMemcpy2DAsync(dstDevice, lstride, srcDevice, lstride,
                   //                                bytes, lines, ,

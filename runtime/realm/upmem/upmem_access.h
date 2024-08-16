@@ -38,7 +38,7 @@ namespace Realm {
 
     class REALM_PUBLIC_API Kernel {
     public:
-      Kernel(const char *bin, dpu_set_t *stream);
+      Kernel(const char *bin);
       Kernel(void);
       virtual ~Kernel(void) {}
 
@@ -49,9 +49,10 @@ namespace Realm {
     protected:
       const char *bin;
       const char *symbol_name;
-      dpu_set_t *stream;
-    }; // end class DPUMemcpy
-  };   // namespace Upmem
-};     // namespace Realm
+      std::vector<dpu_set_t *> streams;
+    }; // end class Kernel
+
+  }; // namespace Upmem
+};   // namespace Realm
 
 #endif

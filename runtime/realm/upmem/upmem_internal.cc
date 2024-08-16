@@ -144,10 +144,6 @@ namespace Realm {
         if(*it == this)
           continue;
 
-        // ignore dpus that we don't expect to be able to peer with
-        if(info->peers.count((*it)->info->device) == 0)
-          continue;
-
         peer_mram.insert((*it)->mram->me);
 
         {
