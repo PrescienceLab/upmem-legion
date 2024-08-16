@@ -707,7 +707,7 @@ public:
     strides[0] = accessor.strides[0] / field_size;
     return accessor.ptr(r.lo);
   }
-  inline const FT &operator[](const Point<1, T> &p) const { return accessor[p]; }
+  inline const FT operator[](const Point<1, T> &p) const { return accessor[p]; }
 
 public:
   mutable Realm::AffineAccessor<FT, 1, T> accessor;

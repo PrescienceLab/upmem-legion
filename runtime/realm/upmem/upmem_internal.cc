@@ -80,14 +80,14 @@ namespace Realm {
 
       task_streams.resize(1);
 
-      struct dpu_set_t *single_dpu = new struct dpu_set_t;
+      dpu_set_t *single_dpu = new dpu_set_t;
       CHECK_UPMEM(dpu_alloc(1, "backend=simulator", single_dpu));
       printf("DPU ALLOCATED with id %d\n", _device_id);
 
-      task_streams[0] = new DPUStream(this, worker);
-      task_streams[0]->set_stream(single_dpu);
+      stream = new DPUStream(this, worker);
+      stream->set_stream(single_dpu);
 
-      stream = task_streams[0];
+      task_streams[0] = stream;
 
       // for(unsigned i = 0; i < module->config->cfg_task_streams; i++)
       //   task_streams[i] = new DPUStream(this, worker);

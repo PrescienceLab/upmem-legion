@@ -32,20 +32,21 @@ namespace Realm {
     {
       UpmemModule *mod = get_runtime()->get_module<UpmemModule>("upmem");
       assert(mod != NULL && "Kernel::load Upmem Module NULL");
-
+      dpu_set_t *stream;
       for(std::vector<DPU *>::iterator it = mod->dpus.begin(); it != mod->dpus.end();
           it++) {
-        this->streams.push_back(((*it)->stream)->get_stream());
-        CHECK_UPMEM(dpu_load(*((*it)->stream)->get_stream(), this->bin, NULL));
+        stream = ((*it)->stream)->get_stream();
+        this->streams.push_back(stream);
+        CHECK_UPMEM(dpu_load(*stream, this->bin, NULL));
       }
-
-      // this->stream = mod->get_task_upmem_stream();
-      // CHECK_UPMEM(dpu_load(*this->stream, this->bin, NULL));
     }
 
     void Kernel::launch(void *args[], const char *symbol_name, size_t arg_size)
     {
-      for(dpu_set_t *&stream : streams) {
+      for(dpu_set_t *stream : streams) {
+        if(stream == NULL) {
+          continue;
+        }
         dpu_set_t dpu_proc;
 
 #ifdef DEBUG_REALM

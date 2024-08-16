@@ -381,7 +381,7 @@ namespace Realm {
     FT read(const Point<N, T> &p) const;
     void write(const Point<N, T> &p, FT newval) const;
 
-    FT &operator[](const Point<N, T> &p) const;
+    FT operator[](const Point<N, T> &p) const;
 
     bool is_dense_arbitrary(const Rect<N, T> &bounds) const; // any dimension ordering
     bool is_dense_col_major(const Rect<N, T> &bounds) const; // Fortran dimension ordering

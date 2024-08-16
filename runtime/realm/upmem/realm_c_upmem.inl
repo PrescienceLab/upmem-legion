@@ -716,14 +716,14 @@ inline void AffineAccessor<FT, N, T>::write(const Point<N, T> &p, FT newval) con
 }
 
 template <typename FT, int N, typename T>
-inline FT &AffineAccessor<FT, N, T>::operator[](const Point<N, T> &p) const
+inline FT AffineAccessor<FT, N, T>::operator[](const Point<N, T> &p) const
 {
   if(sizeof(FT) == 8) {
     double buffff = 0.0;
     mram_read((__mram_ptr void const *)((uintptr_t)DPU_MRAM_HEAP_POINTER +
                                         (uintptr_t)(this->get_ptr(p))),
               (void *)(&buffff), sizeof(uint64_t));
-    FT ret = (FT)buffff;
+    double ret = (double)buffff;
     return ret;
   } else {
     uint64_t buffff = 0;
