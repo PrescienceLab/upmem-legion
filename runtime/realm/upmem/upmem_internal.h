@@ -21,6 +21,7 @@
 #ifndef DPURT
 #define DPURT
 #include <dpu> // UPMEM rt syslib
+#if 0
 #define CHECK_UPMEM(x)                                                                   \
   {                                                                                      \
     dpu_error_t _drc = x;                                                                \
@@ -28,6 +29,9 @@
     printf("upmem returns %d DPU_OK = %d " #x "\n", _drc, DPU_OK);                       \
     DPU_ASSERT(_drc);                                                                    \
   }
+#else
+#define CHECK_UPMEM(x) DPU_ASSERT(x)
+#endif
 #endif
 
 #include "realm/upmem/upmem_module.h"

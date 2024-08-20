@@ -16,7 +16,7 @@
 
 #include "realm/upmem/upmem_dma.h"
 
-#define XFER_SYNC_TYPE DPU_XFER_DEFAULT
+#define XFER_SYNC_TYPE DPU_XFER_ASYNC
 
 namespace Realm {
 
@@ -224,6 +224,8 @@ namespace Realm {
                   baseoffset_dst = out_base + out_offset;
                 }
 
+
+                printf("-----> baseoffset_dst %p with xfer size %ld\n", (void *)baseoffset_dst, bytes);
                 CHECK_UPMEM(
                     dpu_prepare_xfer(*(stream->get_stream()), (void *)(baseoffset_src)));
                 CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), copy_type,
@@ -450,6 +452,7 @@ namespace Realm {
             }
 
             if(bytes_to_fence > 0) {
+              CHECK_UPMEM(dpu_sync(*stream->get_stream()));
               add_reference(); // released by transfer completion
               log_dpudma.info()
                   << "dpu memcpy fence: stream=" << stream << " xd=" << std::hex << guid
@@ -460,7 +463,7 @@ namespace Realm {
               in_span_start += total_bytes;
               out_span_start += total_bytes;
             }
-          } else {
+          } else { // out_port == 0
             // input but no output, so skip input bytes
             total_bytes = max_bytes;
             in_port->addrcursor.skip_bytes(total_bytes);
@@ -468,12 +471,12 @@ namespace Realm {
             rseqcache.add_span(input_control.current_io_port, in_span_start, total_bytes);
             in_span_start += total_bytes;
           }
-        } else {
+        } else { // in_port == 0
           if(out_port != 0) {
             // output but no input, so skip output bytes
             total_bytes = max_bytes;
             out_port->addrcursor.skip_bytes(total_bytes);
-          } else {
+          } else { // out_port == 0
             // skipping both input and output is possible for simultaneous
             //  gather+scatter
             total_bytes = max_bytes;
