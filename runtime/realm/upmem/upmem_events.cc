@@ -118,6 +118,8 @@ namespace Realm {
         external_count--;
       }
 
+      e->finished = false; // reset event
+
       available_events[current_size++] = e;
     }
 
