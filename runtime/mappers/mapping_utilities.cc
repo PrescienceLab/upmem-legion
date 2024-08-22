@@ -1055,6 +1055,7 @@ namespace Legion {
       {
         switch (kind) {
           case Processor::NO_KIND: return "NO_KIND";
+          case Processor::DPU_PROC: return "DPU_PROC";
           case Processor::TOC_PROC: return "TOC_PROC";
           case Processor::LOC_PROC: return "LOC_PROC";
           case Processor::UTIL_PROC: return "UTIL_PROC";
@@ -1087,6 +1088,7 @@ namespace Legion {
           case Memory::LEVEL1_CACHE: return "LEVEL1_CACHE";
           case Memory::GPU_MANAGED_MEM: return "GPU_MANAGED_MEM";
           case Memory::GPU_DYNAMIC_MEM: return "GPU_DYNAMIC_MEM";
+          case Memory::DPU_MRAM_MEM: return "DPU_MRAM_MEM";
           default: assert(false); return "";
         }
       }

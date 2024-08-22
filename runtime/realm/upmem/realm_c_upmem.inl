@@ -1,3 +1,19 @@
+/* Copyright 2024 Stanford University, NVIDIA Corporation
+ *                Los Alamos National Laboratory, Northwestern University
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+ 
 #define ALIGN8(X) (((X) >> 3) << 3)
 #define ISALIGNED8(X) (!((X)&0x7))
 
@@ -668,12 +684,42 @@ inline FT *AffineAccessor<FT, N, T>::ptr(const Point<N, T> &p) const
 template <typename FT, int N, typename T>
 inline FT AffineAccessor<FT, N, T>::read(const Point<N, T> &p) const
 {
-  uint64_t buffff;
-  mram_read((__mram_ptr void const *)((uintptr_t)DPU_MRAM_HEAP_POINTER +
-                                      (uintptr_t)(this->get_ptr(p))),
-            (void *)(&buffff), sizeof(uint64_t));
-  FT ret = (FT)buffff;
-  return ret;
+ if(sizeof(FT) == 8) {
+    double buffff = 0.0;
+    mram_read((__mram_ptr void const *)((uintptr_t)DPU_MRAM_HEAP_POINTER +
+                                        (uintptr_t)(this->get_ptr(p))),
+              (void *)(&buffff), sizeof(uint64_t));
+    double ret = (double)buffff;
+    return ret;
+  } else {
+    uint64_t buffff = 0;
+    uint64_t desired_addr =
+        ((uintptr_t)DPU_MRAM_HEAP_POINTER + (uintptr_t)(this->get_ptr(p)));
+    uint64_t actual_addr = ALIGN8(desired_addr);
+
+    mram_read((__mram_ptr void const *)actual_addr, (void *)(&buffff), sizeof(uint64_t));
+
+    switch(sizeof(FT)) {
+    case 4:
+      if(!ISALIGNED8(desired_addr)) {
+        buffff = buffff >> 32;
+      }
+      break;
+    case 2:
+      if(!ISALIGNED8(desired_addr)) {
+      }
+      break;
+    case 1:
+      if(!ISALIGNED8(desired_addr)) {
+      }
+      break;
+    default:
+      assert(0 && "not supported type");
+    }
+
+    FT ret = (FT)buffff;
+    return ret;
+  }
 }
 
 template <typename FT, int N, typename T>
@@ -718,42 +764,7 @@ inline void AffineAccessor<FT, N, T>::write(const Point<N, T> &p, FT newval) con
 template <typename FT, int N, typename T>
 inline FT AffineAccessor<FT, N, T>::operator[](const Point<N, T> &p) const
 {
-  if(sizeof(FT) == 8) {
-    double buffff = 0.0;
-    mram_read((__mram_ptr void const *)((uintptr_t)DPU_MRAM_HEAP_POINTER +
-                                        (uintptr_t)(this->get_ptr(p))),
-              (void *)(&buffff), sizeof(uint64_t));
-    double ret = (double)buffff;
-    return ret;
-  } else {
-    uint64_t buffff = 0;
-    uint64_t desired_addr =
-        ((uintptr_t)DPU_MRAM_HEAP_POINTER + (uintptr_t)(this->get_ptr(p)));
-    uint64_t actual_addr = ALIGN8(desired_addr);
-
-    mram_read((__mram_ptr void const *)actual_addr, (void *)(&buffff), sizeof(uint64_t));
-
-    switch(sizeof(FT)) {
-    case 4:
-      if(!ISALIGNED8(desired_addr)) {
-        buffff = buffff >> 32;
-      }
-      break;
-    case 2:
-      if(!ISALIGNED8(desired_addr)) {
-      }
-      break;
-    case 1:
-      if(!ISALIGNED8(desired_addr)) {
-      }
-      break;
-    default:
-      assert(0 && "not supported type");
-    }
-
-    FT ret = (FT)buffff;
-    return ret;
-  }
+  return this->read(p);
 }
 
 template <typename FT, int N, typename T>

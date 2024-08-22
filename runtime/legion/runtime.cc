@@ -17569,6 +17569,11 @@ namespace Legion {
                 LegionSpy::log_processor_kind(kind, "NoProc");
                 break;
               }
+            case Processor::DPU_PROC:
+              {
+                LegionSpy::log_processor_kind(kind, "DPU");
+                break;
+              }
             case Processor::TOC_PROC:
               {
                 LegionSpy::log_processor_kind(kind, "GPU");
@@ -17661,6 +17666,11 @@ namespace Legion {
               {
                 LegionSpy::log_memory_kind(kind, "Framebuffer");
                 break;
+              }
+      case Memory::DPU_MRAM_MEM:
+              {
+                LegionSpy::log_memory_kind(kind, "DPU-MRAM");
+                break; 
               }
 	    case Memory::DISK_MEM:
               {

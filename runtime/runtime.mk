@@ -390,16 +390,15 @@ ifeq ($(strip $(USE_UPMEM)),1)
   ifndef UPMEM_HOME
     $(error UPMEM_HOME variable is not defined, aborting build)
   endif
-  UPMEM_CC	      ?= $(UPMEM_HOME)/bin/dpu-upmem-dpurte-clang
+  UPMEM_CC	      ?= $(UPMEM_HOME)/bin/dpu-upmem-dpurte-clang -DDEVICE_DPU_CODE
   REALM_CC_FLAGS  += -DREALM_USE_UPMEM
-  # LEGION_CC_FLAGS += -DLEGION_USE_HIP
-  CC_FLAGS        += 
+  LEGION_CC_FLAGS += -DLEGION_USE_UPMEM
+  CC_FLAGS        += -fmax-errors=1 
   LD_FLAGS        += -L$(UPMEM_HOME)/lib -ldpu
-  UPMEMCC_FLAGS   +=  -fno-exceptions
-
+  UPMEMCC_FLAGS   +=  -fno-exceptions 
   INC_FLAGS       += -I$(UPMEM_HOME)/include/dpu
   ifeq ($(strip $(DEBUG)),1)
-    UPMEMCC_FLAGS	+= -g
+    UPMEMCC_FLAGS	+= -g0 -g 
   else
     UPMEMCC_FLAGS	+= -O2
   endif
