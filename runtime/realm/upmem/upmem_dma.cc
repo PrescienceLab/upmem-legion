@@ -452,7 +452,6 @@ namespace Realm {
             }
 
             if(bytes_to_fence > 0) {
-              CHECK_UPMEM(dpu_sync(*stream->get_stream()));
               add_reference(); // released by transfer completion
               log_dpudma.info()
                   << "dpu memcpy fence: stream=" << stream << " xd=" << std::hex << guid

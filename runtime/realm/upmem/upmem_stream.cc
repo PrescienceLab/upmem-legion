@@ -17,6 +17,9 @@
 #include "realm/upmem/upmem_stream.h"
 #include "realm/upmem/upmem_internal.h"
 
+size_t event_t_id = 0;
+#define EVENT_ID_MAX 8192
+
 namespace Realm {
 
   extern Logger log_xd;
@@ -26,6 +29,43 @@ namespace Realm {
     extern Logger log_dpu;
     extern Logger log_stream;
     extern Logger log_dpudma;
+
+    ////////////////////////////////////////////////////////////////////////
+    //
+    // class upmemEvent_t
+    upmemEvent_t::upmemEvent_t()
+    {
+      this->finished = false;
+      if (event_t_id > EVENT_ID_MAX) {
+        this->id = 0; // reset id
+      } else {
+        this->id = event_t_id + 1;
+        event_t_id++;
+      }
+    }
+
+    void upmemEvent_t::mark_finished() 
+    {
+      this->finished = true;
+    }
+
+    std::ostream& upmemEvent_t::operator<<(std::ostream& os)
+    {
+      os << this->get_id();
+      return os;
+    }
+
+
+    size_t upmemEvent_t::get_id() const
+    {
+      return this->id;
+    }
+
+    bool upmemEvent_t::operator==(const upmemEvent_t &rhs) {
+      if (this->get_id() == rhs.get_id()) return true;
+      return false;
+    }
+
 
     ////////////////////////////////////////////////////////////////////////
     //
@@ -54,44 +94,21 @@ namespace Realm {
     {
       HERE();
       assert(0 && "hit old copy path"); // shouldn't be used any more
-
-      // bool add_to_worker = false;
-      // {
-      //   AutoLock<> al(mutex);
-
-      //   // if we didn't already have work AND if there's not an active
-      //   //  worker issuing copies, request attention
-      //   add_to_worker =
-      //       (pending_copies.empty() && pending_events.empty() && !issuing_copies);
-
-      //   pending_copies.push_back(copy);
-      // }
-
-      // if(add_to_worker)
-      //   worker->add_stream(this);
     }
 
     void DPUStream::add_fence(DPUWorkFence *fence)
     {
-      HERE();
-      assert(0 && "should not be used");
+      upmemEvent_t *e = dpu->event_pool.get_event();
 
-      // upmemEvent_t e = dpu->event_pool.get_event();
+      log_stream.debug() << "UPMEM fence event " << e << " recorded on stream " << stream 
+                         << " (DPU " << dpu << ")";
 
-      // CHECK_UPMEM(upmemEventRecord(e, stream));
-
-      // log_stream.debug() << "UPMEM fence event " << e << " recorded on stream " <<
-      // stream
-      //                    << " (DPU " << dpu << ")";
-
-      // add_event(e, fence, 0, 0);
+      add_event(e, fence, 0, 0);
     }
 
     void DPUStream::add_start_event(DPUWorkStart *start)
     {
-      upmemEvent_t e = dpu->event_pool.get_event();
-
-      // CHECK_UPMEM(upmemEventRecord(e, stream));
+      upmemEvent_t *e = dpu->event_pool.get_event();
 
       log_stream.debug() << "UPMEM start event " << e << " recorded on stream " << stream
                          << " (DPU " << dpu << ")";
@@ -100,16 +117,29 @@ namespace Realm {
       add_event(e, 0, 0, start);
     }
 
+
+    /*static*/ dpu_error_t DPUStream::upmem_start_callback(struct dpu_set_t stream,
+                                                              uint32_t rank_id,
+                                                              void *data)
+    {
+      upmemEvent_t *me = (upmemEvent_t *)data;
+      me->mark_finished(/* true */); 
+      return DPU_OK;
+    }
+
     void DPUStream::add_notification(DPUCompletionNotification *notification)
     {
-      upmemEvent_t e = dpu->event_pool.get_event();
+      upmemEvent_t *e =  dpu->event_pool.get_event();
 
-      // CHECK_UPMEM(upmemEventRecord(e, stream));
+      // do a callback here
+      CHECK_UPMEM(dpu_callback(
+        *(this->get_stream()), &upmem_start_callback, (void *)e,
+        (dpu_callback_flags_t)(DPU_CALLBACK_ASYNC | DPU_CALLBACK_NONBLOCKING)));
 
       add_event(e, 0, notification, 0);
     }
 
-    void DPUStream::add_event(upmemEvent_t event, DPUWorkFence *fence,
+    void DPUStream::add_event(upmemEvent_t *event, DPUWorkFence *fence,
                               DPUCompletionNotification *notification,
                               DPUWorkStart *start)
     {
@@ -142,7 +172,7 @@ namespace Realm {
           it != other_streams.end(); it++) {
         if(*it == this)
           continue;
-        upmemEvent_t e = dpu->event_pool.get_event();
+        upmemEvent_t *e = dpu->event_pool.get_event();
 
         log_stream.debug() << "UPMEM stream " << stream << " waiting on stream "
                            << (*it)->get_stream() << " (DPU " << dpu << ")";
@@ -224,7 +254,7 @@ namespace Realm {
     bool DPUStream::reap_events(TimeLimit work_until)
     {
       // peek at the first event
-      upmemEvent_t event;
+      upmemEvent_t *event;
       bool event_valid = false;
       {
         AutoLock<> al(mutex);
@@ -240,10 +270,9 @@ namespace Realm {
       // we'll keep looking at events until we find one that hasn't triggered
       bool work_left = true;
       while(event_valid) {
-        //   dpu_error_t res = upmemEventQuery(event);
-
-        //   if(res == upmemErrorNotReady)
-        //     return true; // oldest event hasn't triggered - check again later
+        if (event->finished == false) { 
+            return true;  // oldest event hasn't triggered - check again later 
+        }
 
         log_stream.debug() << "UPMEM event " << event << " triggered on stream " << stream
                            << " (DPU " << dpu << ")";

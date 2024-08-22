@@ -26,9 +26,9 @@ namespace Realm {
     extern Logger log_stream;
     extern Logger log_dpudma;
 
-    void upmemEventCreate(upmemEvent_t *e) {}
+    void upmemEventCreate(upmemEvent_t **e) { *e = new upmemEvent_t; }
 
-    void upmemEventDestroy(upmemEvent_t *e) {}
+    void upmemEventDestroy(upmemEvent_t **e) {delete *e; }
 
     ////////////////////////////////////////////////////////////////////////
     //
@@ -78,10 +78,10 @@ namespace Realm {
       total_size = 0;
 
       // free internal vector storage
-      std::vector<upmemEvent_t>().swap(available_events);
+      std::vector<upmemEvent_t*>().swap(available_events);
     }
 
-    upmemEvent_t DPUEventPool::get_event(bool external)
+    upmemEvent_t *DPUEventPool::get_event(bool external)
     {
       AutoLock<> al(mutex);
 
@@ -107,7 +107,7 @@ namespace Realm {
       return available_events[--current_size];
     }
 
-    void DPUEventPool::return_event(upmemEvent_t e, bool external)
+    void DPUEventPool::return_event(upmemEvent_t *e, bool external)
     {
       AutoLock<> al(mutex);
 

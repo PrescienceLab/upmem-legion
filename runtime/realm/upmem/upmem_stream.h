@@ -45,7 +45,18 @@ namespace Realm {
 
 #ifndef EVENT_T
 #define EVENT_T
-    typedef std::string upmemEvent_t;
+    class upmemEvent_t {
+public:
+      upmemEvent_t();
+      void mark_finished();
+      size_t get_id() const;
+      bool operator==(const upmemEvent_t &rhs);      
+      std::ostream& operator<<(std::ostream& os);
+public:
+      bool finished;
+private:
+      size_t id;
+    };
 #endif
 
     class DPUStream {
@@ -76,10 +87,13 @@ namespace Realm {
       bool reap_events(TimeLimit work_until);
 
     protected:
+      static dpu_error_t upmem_start_callback(struct dpu_set_t stream,
+                                                              uint32_t rank_id,
+                                                              void *data);
       // may only be tested with lock held
       bool has_work(void) const;
 
-      void add_event(upmemEvent_t event, DPUWorkFence *fence,
+      void add_event(upmemEvent_t *event, DPUWorkFence *fence,
                      DPUCompletionNotification *notification = NULL,
                      DPUWorkStart *start = NULL);
 
@@ -99,7 +113,7 @@ namespace Realm {
       bool issuing_copies;
 
       struct PendingEvent {
-        upmemEvent_t event;
+        upmemEvent_t *event;
         DPUWorkFence *fence;
         DPUWorkStart *start;
         DPUCompletionNotification *notification;

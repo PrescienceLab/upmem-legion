@@ -30,14 +30,25 @@ namespace Realm {
     // forward declarations
     // internal.h
     class DPU;
-
+    
 #ifndef EVENT_T
 #define EVENT_T
-    typedef std::string upmemEvent_t;
+    class upmemEvent_t {
+public:
+      upmemEvent_t();
+      void mark_finished();
+      size_t get_id() const;
+      bool operator==(const upmemEvent_t &rhs);      
+      std::ostream& operator<<(std::ostream& os);
+public:
+      bool finished;
+private:
+      size_t id;
+    };
 #endif
 
-    void upmemEventCreate(upmemEvent_t *e);
-    void upmemEventDestroy(upmemEvent_t *e);
+    void upmemEventCreate(upmemEvent_t **e);
+    void upmemEventDestroy(upmemEvent_t **e);
 
     // a little helper class to manage a pool of CUevents that can be reused
     //  to reduce alloc/destroy overheads
@@ -51,13 +62,13 @@ namespace Realm {
       void init_pool(int init_size = 0 /* default == batch size */);
       void empty_pool(void);
 
-      upmemEvent_t get_event(bool external = false);
-      void return_event(upmemEvent_t e, bool external = false);
+      upmemEvent_t *get_event(bool external = false);
+      void return_event(upmemEvent_t *e, bool external = false);
 
     protected:
       Mutex mutex;
       int batch_size, current_size, total_size, external_count;
-      std::vector<upmemEvent_t> available_events;
+      std::vector<upmemEvent_t*> available_events;
 
     }; // end class DPUEventPool
 
