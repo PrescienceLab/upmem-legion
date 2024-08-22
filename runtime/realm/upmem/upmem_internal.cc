@@ -82,8 +82,6 @@ namespace Realm {
 
       dpu_set_t *single_dpu = new dpu_set_t;
       CHECK_UPMEM(dpu_alloc(1, "backend=simulator", single_dpu));
-      printf("DPU ALLOCATED with id %d\n", _device_id);
-
       stream = new DPUStream(this, worker);
       stream->set_stream(single_dpu);
 

@@ -1538,15 +1538,11 @@ $(MAPPER_OBJS) : %.cc.o : %.cc $(LEGION_DEFINES_HEADER) $(REALM_DEFINES_HEADER)
 ifeq ($(strip $(USE_UPMEM)),1)
 UPMEM_MRAM_CLEAR_OBJ = $(LG_RT_DIR)/realm/upmem/upmem_mram_reset.up.o
 
-# assumption/limitation with this: every source code file produces its own excutable 
-# multiple UPMEM device .c files are NOT combined together to make an excutable  
-# this means each .c file here contains a main function
+### TODO: support multiple UPMEM files to create a larger executable
 
-###########################################################################################
 $(filter %.up.o, $(UPMEM_OBJS)) : %.up.o : %.cc  | $(UPMEM_MRAM_CLEAR_OBJ)
 	$(UPMEM_CC) -o $@  $(UPMEMCC_FLAGS) $(INC_FLAGS) $^
 
-###########################################################################################
 $(filter %.up.o, $(UPMEM_MRAM_CLEAR_OBJ)) : %.up.o : %.c 
 	$(UPMEM_CC) -o $@ $(UPMEMCC_FLAGS) $^
 endif

@@ -201,21 +201,6 @@ namespace Realm {
 
     public:
       DPU *dpu;
-      // data needed for kernel launches
-      struct LaunchConfig {
-        uint16_t tasklets;
-        uint16_t dpus;
-        size_t mram;
-        LaunchConfig(uint16_t tasklets, uint16_t dpus, size_t _mram);
-      };
-      struct CallConfig : public LaunchConfig {
-        struct dpu_set_t stream;
-        CallConfig(uint16_t tasklets, uint16_t dpus, size_t _mram,
-                   struct dpu_set_t _stream);
-      };
-      std::vector<CallConfig> launch_configs;
-      std::vector<char> kernel_args;
-      std::vector<CallConfig> call_configs;
       bool block_on_synchronize;
       ContextSynchronizer ctxsync;
 
