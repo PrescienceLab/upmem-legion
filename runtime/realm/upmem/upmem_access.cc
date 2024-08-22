@@ -60,7 +60,10 @@ namespace Realm {
       CHECK_UPMEM(dpu_sync(*stream));
       DPU_FOREACH(*stream, dpu_proc) { DPU_ASSERT(dpu_log_read(dpu_proc, stdout)); }
 #else
-      CHECK_UPMEM(dpu_launch(*stream, DPU_ASYNCHRONOUS));
+      // TODO: NEW BUG. Kernel launches don't complete. 
+      // lets block it out for now. 
+      CHECK_UPMEM(dpu_launch(*stream, DPU_SYNCHRONOUS));
+      
 #endif
     }
 
