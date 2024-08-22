@@ -46,15 +46,17 @@ namespace Realm {
 #ifndef EVENT_T
 #define EVENT_T
     class upmemEvent_t {
-public:
+    public:
       upmemEvent_t();
       void mark_finished();
       size_t get_id() const;
-      bool operator==(const upmemEvent_t &rhs);      
-      std::ostream& operator<<(std::ostream& os);
-public:
+      bool operator==(const upmemEvent_t &rhs);
+      std::ostream &operator<<(std::ostream &os);
+
+    public:
       bool finished;
-private:
+
+    private:
       size_t id;
     };
 #endif
@@ -87,9 +89,8 @@ private:
       bool reap_events(TimeLimit work_until);
 
     protected:
-      static dpu_error_t upmem_start_callback(struct dpu_set_t stream,
-                                                              uint32_t rank_id,
-                                                              void *data);
+      static dpu_error_t upmem_start_callback(struct dpu_set_t stream, uint32_t rank_id,
+                                              void *data);
       // may only be tested with lock held
       bool has_work(void) const;
 

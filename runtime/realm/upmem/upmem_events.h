@@ -30,19 +30,21 @@ namespace Realm {
     // forward declarations
     // internal.h
     class DPU;
-    
+
 #ifndef EVENT_T
 #define EVENT_T
     class upmemEvent_t {
-public:
+    public:
       upmemEvent_t();
       void mark_finished();
       size_t get_id() const;
-      bool operator==(const upmemEvent_t &rhs);      
-      std::ostream& operator<<(std::ostream& os);
-public:
+      bool operator==(const upmemEvent_t &rhs);
+      std::ostream &operator<<(std::ostream &os);
+
+    public:
       bool finished;
-private:
+
+    private:
       size_t id;
     };
 #endif
@@ -68,7 +70,7 @@ private:
     protected:
       Mutex mutex;
       int batch_size, current_size, total_size, external_count;
-      std::vector<upmemEvent_t*> available_events;
+      std::vector<upmemEvent_t *> available_events;
 
     }; // end class DPUEventPool
 

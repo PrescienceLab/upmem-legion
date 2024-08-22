@@ -36,7 +36,7 @@ namespace Realm {
     upmemEvent_t::upmemEvent_t()
     {
       this->finished = false;
-      if (event_t_id > EVENT_ID_MAX) {
+      if(event_t_id > EVENT_ID_MAX) {
         this->id = 0; // reset id
       } else {
         this->id = event_t_id + 1;
@@ -44,28 +44,22 @@ namespace Realm {
       }
     }
 
-    void upmemEvent_t::mark_finished() 
-    {
-      this->finished = true;
-    }
+    void upmemEvent_t::mark_finished() { this->finished = true; }
 
-    std::ostream& upmemEvent_t::operator<<(std::ostream& os)
+    std::ostream &upmemEvent_t::operator<<(std::ostream &os)
     {
       os << this->get_id();
       return os;
     }
 
+    size_t upmemEvent_t::get_id() const { return this->id; }
 
-    size_t upmemEvent_t::get_id() const
+    bool upmemEvent_t::operator==(const upmemEvent_t &rhs)
     {
-      return this->id;
-    }
-
-    bool upmemEvent_t::operator==(const upmemEvent_t &rhs) {
-      if (this->get_id() == rhs.get_id()) return true;
+      if(this->get_id() == rhs.get_id())
+        return true;
       return false;
     }
-
 
     ////////////////////////////////////////////////////////////////////////
     //
@@ -100,13 +94,12 @@ namespace Realm {
     {
       upmemEvent_t *e = dpu->event_pool.get_event();
 
-            // do a callback here
+      // do a callback here
       CHECK_UPMEM(dpu_callback(
-        *(this->get_stream()), &upmem_start_callback, (void *)e,
-        (dpu_callback_flags_t)(DPU_CALLBACK_ASYNC | DPU_CALLBACK_NONBLOCKING)));
+          *(this->get_stream()), &upmem_start_callback, (void *)e,
+          (dpu_callback_flags_t)(DPU_CALLBACK_ASYNC | DPU_CALLBACK_NONBLOCKING)));
 
-
-      log_stream.debug() << "UPMEM fence event " << e << " recorded on stream " << stream 
+      log_stream.debug() << "UPMEM fence event " << e << " recorded on stream " << stream
                          << " (DPU " << dpu << ")";
 
       add_event(e, fence, 0, 0);
@@ -116,11 +109,10 @@ namespace Realm {
     {
       upmemEvent_t *e = dpu->event_pool.get_event();
 
-            // do a callback here
+      // do a callback here
       CHECK_UPMEM(dpu_callback(
-        *(this->get_stream()), &upmem_start_callback, (void *)e,
-        (dpu_callback_flags_t)(DPU_CALLBACK_ASYNC | DPU_CALLBACK_NONBLOCKING)));
-
+          *(this->get_stream()), &upmem_start_callback, (void *)e,
+          (dpu_callback_flags_t)(DPU_CALLBACK_ASYNC | DPU_CALLBACK_NONBLOCKING)));
 
       log_stream.debug() << "UPMEM start event " << e << " recorded on stream " << stream
                          << " (DPU " << dpu << ")";
@@ -129,26 +121,24 @@ namespace Realm {
       add_event(e, 0, 0, start);
     }
 
-
     /*static*/ dpu_error_t DPUStream::upmem_start_callback(struct dpu_set_t stream,
-                                                              uint32_t rank_id,
-                                                              void *data)
+                                                           uint32_t rank_id, void *data)
     {
       upmemEvent_t *me = (upmemEvent_t *)data;
-      me->mark_finished(/* true */); 
+      me->mark_finished(/* true */);
       return DPU_OK;
     }
 
     void DPUStream::add_notification(DPUCompletionNotification *notification)
     {
-      upmemEvent_t *e =  dpu->event_pool.get_event();
+      upmemEvent_t *e = dpu->event_pool.get_event();
 
       assert(e->finished == false);
 
       // do a callback here
       CHECK_UPMEM(dpu_callback(
-        *(this->get_stream()), &upmem_start_callback, (void *)e,
-        (dpu_callback_flags_t)(DPU_CALLBACK_ASYNC | DPU_CALLBACK_NONBLOCKING)));
+          *(this->get_stream()), &upmem_start_callback, (void *)e,
+          (dpu_callback_flags_t)(DPU_CALLBACK_ASYNC | DPU_CALLBACK_NONBLOCKING)));
 
       add_event(e, 0, notification, 0);
     }
@@ -284,8 +274,8 @@ namespace Realm {
       // we'll keep looking at events until we find one that hasn't triggered
       bool work_left = true;
       while(event_valid) {
-        if (event->finished == false) { 
-            return true;  // oldest event hasn't triggered - check again later 
+        if(event->finished == false) {
+          return true; // oldest event hasn't triggered - check again later
         }
 
         log_stream.debug() << "UPMEM event " << event << " triggered on stream " << stream

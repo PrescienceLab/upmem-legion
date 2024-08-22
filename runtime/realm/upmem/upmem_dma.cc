@@ -224,8 +224,8 @@ namespace Realm {
                   baseoffset_dst = out_base + out_offset;
                 }
 
-
-                printf("-----> baseoffset_dst %p with xfer size %ld\n", (void *)baseoffset_dst, bytes);
+                printf("-----> baseoffset_dst %p with xfer size %ld\n",
+                       (void *)baseoffset_dst, bytes);
                 CHECK_UPMEM(
                     dpu_prepare_xfer(*(stream->get_stream()), (void *)(baseoffset_src)));
                 CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), copy_type,
