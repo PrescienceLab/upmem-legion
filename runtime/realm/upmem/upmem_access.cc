@@ -32,10 +32,21 @@ namespace Realm {
     {
       UpmemModule *mod = get_runtime()->get_module<UpmemModule>("upmem");
       assert(mod != NULL && "Kernel::load Upmem Module NULL");
+      // store path to mram reset in path
+      char *path = getenv("LG_RT_DIR");
+      const char *file = "/realm/upmem/upmem_mram_reset.up.o";
+      strcat(path, file);
+
       dpu_set_t *stream;
       for(std::vector<DPU *>::iterator it = mod->dpus.begin(); it != mod->dpus.end();
           it++) {
         stream = ((*it)->stream)->get_stream();
+
+        // clear the heap from prior kernel invocations
+        CHECK_UPMEM(dpu_load(*stream, path, NULL));
+        CHECK_UPMEM(dpu_launch(*stream, DPU_SYNCHRONOUS));
+
+        // once heap is cleared, load this
         CHECK_UPMEM(dpu_load(*stream, this->bin, NULL));
       }
     }
@@ -60,10 +71,10 @@ namespace Realm {
       CHECK_UPMEM(dpu_sync(*stream));
       DPU_FOREACH(*stream, dpu_proc) { DPU_ASSERT(dpu_log_read(dpu_proc, stdout)); }
 #else
-      // TODO: NEW BUG. Kernel launches don't complete. 
-      // lets block it out for now. 
+      // TODO: NEW BUG. Kernel launches don't complete.
+      // lets block it out for now.
       CHECK_UPMEM(dpu_launch(*stream, DPU_SYNCHRONOUS));
-      
+
 #endif
     }
 

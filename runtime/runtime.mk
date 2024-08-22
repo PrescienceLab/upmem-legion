@@ -1536,22 +1536,19 @@ $(MAPPER_OBJS) : %.cc.o : %.cc $(LEGION_DEFINES_HEADER) $(REALM_DEFINES_HEADER)
 
 
 ifeq ($(strip $(USE_UPMEM)),1)
-UPMEM_ACCESS = access.up.bc
-UPMEM_ACCESS_OBJ = access.up.o
-REALM_UPMEM_SRC = $(LG_RT_DIR)/realm/upmem/realm_c_upmem.cc
+UPMEM_MRAM_CLEAR_OBJ = $(LG_RT_DIR)/realm/upmem/upmem_mram_reset.up.o
 
 # assumption/limitation with this: every source code file produces its own excutable 
 # multiple UPMEM device .c files are NOT combined together to make an excutable  
 # this means each .c file here contains a main function
 
 ###########################################################################################
-$(filter %.up.o, $(UPMEM_OBJS)) : %.up.o : %.cc 
+$(filter %.up.o, $(UPMEM_OBJS)) : %.up.o : %.cc  | $(UPMEM_MRAM_CLEAR_OBJ)
 	$(UPMEM_CC) -o $@  $(UPMEMCC_FLAGS) $(INC_FLAGS) $^
 
 ###########################################################################################
-
-$(REALM_UPMEM_SRC) : $(REALM_DEFINES_HEADER) 
-
+$(filter %.up.o, $(UPMEM_MRAM_CLEAR_OBJ)) : %.up.o : %.c 
+	$(UPMEM_CC) -o $@ $(UPMEMCC_FLAGS) $^
 endif
 
 # GPU compilation rules; We can't use -MMD for dependency generation because
@@ -1603,10 +1600,10 @@ endif
 
 ifdef LG_INSTALL_DIR
 clean::
-	$(RM) -f $(OUTFILE) $(APP_OBJS) $(REALM_OBJS) $(REALM_INST_OBJS) $(LEGION_OBJS) $(LEGION_INST_OBJS) $(MAPPER_OBJS) $(LG_RT_DIR)/*mod *.mod $(DEP_FILES) $(REALM_FATBIN_SRC) $(REALM_FATBIN) $(SLIB_REALM_CUHOOK) $(REALM_CUHOOK_OBJS)
+	$(RM) -f $(OUTFILE) $(APP_OBJS) $(REALM_OBJS) $(REALM_INST_OBJS) $(LEGION_OBJS) $(LEGION_INST_OBJS) $(MAPPER_OBJS) $(LG_RT_DIR)/*mod *.mod $(DEP_FILES) $(REALM_FATBIN_SRC) $(REALM_FATBIN) $(SLIB_REALM_CUHOOK) $(REALM_CUHOOK_OBJS) $(UPMEM_OBJS) $(UPMEM_MRAM_CLEAR_OBJ)
 else
 clean::
-	$(RM) -f $(OUTFILE) $(SLIB_LEGION) $(SLIB_REALM) $(APP_OBJS) $(REALM_OBJS) $(REALM_INST_OBJS) $(LEGION_OBJS) $(LEGION_INST_OBJS) $(MAPPER_OBJS) $(LG_RT_DIR)/*mod *.mod $(LEGION_DEFINES_HEADER) $(REALM_DEFINES_HEADER) $(DEP_FILES) $(REALM_FATBIN_SRC) $(REALM_FATBIN) $(SLIB_REALM_CUHOOK) $(REALM_CUHOOK_OBJS) $(UPMEM_OBJS) $(UPMEM_ACCESS) $(UPMEM_ACCESS_OBJ)
+	$(RM) -f $(OUTFILE) $(SLIB_LEGION) $(SLIB_REALM) $(APP_OBJS) $(REALM_OBJS) $(REALM_INST_OBJS) $(LEGION_OBJS) $(LEGION_INST_OBJS) $(MAPPER_OBJS) $(LG_RT_DIR)/*mod *.mod $(LEGION_DEFINES_HEADER) $(REALM_DEFINES_HEADER) $(DEP_FILES) $(REALM_FATBIN_SRC) $(REALM_FATBIN) $(SLIB_REALM_CUHOOK) $(REALM_CUHOOK_OBJS) $(UPMEM_OBJS) $(UPMEM_MRAM_CLEAR_OBJ)
 endif
 
 ifeq ($(strip $(USE_LLVM)),1)

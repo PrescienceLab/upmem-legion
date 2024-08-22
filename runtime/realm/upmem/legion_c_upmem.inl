@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
- 
+
 using namespace Legion;
 
 //----------------------------------------------------------------------------
@@ -102,6 +102,20 @@ Legion::PointInRectIterator<DIM, COORD_T>::operator++(int /*postfix*/)
 {
   Legion::PointInRectIterator<DIM, COORD_T> result(*this);
   step();
+  return result;
+}
+
+//----------------------------------------------------------------------------
+template <int DIM, typename COORD_T>
+inline Legion::PointInRectIterator<DIM, COORD_T>
+Legion::PointInRectIterator<DIM, COORD_T>::operator+=(const int &rhs)
+//----------------------------------------------------------------------------
+{
+  Legion::PointInRectIterator<DIM, COORD_T> result(*this);
+  for(unsigned int i = 0; i < rhs; i++) {
+    if(valid())
+      step();
+  }
   return result;
 }
 

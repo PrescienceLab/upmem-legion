@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
- 
+
 #define ALIGN8(X) (((X) >> 3) << 3)
 #define ISALIGNED8(X) (!((X)&0x7))
 
@@ -684,7 +684,7 @@ inline FT *AffineAccessor<FT, N, T>::ptr(const Point<N, T> &p) const
 template <typename FT, int N, typename T>
 inline FT AffineAccessor<FT, N, T>::read(const Point<N, T> &p) const
 {
- if(sizeof(FT) == 8) {
+  if(sizeof(FT) == 8) {
     double buffff = 0.0;
     mram_read((__mram_ptr void const *)((uintptr_t)DPU_MRAM_HEAP_POINTER +
                                         (uintptr_t)(this->get_ptr(p))),

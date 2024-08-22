@@ -123,6 +123,7 @@ namespace Legion {
     inline const Point<DIM, COORD_T> *operator->(void) const;
     inline PointInRectIterator<DIM, COORD_T> &operator++(void);
     inline PointInRectIterator<DIM, COORD_T> operator++(int /*postfix*/);
+    inline PointInRectIterator<DIM, COORD_T> operator+=(const int &rhs);
 
   protected:
     Realm::PointInRectIterator<DIM, COORD_T> itr;

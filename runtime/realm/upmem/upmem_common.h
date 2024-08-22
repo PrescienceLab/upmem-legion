@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
- 
+
 // This common header file is meant to be an "intermediate" between host and
 // dpu device code.
 
@@ -30,7 +30,7 @@
 
 #ifdef DEVICE_DPU_CODE
 #include <realm/upmem/legion_c_upmem.h>
-#else 
+#else
 #include <legion.h>
 using namespace Legion;
 #endif
@@ -53,28 +53,28 @@ extern "C" {
 
 // Data type
 #ifdef UINT32
-#define T uint32_t
-#define DIV 2 // Shift right to divide by sizeof(T)
+#define TYPE uint32_t
+#define DIV 2 // Shift right to divide by sizeof(TYPE)
 #elif UINT64
-#define T uint64_t
+#define TYPE uint64_t
 #define DIV 3
 #elif INT32
-#define T int32_t
+#define TYPE int32_t
 #define DIV 2
 #elif INT64
-#define T int64_t
+#define TYPE int64_t
 #define DIV 3
 #elif FLOAT
-#define T float
+#define TYPE float
 #define DIV 2
 #elif DOUBLE
-#define T double
+#define TYPE double
 #define DIV 3
 #elif CHAR
-#define T char
+#define TYPE char
 #define DIV 0
 #elif SHORT
-#define T short
+#define TYPE short
 #define DIV 1
 #else
 #error Must define a valid type. See /realm/upmem/upmem_common.h
