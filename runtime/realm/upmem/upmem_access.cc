@@ -63,18 +63,14 @@ namespace Realm {
       DPU_FOREACH(*stream, dpu_proc) { CHECK_UPMEM(dpu_prepare_xfer(dpu_proc, args)); }
 
       CHECK_UPMEM(dpu_push_xfer(*stream, DPU_XFER_TO_DPU, symbol_name, 0, arg_size,
-                                DPU_XFER_ASYNC));
-
+                                DPU_XFER_DEFAULT));
 #ifdef PRINT_UPMEM
       // printing is a blocking operation. we need to read buffer once available.
       CHECK_UPMEM(dpu_launch(*stream, DPU_SYNCHRONOUS));
       CHECK_UPMEM(dpu_sync(*stream));
       DPU_FOREACH(*stream, dpu_proc) { DPU_ASSERT(dpu_log_read(dpu_proc, stdout)); }
 #else
-      // TODO: NEW BUG. Kernel launches don't complete.
-      // lets block it out for now.
-      CHECK_UPMEM(dpu_launch(*stream, DPU_SYNCHRONOUS));
-
+      CHECK_UPMEM(dpu_launch(*stream, DPU_ASYNCHRONOUS));
 #endif
     }
 

@@ -283,7 +283,7 @@ namespace Realm {
       if(stream->get_dpu()->module->config->cfg_fences_use_callbacks) {
         CHECK_UPMEM(dpu_callback(
             *stream->get_stream(), &upmem_start_callback, (void *)this,
-            (dpu_callback_flags_t)(DPU_CALLBACK_ASYNC | DPU_CALLBACK_NONBLOCKING)));
+            (dpu_callback_flags_t)(DPU_CALLBACK_ASYNC)));
       } else {
         assert(0 && "cfg_fences_use_callbacks must be set true");
         stream->add_fence(this);
@@ -315,7 +315,7 @@ namespace Realm {
       if(stream->get_dpu()->module->config->cfg_fences_use_callbacks) {
         CHECK_UPMEM(dpu_callback(
             *stream->get_stream(), &upmem_start_callback, (void *)this,
-            (dpu_callback_flags_t)(DPU_CALLBACK_ASYNC | DPU_CALLBACK_NONBLOCKING)));
+            (dpu_callback_flags_t)(DPU_CALLBACK_ASYNC)));
       } else {
         assert(0 && "cfg_fences_use_callbacks must be set true");
         stream->add_start_event(this);

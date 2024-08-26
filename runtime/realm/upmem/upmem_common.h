@@ -28,11 +28,24 @@
 #ifndef _UPMEM_COMMON_H_
 #define _UPMEM_COMMON_H_
 
-#ifdef DEVICE_DPU_CODE
+#ifdef DEVICE_DPU_CODE // device side
+ 
+#ifndef USE_LEGION // use realm
+#include <realm/upmem/realm_c_upmem.h>
+#else  // use legion
 #include <realm/upmem/legion_c_upmem.h>
-#else
+#endif
+
+#else // host side
+
+#ifndef USE_LEGION // use realm 
+#include <realm.h> 
+using namespace Realm;
+#else // use legion
 #include <legion.h>
 using namespace Legion;
+#endif
+
 #endif
 
 #ifdef __cplusplus
