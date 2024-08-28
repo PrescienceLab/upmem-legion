@@ -165,7 +165,7 @@ namespace Realm {
 
     bool empty(void) const;
 
-    size_t volume(void) const;
+    uint64_t volume(void) const;
 
     bool contains(const Point<N, T> &p) const;
 
@@ -194,7 +194,7 @@ namespace Realm {
     // copy and fill operations (wrappers for IndexSpace versions)
     Event fill(const std::vector<CopySrcDstField> &dsts,
                const ProfilingRequestSet &requests,
-               const void *fill_value, size_t fill_value_size,
+               const void *fill_value, uint64_t fill_value_size,
                Event wait_on = Event::NO_EVENT,
                int priority = 0) const;
 
@@ -297,7 +297,7 @@ namespace Realm {
     //  * \param subfield_offset Offset of subfield to construct accessor for.
     //  */
     // AffineAccessor(RegionInstance inst,
-    //    FieldID field_id, size_t subfield_offset = 0);
+    //    FieldID field_id, uint64_t subfield_offset = 0);
 
     // /** Construct an AffineAccessor for the specified instance and field.
     //  * Limits the domain to the specified subrectangle.
@@ -311,7 +311,7 @@ namespace Realm {
     //  */
     // AffineAccessor(RegionInstance inst,
     //    FieldID field_id, const Rect<N,T>& subrect,
-    //    size_t subfield_offset = 0);
+    //    uint64_t subfield_offset = 0);
 
     // ///@{
     // /**
@@ -327,7 +327,7 @@ namespace Realm {
     // AffineAccessor(RegionInstance inst,
     //    const Matrix<N2, N, T2>& transform,
     //    const Point<N2, T2>& offset,
-    //    FieldID field_id, size_t subfield_offset = 0);
+    //    FieldID field_id, uint64_t subfield_offset = 0);
 
     // // note that the subrect here is in in the accessor's indexspace
     // //  (from which the corresponding subrectangle in the instance can be
@@ -337,7 +337,7 @@ namespace Realm {
     //    const Matrix<N2, N, T2>& transform,
     //    const Point<N2, T2>& offset,
     //    FieldID field_id, const Rect<N,T>& subrect,
-    //    size_t subfield_offset = 0);
+    //    uint64_t subfield_offset = 0);
     // ///@}
 
     ~AffineAccessor(void);
@@ -360,21 +360,21 @@ namespace Realm {
     void reset();
     /*
     void reset(RegionInstance inst,
-               FieldID field_id, size_t subfield_offset = 0);
+               FieldID field_id, uint64_t subfield_offset = 0);
     void reset(RegionInstance inst,
                FieldID field_id, const Rect<N,T>& subrect,
-               size_t subfield_offset = 0);
+               uint64_t subfield_offset = 0);
     template <int N2, typename T2>
     void reset(RegionInstance inst,
                const Matrix<N2, N, T2>& transform,
                const Point<N2, T2>& offset,
-               FieldID field_id, size_t subfield_offset = 0);
+               FieldID field_id, uint64_t subfield_offset = 0);
     template <int N2, typename T2>
     void reset(RegionInstance inst,
                const Matrix<N2, N, T2>& transform,
                const Point<N2, T2>& offset,
                FieldID field_id, const Rect<N,T>& subrect,
-               size_t subfield_offset = 0);
+               uint64_t subfield_offset = 0);
     */
 
     FT *ptr(const Point<N, T> &p) const;
@@ -388,7 +388,7 @@ namespace Realm {
     bool is_dense_row_major(const Rect<N, T> &bounds) const; // C dimension ordering
 
     uintptr_t base;
-    Point<N, size_t> strides;
+    Point<N, uint64_t> strides;
 
   protected:
     FT *get_ptr(const Point<N, T> &p) const;
@@ -406,7 +406,7 @@ namespace Realm {
   template <typename FT>
   class AccessorRefHelper {
   public:
-    AccessorRefHelper(RegionInstance _inst, size_t _offset);
+    AccessorRefHelper(RegionInstance _inst, uint64_t _offset);
 
     // "read"
     operator FT(void) const;
@@ -419,7 +419,7 @@ namespace Realm {
 
   protected:
     RegionInstance inst;
-    size_t offset;
+    uint64_t offset;
   };
 }; // namespace Realm
 #include "realm/upmem/realm_c_upmem.inl"

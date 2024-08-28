@@ -196,7 +196,7 @@ namespace Realm {
     {
       r->add_dma_channel(new DPUChannel(this, XFER_DPU_IN_MRAM, &r->bgwork));
       r->add_dma_channel(new DPUfillChannel(this, &r->bgwork));
-      // r->add_dma_channel(new DPUreduceChannel(this, &r->bgwork));
+      r->add_dma_channel(new DPUreduceChannel(this, &r->bgwork));
 
       if(!pinned_sysmems.empty()) {
         r->add_dma_channel(new DPUChannel(this, XFER_DPU_TO_MRAM, &r->bgwork));

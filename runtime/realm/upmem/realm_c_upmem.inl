@@ -378,16 +378,16 @@ inline bool Rect<N, T>::empty(void) const
 }
 
 template <int N, typename T>
-inline size_t Rect<N, T>::volume(void) const
+inline uint64_t Rect<N, T>::volume(void) const
 {
-  size_t v = 1;
+  uint64_t v = 1;
   for(int i = 0; i < N; i++)
     if(lo[i] > hi[i])
       return 0;
     else {
-      // have to convert both 'hi' and 'lo' to size_t before subtracting
+      // have to convert both 'hi' and 'lo' to uint64_t before subtracting
       //  to avoid potential signed integer overflow
-      v *= (static_cast<size_t>(hi[i]) - static_cast<size_t>(lo[i]) + 1);
+      v *= (static_cast<uint64_t>(hi[i]) - static_cast<uint64_t>(lo[i]) + 1);
     }
   return v;
 }
@@ -684,6 +684,8 @@ inline FT *AffineAccessor<FT, N, T>::ptr(const Point<N, T> &p) const
 template <typename FT, int N, typename T>
 inline FT AffineAccessor<FT, N, T>::read(const Point<N, T> &p) const
 {
+  return *(this->get_ptr(p));
+  /*
   if(sizeof(FT) == 8) {
     double buffff = 0.0;
     mram_read((__mram_ptr void const *)((uintptr_t)DPU_MRAM_HEAP_POINTER +
@@ -720,11 +722,14 @@ inline FT AffineAccessor<FT, N, T>::read(const Point<N, T> &p) const
     FT ret = (FT)buffff;
     return ret;
   }
+  */
 }
 
 template <typename FT, int N, typename T>
 inline void AffineAccessor<FT, N, T>::write(const Point<N, T> &p, FT newval) const
 {
+  *this->get_ptr(p) = newval;
+  /*
   if(sizeof(FT) == 8) {
     mram_write((const void *)(&newval),
                (__mram_ptr void *)((uintptr_t)DPU_MRAM_HEAP_POINTER +
@@ -759,6 +764,7 @@ inline void AffineAccessor<FT, N, T>::write(const Point<N, T> &p, FT newval) con
     mram_write((const void *)(&buffff), (__mram_ptr void *)(actual_addr),
                sizeof(uint64_t));
   }
+  */
 }
 
 template <typename FT, int N, typename T>
@@ -770,7 +776,7 @@ inline FT AffineAccessor<FT, N, T>::operator[](const Point<N, T> &p) const
 template <typename FT, int N, typename T>
 inline bool AffineAccessor<FT, N, T>::is_dense_arbitrary(const Rect<N, T> &bounds) const
 {
-  size_t exp_offset = sizeof(FT);
+  uint64_t exp_offset = sizeof(FT);
   int used_mask = 0; // keep track of which dimensions we've already matched
   for(int i = 0; i < N; i++) {
     bool found = false;
@@ -823,7 +829,7 @@ inline bool AffineAccessor<FT, N, T>::is_dense_arbitrary(const Rect<N, T> &bound
 template <typename FT, int N, typename T>
 inline bool AffineAccessor<FT, N, T>::is_dense_col_major(const Rect<N, T> &bounds) const
 {
-  size_t exp_offset = sizeof(FT);
+  uint64_t exp_offset = sizeof(FT);
   for(int i = 0; i < N; i++) {
     if(strides[i] != exp_offset) {
       // Special case for stride of zero for unit dimension
@@ -839,7 +845,7 @@ inline bool AffineAccessor<FT, N, T>::is_dense_col_major(const Rect<N, T> &bound
 template <typename FT, int N, typename T>
 inline bool AffineAccessor<FT, N, T>::is_dense_row_major(const Rect<N, T> &bounds) const
 {
-  size_t exp_offset = sizeof(FT);
+  uint64_t exp_offset = sizeof(FT);
   for(int i = N - 1; i >= 0; i--) {
     if(strides[i] != exp_offset) {
       // Special case for stride of zero for unit dimension
@@ -868,7 +874,7 @@ inline FT *AffineAccessor<FT, N, T>::get_ptr(const Point<N, T> &p) const
 // class AccessorRefHelper<FT>
 
 template <typename FT>
-inline AccessorRefHelper<FT>::AccessorRefHelper(RegionInstance _inst, size_t _offset)
+inline AccessorRefHelper<FT>::AccessorRefHelper(RegionInstance _inst, uint64_t _offset)
   : inst(_inst)
   , offset(_offset)
 {}

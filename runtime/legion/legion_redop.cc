@@ -68,8 +68,12 @@ namespace Legion {
     extern void register_builtin_reduction_operators_cuda(void);
 #endif
 #if defined(LEGION_USE_HIP)
-    // Defined in legion_redop.cpp
+    // Defined in legion_redop.cu
     extern void register_builtin_reduction_operators_hip(void);
+#endif
+#if defined(LEGION_USE_UPMEM)
+    // Defined in legion_redop.cpp
+    // extern void register_builtin_reduction_operators_upmem(void);
 #endif
 
     /*static*/ void Runtime::register_builtin_reduction_operators(void)
@@ -80,9 +84,9 @@ namespace Legion {
 #ifdef LEGION_USE_CUDA
       register_builtin_reduction_operators_cuda();
 #endif
-#ifdef LEGION_USE_HIP
-      register_builtin_reduction_operators_hip();
-#endif      
+#ifdef LEGION_USE_UPMEM
+      // register_builtin_reduction_operators_upmem();
+#endif    
 #else
       // Only CPU reductions are needed, so register them here
       LEGION_REDOP_LIST(REGISTER_BUILTIN_REDOP)

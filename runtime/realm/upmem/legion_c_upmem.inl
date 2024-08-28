@@ -122,8 +122,8 @@ Legion::PointInRectIterator<DIM, COORD_T>::operator+=(const int &rhs)
 // Some helper methods for accessors and deferred buffers
 namespace Internal {
   template <int N, typename T>
-  static inline bool is_dense_layout(const Rect<N, T> &bounds, const size_t strides[N],
-                                     size_t field_size)
+  static inline bool is_dense_layout(const Rect<N, T> &bounds, const uint64_t strides[N],
+                                     uint64_t field_size)
   {
     ptrdiff_t exp_offset = field_size;
     int used_mask = 0; // keep track of the dimensions we've already matched
@@ -180,10 +180,10 @@ namespace Internal {
   // Same method as above but for realm points from affine accessors
   template <int N, typename T>
   static inline bool is_dense_layout(const Rect<N, T> &bounds,
-                                     const Realm::Point<N, size_t> &strides,
-                                     size_t field_size)
+                                     const Realm::Point<N, uint64_t> &strides,
+                                     uint64_t field_size)
   {
-    size_t exp_offset = field_size;
+    uint64_t exp_offset = field_size;
     int used_mask = 0; // keep track of the dimensions we've already matched
     static_assert((N <= (8 * sizeof(used_mask))), "Mask dim exceeded");
     for(int i = 0; i < N; i++) {
@@ -621,13 +621,13 @@ public:
 public:
   inline FT read(const Point<N, T> &p) const { return accessor.read(p); }
   inline const FT *ptr(const Point<N, T> &p) const { return accessor.ptr(p); }
-  inline const FT *ptr(const Rect<N, T> &r, size_t field_size = sizeof(FT)) const
+  inline const FT *ptr(const Rect<N, T> &r, uint64_t field_size = sizeof(FT)) const
   {
     assert(Internal::is_dense_layout(r, accessor.strides, field_size));
     return accessor.ptr(r.lo);
   }
-  inline const FT *ptr(const Rect<N, T> &r, size_t strides[N],
-                       size_t field_size = sizeof(FT)) const
+  inline const FT *ptr(const Rect<N, T> &r, uint64_t strides[N],
+                       uint64_t field_size = sizeof(FT)) const
   {
     for(int i = 0; i < N; i++)
       strides[i] = accessor.strides[i] / field_size;
@@ -675,14 +675,14 @@ public:
     assert(bounds.contains(p));
     return accessor.ptr(p);
   }
-  inline const FT *ptr(const Rect<N, T> &r, size_t field_size = sizeof(FT)) const
+  inline const FT *ptr(const Rect<N, T> &r, uint64_t field_size = sizeof(FT)) const
   {
     assert(bounds.contains_all(r));
     assert(Internal::is_dense_layout(r, accessor.strides, field_size));
     return accessor.ptr(r.lo);
   }
-  inline const FT *ptr(const Rect<N, T> &r, size_t strides[N],
-                       size_t field_size = sizeof(FT)) const
+  inline const FT *ptr(const Rect<N, T> &r, uint64_t strides[N],
+                       uint64_t field_size = sizeof(FT)) const
   {
     assert(bounds.contains_all(r));
     for(int i = 0; i < N; i++)
@@ -726,13 +726,13 @@ public:
 public:
   inline FT read(const Point<1, T> &p) const { return accessor.read(p); }
   inline const FT *ptr(const Point<1, T> &p) const { return accessor.ptr(p); }
-  inline const FT *ptr(const Rect<1, T> &r, size_t field_size = sizeof(FT)) const
+  inline const FT *ptr(const Rect<1, T> &r, uint64_t field_size = sizeof(FT)) const
   {
     assert(Internal::is_dense_layout(r, accessor.strides, field_size));
     return accessor.ptr(r.lo);
   }
-  inline const FT *ptr(const Rect<1, T> &r, size_t strides[1],
-                       size_t field_size = sizeof(FT)) const
+  inline const FT *ptr(const Rect<1, T> &r, uint64_t strides[1],
+                       uint64_t field_size = sizeof(FT)) const
   {
     strides[0] = accessor.strides[0] / field_size;
     return accessor.ptr(r.lo);
@@ -769,14 +769,14 @@ public:
     assert(bounds.contains(p));
     return accessor.ptr(p);
   }
-  inline const FT *ptr(const Rect<1, T> &r, size_t field_size = sizeof(FT)) const
+  inline const FT *ptr(const Rect<1, T> &r, uint64_t field_size = sizeof(FT)) const
   {
     assert(bounds.contains_all(r));
     assert(Internal::is_dense_layout(r, accessor.strides, field_size));
     return accessor.ptr(r.lo);
   }
-  inline const FT *ptr(const Rect<1, T> &r, size_t strides[1],
-                       size_t field_size = sizeof(FT)) const
+  inline const FT *ptr(const Rect<1, T> &r, uint64_t strides[1],
+                       uint64_t field_size = sizeof(FT)) const
   {
     assert(bounds.contains_all(r));
     strides[0] = accessor.strides[0] / field_size;
@@ -813,13 +813,13 @@ public:
   inline FT read(const Point<N, T> &p) const { return accessor.read(p); }
   inline void write(const Point<N, T> &p, FT val) const { accessor.write(p, val); }
   inline FT *ptr(const Point<N, T> &p) const { return accessor.ptr(p); }
-  inline FT *ptr(const Rect<N, T> &r, size_t field_size = sizeof(FT)) const
+  inline FT *ptr(const Rect<N, T> &r, uint64_t field_size = sizeof(FT)) const
   {
     assert(Internal::is_dense_layout(r, accessor.strides, field_size));
     return accessor.ptr(r.lo);
   }
-  inline FT *ptr(const Rect<N, T> &r, size_t strides[N],
-                 size_t field_size = sizeof(FT)) const
+  inline FT *ptr(const Rect<N, T> &r, uint64_t strides[N],
+                 uint64_t field_size = sizeof(FT)) const
   {
     for(int i = 0; i < N; i++)
       strides[i] = accessor.strides[i] / field_size;
@@ -878,14 +878,14 @@ public:
     assert(bounds.contains(p));
     return accessor.ptr(p);
   }
-  inline FT *ptr(const Rect<N, T> &r, size_t field_size = sizeof(FT)) const
+  inline FT *ptr(const Rect<N, T> &r, uint64_t field_size = sizeof(FT)) const
   {
     assert(bounds.contains_all(r));
     assert(Internal::is_dense_layout(r, accessor.strides, field_size));
     return accessor.ptr(r.lo);
   }
-  inline FT *ptr(const Rect<N, T> &r, size_t strides[N],
-                 size_t field_size = sizeof(FT)) const
+  inline FT *ptr(const Rect<N, T> &r, uint64_t strides[N],
+                 uint64_t field_size = sizeof(FT)) const
   {
     assert(bounds.contains_all(r));
     for(int i = 0; i < N; i++)
@@ -936,13 +936,13 @@ public:
   inline FT read(const Point<1, T> &p) const { return accessor.read(p); }
   inline void write(const Point<1, T> &p, FT val) const { accessor.write(p, val); }
   inline FT *ptr(const Point<1, T> &p) const { return accessor.ptr(p); }
-  inline FT *ptr(const Rect<1, T> &r, size_t field_size = sizeof(FT)) const
+  inline FT *ptr(const Rect<1, T> &r, uint64_t field_size = sizeof(FT)) const
   {
     assert(Internal::is_dense_layout(r, accessor.strides, field_size));
     return accessor.ptr(r.lo);
   }
-  inline FT *ptr(const Rect<1, T> &r, size_t strides[1],
-                 size_t field_size = sizeof(FT)) const
+  inline FT *ptr(const Rect<1, T> &r, uint64_t strides[1],
+                 uint64_t field_size = sizeof(FT)) const
   {
     strides[0] = accessor.strides[0] / field_size;
     return accessor.ptr(r.lo);
@@ -988,14 +988,14 @@ public:
     assert(bounds.contains(p));
     return accessor.ptr(p);
   }
-  inline FT *ptr(const Rect<1, T> &r, size_t field_size = sizeof(FT)) const
+  inline FT *ptr(const Rect<1, T> &r, uint64_t field_size = sizeof(FT)) const
   {
     assert(bounds.contains_all(r));
     assert(Internal::is_dense_layout(r, accessor.strides, field_size));
     return accessor.ptr(r.lo);
   }
-  inline FT *ptr(const Rect<1, T> &r, size_t strides[1],
-                 size_t field_size = sizeof(FT)) const
+  inline FT *ptr(const Rect<1, T> &r, uint64_t strides[1],
+                 uint64_t field_size = sizeof(FT)) const
   {
     assert(bounds.contains_all(r));
     strides[0] = accessor.strides[0] / field_size;
@@ -1038,13 +1038,13 @@ public:
   inline FT read(const Point<N, T> &p) const { return accessor.read(p); }
   inline void write(const Point<N, T> &p, FT val) const { accessor.write(p, val); }
   inline FT *ptr(const Point<N, T> &p) const { return accessor.ptr(p); }
-  inline FT *ptr(const Rect<N, T> &r, size_t field_size = sizeof(FT)) const
+  inline FT *ptr(const Rect<N, T> &r, uint64_t field_size = sizeof(FT)) const
   {
     assert(Internal::is_dense_layout(r, accessor.strides, field_size));
     return accessor.ptr(r.lo);
   }
-  inline FT *ptr(const Rect<N, T> &r, size_t strides[N],
-                 size_t field_size = sizeof(FT)) const
+  inline FT *ptr(const Rect<N, T> &r, uint64_t strides[N],
+                 uint64_t field_size = sizeof(FT)) const
   {
     for(int i = 0; i < N; i++)
       strides[i] = accessor.strides[i] / field_size;
@@ -1100,14 +1100,14 @@ public:
     assert(bounds.contains(p));
     return accessor.ptr(p);
   }
-  inline FT *ptr(const Rect<N, T> &r, size_t field_size = sizeof(FT)) const
+  inline FT *ptr(const Rect<N, T> &r, uint64_t field_size = sizeof(FT)) const
   {
     assert(bounds.contains_all(r));
     assert(Internal::is_dense_layout(r, accessor.strides, field_size));
     return accessor.ptr(r.lo);
   }
-  inline FT *ptr(const Rect<N, T> &r, size_t strides[N],
-                 size_t field_size = sizeof(FT)) const
+  inline FT *ptr(const Rect<N, T> &r, uint64_t strides[N],
+                 uint64_t field_size = sizeof(FT)) const
   {
     assert(bounds.contains_all(r));
     for(int i = 0; i < N; i++)
@@ -1154,13 +1154,13 @@ public:
   inline FT read(const Point<1, T> &p) const { return accessor.read(p); }
   inline void write(const Point<1, T> &p, FT val) const { accessor.write(p, val); }
   inline FT *ptr(const Point<1, T> &p) const { return accessor.ptr(p); }
-  inline FT *ptr(const Rect<1, T> &r, size_t field_size = sizeof(FT)) const
+  inline FT *ptr(const Rect<1, T> &r, uint64_t field_size = sizeof(FT)) const
   {
     assert(Internal::is_dense_layout(r, accessor.strides, field_size));
     return accessor.ptr(r.lo);
   }
-  inline FT *ptr(const Rect<1, T> &r, size_t strides[1],
-                 size_t field_size = sizeof(FT)) const
+  inline FT *ptr(const Rect<1, T> &r, uint64_t strides[1],
+                 uint64_t field_size = sizeof(FT)) const
   {
     strides[0] = accessor.strides[0] / field_size;
     return accessor.ptr(r.lo);
@@ -1202,14 +1202,14 @@ public:
     assert(bounds.contains(p));
     return accessor.ptr(p);
   }
-  inline FT *ptr(const Rect<1, T> &r, size_t field_size = sizeof(FT)) const
+  inline FT *ptr(const Rect<1, T> &r, uint64_t field_size = sizeof(FT)) const
   {
     assert(bounds.contains_all(r));
     assert(Internal::is_dense_layout(r, accessor.strides, field_size));
     return accessor.ptr(r.lo);
   }
-  inline FT *ptr(const Rect<1, T> &r, size_t strides[1],
-                 size_t field_size = sizeof(FT)) const
+  inline FT *ptr(const Rect<1, T> &r, uint64_t strides[1],
+                 uint64_t field_size = sizeof(FT)) const
   {
     assert(bounds.contains_all(r));
     strides[0] = accessor.strides[0] / field_size;
@@ -1245,13 +1245,13 @@ public:
 public:
   inline void write(const Point<N, T> &p, FT val) const { accessor.write(p, val); }
   inline FT *ptr(const Point<N, T> &p) const { return accessor.ptr(p); }
-  inline FT *ptr(const Rect<N, T> &r, size_t field_size = sizeof(FT)) const
+  inline FT *ptr(const Rect<N, T> &r, uint64_t field_size = sizeof(FT)) const
   {
     assert(Internal::is_dense_layout(r, accessor.strides, field_size));
     return accessor.ptr(r.lo);
   }
-  inline FT *ptr(const Rect<N, T> &r, size_t strides[N],
-                 size_t field_size = sizeof(FT)) const
+  inline FT *ptr(const Rect<N, T> &r, uint64_t strides[N],
+                 uint64_t field_size = sizeof(FT)) const
   {
     for(int i = 0; i < N; i++)
       strides[i] = accessor.strides[i] / field_size;
@@ -1301,14 +1301,14 @@ public:
     assert(bounds.contains(p));
     return accessor.ptr(p);
   }
-  inline FT *ptr(const Rect<N, T> &r, size_t field_size = sizeof(FT)) const
+  inline FT *ptr(const Rect<N, T> &r, uint64_t field_size = sizeof(FT)) const
   {
     assert(bounds.contains_all(r));
     assert(Internal::is_dense_layout(r, accessor.strides, field_size));
     return accessor.ptr(r.lo);
   }
-  inline FT *ptr(const Rect<N, T> &r, size_t strides[N],
-                 size_t field_size = sizeof(FT)) const
+  inline FT *ptr(const Rect<N, T> &r, uint64_t strides[N],
+                 uint64_t field_size = sizeof(FT)) const
   {
     assert(bounds.contains_all(r));
     for(int i = 0; i < N; i++)
@@ -1354,13 +1354,13 @@ public:
 public:
   inline void write(const Point<1, T> &p, FT val) const { accessor.write(p, val); }
   inline FT *ptr(const Point<1, T> &p) const { return accessor.ptr(p); }
-  inline FT *ptr(const Rect<1, T> &r, size_t field_size = sizeof(FT)) const
+  inline FT *ptr(const Rect<1, T> &r, uint64_t field_size = sizeof(FT)) const
   {
     assert(Internal::is_dense_layout(r, accessor.strides, field_size));
     return accessor.ptr(r.lo);
   }
-  inline FT *ptr(const Rect<1, T> &r, size_t strides[1],
-                 size_t field_size = sizeof(FT)) const
+  inline FT *ptr(const Rect<1, T> &r, uint64_t strides[1],
+                 uint64_t field_size = sizeof(FT)) const
   {
     strides[0] = accessor.strides[0] / field_size;
     return accessor.ptr(r.lo);
@@ -1396,14 +1396,14 @@ public:
     assert(bounds.contains(p));
     return accessor.ptr(p);
   }
-  inline FT *ptr(const Rect<1, T> &r, size_t field_size = sizeof(FT)) const
+  inline FT *ptr(const Rect<1, T> &r, uint64_t field_size = sizeof(FT)) const
   {
     assert(bounds.contains_all(r));
     assert(Internal::is_dense_layout(r, accessor.strides, field_size));
     return accessor.ptr(r.lo);
   }
-  inline FT *ptr(const Rect<1, T> &r, size_t strides[1],
-                 size_t field_size = sizeof(FT)) const
+  inline FT *ptr(const Rect<1, T> &r, uint64_t strides[1],
+                 uint64_t field_size = sizeof(FT)) const
   {
     assert(bounds.contains_all(r));
     strides[0] = accessor.strides[0] / field_size;

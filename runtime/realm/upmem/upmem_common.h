@@ -54,15 +54,6 @@ extern "C" {
 #include <stdint.h>
 
 #endif
-// Transfer size between MRAM and WRAM
-#ifdef BL
-#define BLOCK_SIZE_LOG2 BL
-#define BLOCK_SIZE (1 << BLOCK_SIZE_LOG2)
-#else
-#define BLOCK_SIZE_LOG2 8
-#define BLOCK_SIZE (1 << BLOCK_SIZE_LOG2)
-#define BL BLOCK_SIZE_LOG2
-#endif
 
 // Data type
 #ifdef UINT32
