@@ -379,7 +379,11 @@ namespace Realm {
 
     FT *ptr(const Point<N, T> &p) const;
     FT read(const Point<N, T> &p) const;
+    FT read(const Point<N, T> &p, bool single) const;
+
     void write(const Point<N, T> &p, FT newval) const;
+    void write(const Point<N, T> &p, FT newval, bool single) const;
+
 
     FT operator[](const Point<N, T> &p) const;
 

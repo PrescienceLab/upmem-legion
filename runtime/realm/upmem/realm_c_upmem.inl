@@ -685,7 +685,15 @@ template <typename FT, int N, typename T>
 inline FT AffineAccessor<FT, N, T>::read(const Point<N, T> &p) const
 {
   return *(this->get_ptr(p));
-  /*
+
+}
+
+template <typename FT, int N, typename T>
+inline FT AffineAccessor<FT, N, T>::read(const Point<N, T> &p, bool single) const
+{ 
+  if (!single) 
+    return *(this->get_ptr(p));
+
   if(sizeof(FT) == 8) {
     double buffff = 0.0;
     mram_read((__mram_ptr void const *)((uintptr_t)DPU_MRAM_HEAP_POINTER +
@@ -722,14 +730,20 @@ inline FT AffineAccessor<FT, N, T>::read(const Point<N, T> &p) const
     FT ret = (FT)buffff;
     return ret;
   }
-  */
 }
 
 template <typename FT, int N, typename T>
 inline void AffineAccessor<FT, N, T>::write(const Point<N, T> &p, FT newval) const
 {
   *this->get_ptr(p) = newval;
-  /*
+}
+
+template <typename FT, int N, typename T>
+inline void AffineAccessor<FT, N, T>::write(const Point<N, T> &p, FT newval, bool single) const
+{
+  if (!single)
+    *this->get_ptr(p) = newval;
+  
   if(sizeof(FT) == 8) {
     mram_write((const void *)(&newval),
                (__mram_ptr void *)((uintptr_t)DPU_MRAM_HEAP_POINTER +
@@ -764,7 +778,6 @@ inline void AffineAccessor<FT, N, T>::write(const Point<N, T> &p, FT newval) con
     mram_write((const void *)(&buffff), (__mram_ptr void *)(actual_addr),
                sizeof(uint64_t));
   }
-  */
 }
 
 template <typename FT, int N, typename T>
