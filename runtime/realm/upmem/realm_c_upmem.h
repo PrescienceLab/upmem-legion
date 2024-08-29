@@ -384,7 +384,6 @@ namespace Realm {
     void write(const Point<N, T> &p, FT newval) const;
     void write(const Point<N, T> &p, FT newval, bool single) const;
 
-
     FT operator[](const Point<N, T> &p) const;
 
     bool is_dense_arbitrary(const Rect<N, T> &bounds) const; // any dimension ordering

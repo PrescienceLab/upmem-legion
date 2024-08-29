@@ -281,9 +281,9 @@ namespace Realm {
     void DPUWorkFence::enqueue_on_stream(DPUStream *stream)
     {
       if(stream->get_dpu()->module->config->cfg_fences_use_callbacks) {
-        CHECK_UPMEM(dpu_callback(
-            *stream->get_stream(), &upmem_start_callback, (void *)this,
-            (dpu_callback_flags_t)(DPU_CALLBACK_ASYNC)));
+        CHECK_UPMEM(dpu_callback(*stream->get_stream(), &upmem_start_callback,
+                                 (void *)this,
+                                 (dpu_callback_flags_t)(DPU_CALLBACK_ASYNC)));
       } else {
         assert(0 && "cfg_fences_use_callbacks must be set true");
         stream->add_fence(this);
@@ -313,9 +313,9 @@ namespace Realm {
     void DPUWorkStart::enqueue_on_stream(DPUStream *stream)
     {
       if(stream->get_dpu()->module->config->cfg_fences_use_callbacks) {
-        CHECK_UPMEM(dpu_callback(
-            *stream->get_stream(), &upmem_start_callback, (void *)this,
-            (dpu_callback_flags_t)(DPU_CALLBACK_ASYNC)));
+        CHECK_UPMEM(dpu_callback(*stream->get_stream(), &upmem_start_callback,
+                                 (void *)this,
+                                 (dpu_callback_flags_t)(DPU_CALLBACK_ASYNC)));
       } else {
         assert(0 && "cfg_fences_use_callbacks must be set true");
         stream->add_start_event(this);

@@ -29,17 +29,17 @@
 #define _UPMEM_COMMON_H_
 
 #ifdef DEVICE_DPU_CODE // device side
- 
+
 #ifndef USE_LEGION // use realm
 #include <realm/upmem/realm_c_upmem.h>
-#else  // use legion
+#else // use legion
 #include <realm/upmem/legion_c_upmem.h>
 #endif
 
 #else // host side
 
-#ifndef USE_LEGION // use realm 
-#include <realm.h> 
+#ifndef USE_LEGION // use realm
+#include <realm.h>
 using namespace Realm;
 #else // use legion
 #include <legion.h>
@@ -55,15 +55,16 @@ extern "C" {
 
 #endif
 
-#define READ_BLOCK(point, acc_full, acc_block, bytes) \
-    mram_read((__mram_ptr void const *)((uintptr_t)DPU_MRAM_HEAP_POINTER + \
-                                  (uintptr_t)(acc_full.accessor.ptr(point))), \
-        (void *)(acc_block.accessor.base), bytes);
+#define READ_BLOCK(point, acc_full, acc_block, bytes)                                    \
+  mram_read((__mram_ptr void const *)((uintptr_t)DPU_MRAM_HEAP_POINTER +                 \
+                                      (uintptr_t)(acc_full.accessor.ptr(point))),        \
+            (void *)(acc_block.accessor.base), bytes);
 
-#define WRITE_BLOCK(point, acc_full, acc_block, bytes) \
-    mram_write((const void *)(acc_block.accessor.base), \
-            (__mram_ptr void *)((uintptr_t)DPU_MRAM_HEAP_POINTER + \
-            (uintptr_t)(acc_full.accessor.ptr(point))), bytes);
+#define WRITE_BLOCK(point, acc_full, acc_block, bytes)                                   \
+  mram_write((const void *)(acc_block.accessor.base),                                    \
+             (__mram_ptr void *)((uintptr_t)DPU_MRAM_HEAP_POINTER +                      \
+                                 (uintptr_t)(acc_full.accessor.ptr(point))),             \
+             bytes);
 
 // Data type
 #ifdef UINT32
