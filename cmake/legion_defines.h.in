@@ -48,3 +48,5 @@
 #cmakedefine LEGION_USE_HIP
 
 #cmakedefine LEGION_USE_LIBDL
+
+#cmakedefine LEGION_USE_UPMEM
