@@ -55,6 +55,16 @@ extern "C" {
 
 #endif
 
+#define READ_BLOCK(point, acc_full, acc_block, bytes) \
+    mram_read((__mram_ptr void const *)((uintptr_t)DPU_MRAM_HEAP_POINTER + \
+                                  (uintptr_t)(acc_full.accessor.ptr(point))), \
+        (void *)(acc_block.accessor.base), bytes);
+
+#define WRITE_BLOCK(point, acc_full, acc_block, bytes) \
+    mram_write((const void *)(acc_block.accessor.base), \
+            (__mram_ptr void *)((uintptr_t)DPU_MRAM_HEAP_POINTER + \
+            (uintptr_t)(acc_full.accessor.ptr(point))), bytes);
+
 // Data type
 #ifdef UINT32
 #define TYPE uint32_t
