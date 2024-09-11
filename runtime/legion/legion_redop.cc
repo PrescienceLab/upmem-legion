@@ -72,20 +72,48 @@ namespace Legion {
     extern void register_builtin_reduction_operators_hip(void);
 #endif
 #if defined(LEGION_USE_UPMEM)
-    // Defined in legion_redop.cpp
-    // extern void register_builtin_reduction_operators_upmem(void);
+
+    template <typename T>
+    class AddUpmemReductions : public T {
+    public:
+      static const bool has_upmem_reductions = true;
+
+      static void apply_upmem(typename T::LHS& lhs, typename T::RHS rhs)
+      {
+        T::template apply(lhs, rhs);
+      }
+
+      static void fold_upmem(typename T::LHS& lhs, typename T::RHS rhs)
+      {
+        T::template fold(lhs, rhs);
+      }
+    };
+
+    #define REGISTER_BUILTIN_REDOP_UPMEM(id, type)   \
+     Runtime::register_reduction_op(id, \
+     Realm::ReductionOpUntyped::create_reduction_op< AddUpmemReductions<type>>(), \
+     NULL, NULL, false);
+  
+    void register_builtin_reduction_operators_upmem(void)
+    {
+      // Register all of our reductions
+      LEGION_REDOP_LIST(REGISTER_BUILTIN_REDOP_UPMEM)
+    }
 #endif
 
     /*static*/ void Runtime::register_builtin_reduction_operators(void)
     {
-#if defined(LEGION_USE_CUDA) || defined(LEGION_USE_HIP)
+#if defined(LEGION_USE_CUDA) || defined(LEGION_USE_HIP) || defined(LEGION_USE_UPMEM)
       // We need to register CUDA/HIP reductions with Realm, so that happens in
       //  legion_redop.cu/cpp
 #ifdef LEGION_USE_CUDA
       register_builtin_reduction_operators_cuda();
 #endif
+#ifdef LEGION_USE_HIP
+      register_builtin_reduction_operators_hip();
+#endif
 #ifdef LEGION_USE_UPMEM
-      // register_builtin_reduction_operators_upmem();
+      register_builtin_reduction_operators_upmem();
 #endif    
 #else
       // Only CPU reductions are needed, so register them here

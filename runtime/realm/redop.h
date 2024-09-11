@@ -96,6 +96,11 @@ namespace Realm {
       void *hip_fold_excl_fn, *hip_fold_nonexcl_fn;
 #endif
 
+#ifdef REALM_USE_UPMEM
+      void *upmem_apply_excl_fn, *upmem_apply_nonexcl_fn;
+      void *upmem_fold_excl_fn, *upmem_fold_nonexcl_fn;
+#endif
+
       ReductionOpUntyped()
       : sizeof_this(sizeof(ReductionOpUntyped))
       , sizeof_lhs(0)
@@ -120,6 +125,12 @@ namespace Realm {
       , hip_apply_nonexcl_fn(0)
       , hip_fold_excl_fn(0)
       , hip_fold_nonexcl_fn(0)
+#endif
+#ifdef REALM_USE_UPMEM
+      , upmem_apply_excl_fn(0)
+      // , upmem_apply_nonexcl_fn(0)
+      , upmem_fold_excl_fn(0)
+      // , upmem_fold_nonexcl_fn(0)
 #endif
       {}
 
@@ -236,6 +247,8 @@ namespace Realm {
       static void if_member_is_true(ReductionOpUntyped *redop) { Hip::add_hip_redop_kernels<T>(redop); }
     };
 #endif
+
+    // TODO add section for UPMEM registration 
 
     template <typename REDOP>
     struct ReductionOp : public ReductionOpUntyped {

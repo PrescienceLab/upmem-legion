@@ -26,6 +26,10 @@
 #include "realm/bgwork.h"
 #include "realm/network.h"
 
+typedef void (*host_proxy_function)(uintptr_t side1_base, uintptr_t side1_stride,
+                                    uintptr_t side2_base, uintptr_t side2_stride,
+                                    size_t count, int redop);
+
 namespace Realm {
   namespace Upmem {
     // forward declaration

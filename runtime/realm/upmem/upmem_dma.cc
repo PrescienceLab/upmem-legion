@@ -15,6 +15,7 @@
  */
 
 #include "realm/upmem/upmem_dma.h"
+#include "realm/upmem/upmem_redop.h"
 
 #define XFER_SYNC_TYPE DPU_XFER_ASYNC
 
@@ -921,12 +922,17 @@ namespace Realm {
       DPU *dpu = checked_cast<DPUreduceChannel *>(channel)->dpu;
 
       // select reduction kernel now - translate to CUfunction if possible
-      void *host_proxy = NULL;
-
-      // (redop_info.is_fold ?
+      // void *host_proxy = (redop_info.is_fold ?
       //     (redop_info.is_exclusive ? redop->upmem_fold_excl_fn :
       //     redop->upmem_fold_nonexcl_fn) : (redop_info.is_exclusive ?
       //     redop->upmem_apply_excl_fn : redop->upmem_apply_nonexcl_fn));
+
+      assert(redop_info.is_exclusive == true &&
+             "Reduction on local UPMEM should be exclusive");
+      // figure out if its fold or apply
+      void *host_proxy =
+          (redop_info.is_fold ? redop->upmem_fold_excl_fn : redop->upmem_apply_excl_fn);
+
       kernel_host_proxy = host_proxy;
       // stream = dpu->get_next_d2d_stream();
       stream = dpu->get_next_task_stream();
@@ -1065,8 +1071,8 @@ namespace Realm {
               args->src_stride = istride;
               args->count = elems;
 
-              size_t threads_per_block = 256;
-              size_t blocks_per_grid = 1 + ((elems - 1) / threads_per_block);
+              // size_t threads_per_block = 256;
+              // size_t blocks_per_grid = 1 + ((elems - 1) / threads_per_block);
 
               {
                 void *src_ptr = (void *)args->src_base;
@@ -1078,6 +1084,12 @@ namespace Realm {
                                   &args->src_stride, &args->count,      args + 1};
 
                 int orig_device;
+
+                host_proxy_function funct = (host_proxy_function)kernel_host_proxy;
+
+                funct(args->dst_base, args->dst_stride, (uintptr_t)src_device,
+                      args->src_stride, args->count, *(int *)(args + 1));
+
                 // CHECK_HIP( hipGetDevice(&orig_device) );
                 // CHECK_HIP( hipSetDevice(channel->dpu->info->index) );
                 // CHECK_HIP( hipLaunchKernel(kernel_host_proxy,
@@ -1241,8 +1253,8 @@ namespace Realm {
 
       // there's four different kernels, but they should be all or nothing, so
       //  just check one
-      // if(!redop->hip_apply_excl_fn)
-      //   return false;
+      if(!redop->upmem_apply_excl_fn)
+        return false;
 
       return true;
     }
