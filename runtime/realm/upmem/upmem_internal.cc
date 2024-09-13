@@ -81,7 +81,13 @@ namespace Realm {
       task_streams.resize(1);
 
       dpu_set_t *single_dpu = new dpu_set_t;
+
+      #if !defined(__SIMULATOR__)
+      CHECK_UPMEM(dpu_alloc(1, "backend=hardware", single_dpu));
+      #else
       CHECK_UPMEM(dpu_alloc(1, "backend=simulator", single_dpu));
+      #endif
+      
       stream = new DPUStream(this, worker);
       stream->set_stream(single_dpu);
 

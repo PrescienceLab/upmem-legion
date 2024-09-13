@@ -22,47 +22,59 @@
 #ifndef DPURT
 #define DPURT
 #include <dpu> // UPMEM rt syslib
+#if 0
+#define CHECK_UPMEM(x)                                                                   \
+  {                                                                                      \
+    dpu_error_t _drc = x;                                                                \
+    HERE();                                                                              \
+    printf("upmem returns %d DPU_OK = %d " #x "\n", _drc, DPU_OK);                       \
+    DPU_ASSERT(_drc);                                                                    \
+  }
+#else
+#define CHECK_UPMEM(x) DPU_ASSERT(x)
 #endif
+#endif
+
 
 template <typename T>
 class AddUpmemReductions : public T {
 public:
   static const bool has_upmem_reductions = true;
-
+  template <bool EXCLUSIVE>
   static void apply_upmem(typename T::LHS &lhs, typename T::RHS rhs)
   {
-    T::template apply(lhs, rhs);
+    T::template apply<EXCLUSIVE>(lhs, rhs);
   }
-
+  template <bool EXCLUSIVE>
   static void fold_upmem(typename T::LHS &lhs, typename T::RHS rhs)
   {
-    T::template fold(lhs, rhs);
+    T::template fold<EXCLUSIVE>(lhs, rhs);
   }
 };
 
 namespace Realm {
   namespace Upmem {
     namespace ReductionKernels {
-      template <typename REDOP>
+      template <typename REDOP, bool EXCL>
       void apply_upmem_kernel(uintptr_t lhs_base, uintptr_t lhs_stride,
                               uintptr_t rhs_base, uintptr_t rhs_stride, size_t count,
                               REDOP redop)
       {
         // size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
         // for(size_t idx = tid; tid < count; tid += blockDim.x * gridDim.x)
-        redop.template apply_upmem(
+        redop.template apply_upmem<EXCL>(
             *reinterpret_cast<typename REDOP::LHS *>(lhs_base + lhs_stride),
             *reinterpret_cast<const typename REDOP::RHS *>(rhs_base + rhs_stride));
       }
 
-      template <typename REDOP>
+      template <typename REDOP, bool EXCL>
       void fold_upmem_kernel(uintptr_t rhs1_base, uintptr_t rhs1_stride,
                              uintptr_t rhs2_base, uintptr_t rhs2_stride, size_t count,
                              REDOP redop)
       {
         // size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
         // for(size_t idx = tid; tid < count; tid += blockDim.x * gridDim.x)
-        redop.template fold_upmem(
+        redop.template fold_upmem<EXCL>(
             *reinterpret_cast<typename REDOP::RHS *>(rhs1_base + rhs1_stride),
             *reinterpret_cast<const typename REDOP::RHS *>(rhs2_base + rhs2_stride));
       }
@@ -76,9 +88,9 @@ namespace Realm {
       // store the host proxy function pointer, as it's the same for all
       //  devices - translation to actual cudaFunction_t's happens later
       redop->upmem_apply_excl_fn =
-          reinterpret_cast<void *>(&ReductionKernels::apply_upmem_kernel<REDOP>);
+          reinterpret_cast<void *>(&ReductionKernels::apply_upmem_kernel<REDOP, true>);
       redop->upmem_fold_excl_fn =
-          reinterpret_cast<void *>(&ReductionKernels::fold_upmem_kernel<REDOP>);
+          reinterpret_cast<void *>(&ReductionKernels::fold_upmem_kernel<REDOP, true>);
     }
   }; // namespace Upmem
 
