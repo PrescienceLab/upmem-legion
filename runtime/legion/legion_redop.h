@@ -39,7 +39,13 @@
 
 #include "legion/legion_config.h"
 
+#ifdef DEVICE_DPU_CODE
+extern "C" {
+#include <stdint.h>
+}
+#else 
 #include <cstdint>
+#endif
 
 namespace Legion {
 

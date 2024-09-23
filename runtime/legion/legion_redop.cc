@@ -73,19 +73,20 @@ namespace Legion {
 #endif
 #if defined(LEGION_USE_UPMEM)
 
+
     template <typename T>
     class AddUpmemReductions : public T {
     public:
       static const bool has_upmem_reductions = true;
-
-      static void apply_upmem(typename T::LHS& lhs, typename T::RHS rhs)
+      template <bool EXCLUSIVE>
+      static void apply_upmem(typename T::LHS &lhs, typename T::RHS rhs)
       {
-        T::template apply(lhs, rhs);
+        T::template apply<EXCLUSIVE>(lhs, rhs);
       }
-
-      static void fold_upmem(typename T::LHS& lhs, typename T::RHS rhs)
+      template <bool EXCLUSIVE>
+      static void fold_upmem(typename T::LHS &lhs, typename T::RHS rhs)
       {
-        T::template fold(lhs, rhs);
+        T::template fold<EXCLUSIVE>(lhs, rhs);
       }
     };
 

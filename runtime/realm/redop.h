@@ -28,8 +28,9 @@
 #include "realm/hip/hip_redop.h"
 #endif
 
-#include <cstddef>
-#include <type_traits>
+#if defined(REALM_USE_UPMEM)
+#include "realm/upmem/upmem_redop.h"
+#endif
 
 namespace Realm {
 
@@ -148,18 +149,22 @@ namespace Realm {
         static_assert(std::is_trivially_copyable<ReductionOp<REDOP>>::value &&
                           std::is_trivially_destructible<ReductionOp<REDOP>>::value,
                       "ReductionOp<REDOP> must be trivially copyable/destructible");
-#endif
+#endif  
+#if defined(DEVICE_DPU_CODE)
+        assert(0 && "should never occur on DPU device");
+#else 
         void *ptr = malloc(sizeof(ReductionOp<REDOP>));
         if(ptr) {
           ReductionOpUntyped *redop = new(ptr) ReductionOp<REDOP>;
           return redop;
         } else
           return nullptr;
+#endif
       }
 
       static ReductionOpUntyped *clone_reduction_op(const ReductionOpUntyped *redop);
     };
-
+#if !defined(DEVICE_DPU_CODE) 
     namespace ReductionKernels {
       template <typename REDOP, bool EXCL>
       void cpu_apply_wrapper(void *lhs_ptr, size_t lhs_stride,
@@ -189,6 +194,7 @@ namespace Realm {
         }
       }
     };
+#endif 
 
 #if defined(REALM_USE_CUDA) && defined(__CUDACC__)
     // with a cuda-capable compiler, we'll automatically add cuda reduction
@@ -248,7 +254,32 @@ namespace Realm {
     };
 #endif
 
-    // TODO add section for UPMEM registration 
+#if defined(REALM_USE_UPMEM) && defined(DEVICE_DPU_CODE)
+    template <typename T>
+    struct HasHasUpmemReductions {
+      struct YES { char dummy[1]; };
+      struct NO { char dummy[2]; };
+      struct AltnerativeDefinition { static const bool has_upmem_reductions = false; };
+      template <typename T2> struct Combined : public T2, public AltnerativeDefinition {};
+      template <typename T2, T2> struct CheckAmbiguous {};
+      template <typename T2> static NO has_member(CheckAmbiguous<const bool *, &Combined<T2>::has_upmem_reductions> *);
+      template <typename T2> static YES has_member(...);
+      const static bool value = sizeof(has_member<T>(0)) == sizeof(YES);
+    };
+
+    template <typename T, bool OK> struct MaybeAddUpmemReductions;
+    template <typename T>
+    struct MaybeAddUpmemReductions<T, false> {
+      static void if_member_exists(ReductionOpUntyped *redop) {};
+      static void if_member_is_true(ReductionOpUntyped *redop) {};
+    };
+    template <typename T>
+    struct MaybeAddUpmemReductions<T, true> {
+      static void if_member_exists(ReductionOpUntyped *redop) { MaybeAddUpmemReductions<T, T::has_upmem_reductions>::if_member_is_true(redop); }
+      static void if_member_is_true(ReductionOpUntyped *redop) { Upmem::add_upmem_redop_kernels<T>(redop); }
+    };
+#endif
+
 
     template <typename REDOP>
     struct ReductionOp : public ReductionOpUntyped {
@@ -266,10 +297,13 @@ namespace Realm {
         sizeof_userdata = sizeof(REDOP);
         identity = &identity_val;
         userdata = &userdata_val;
+#if !defined(DEVICE_DPU_CODE) 
         cpu_apply_excl_fn = &ReductionKernels::cpu_apply_wrapper<REDOP, true>;
         cpu_apply_nonexcl_fn = &ReductionKernels::cpu_apply_wrapper<REDOP, false>;
         cpu_fold_excl_fn = &ReductionKernels::cpu_fold_wrapper<REDOP, true>;
         cpu_fold_nonexcl_fn = &ReductionKernels::cpu_fold_wrapper<REDOP, false>;
+#endif
+
 #if defined(REALM_USE_CUDA) && defined(__CUDACC__)
         // if REDOP defines/sets 'has_cuda_reductions' to true, try to
         //  automatically build wrappers for apply_cuda<> and fold_cuda<>
@@ -279,6 +313,12 @@ namespace Realm {
         // if REDOP defines/sets 'has_hip_reductions' to true, try to
         //  automatically build wrappers for apply_hip<> and fold_hip<>
         MaybeAddHipReductions<REDOP, HasHasHipReductions<REDOP>::value>::if_member_exists(this);
+#endif
+
+#if defined(REALM_USE_UPMEM) && defined(DEVICE_DPU_CODE)
+        // if REDOP defines/sets 'has_upmem_reductions' to true, try to
+        //  automatically build wrappers for apply_hip<> and fold_hip<>
+        MaybeAddUpmemReductions<REDOP, HasHasUpmemReductions<REDOP>::value>::if_member_exists(this);
 #endif
       }
 

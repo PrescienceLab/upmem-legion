@@ -28,7 +28,7 @@
 
 namespace Legion {
 
-#if !defined(__cpp_lib_atomic_ref) || (__cpp_lib_atomic_ref < 201806L)
+#if (!defined(__cpp_lib_atomic_ref) || (__cpp_lib_atomic_ref < 201806L)) && !defined(DEVICE_DPU_CODE)
   // We only need this crap if we're using a version of c++ < 20
   // Starting with c++20 we can do all this the right way with atomic_ref
   namespace TypePunning {
@@ -131,7 +131,11 @@ namespace Legion {
   }; // TypePunning
 #endif
 
-#if defined (__CUDACC__) || defined (__HIPCC__)
+#if defined (__CUDACC__) || defined (__HIPCC__) || defined (DEVICE_DPU_CODE)
+#if defined (DEVICE_DPU_CODE) 
+  #define __device__
+  #define __forceinline__
+#endif
   // We have these functions here because calling memcpy (per the
   // insistence of the idiots on the C++ standards committee) on the
   // GPU is a terrible idea since it will spill the data out of registers
@@ -195,7 +199,7 @@ namespace Legion {
   __device__ __forceinline__
   unsigned short int __short_as_ushort(short int value)
   {
-#ifdef __HIPCC__
+#if defined(__HIPCC__) || defined(DEVICE_DPU_CODE)
     union { short int as_signed; unsigned short int as_unsigned; } val;
     val.as_signed = value; 
     return val.as_unsigned;
@@ -209,7 +213,7 @@ namespace Legion {
   __device__ __forceinline__
   short int __ushort_as_short(unsigned short int value)
   {
-#ifdef __HIPCC__
+#if defined(__HIPCC__) || defined(DEVICE_DPU_CODE)
     union { short int as_signed; unsigned short int as_unsigned; } val;
     val.as_unsigned = value; 
     return val.as_signed;
@@ -223,7 +227,7 @@ namespace Legion {
   __device__ __forceinline__
   unsigned int __hiloushort2uint(unsigned short int hi, unsigned short int lo)
   {
-#ifdef __HIPCC__
+#if defined(__HIPCC__) || defined(DEVICE_DPU_CODE)
     union { unsigned int as_int; ushort2 as_short; } val;
     val.as_short.x = lo;
     val.as_short.y = hi;
@@ -238,7 +242,7 @@ namespace Legion {
   __device__ __forceinline__
   unsigned short int __uint2loushort(unsigned int value)
   {
-#ifdef __HIPCC__
+#if defined(__HIPCC__) || defined(DEVICE_DPU_CODE)
     union { unsigned int as_int; ushort2 as_short; } val;
     val.as_int = value;
     return val.as_short.x;
@@ -252,7 +256,7 @@ namespace Legion {
   __device__ __forceinline__
   unsigned short int __uint2hiushort(unsigned int value)
   {
-#ifdef __HIPCC__
+#if defined(__HIPCC__) || defined(DEVICE_DPU_CODE)
     union { unsigned int as_int; ushort2 as_short; } val;
     val.as_int = value;
     return val.as_short.y;
@@ -266,7 +270,7 @@ namespace Legion {
   __device__ __forceinline__
   unsigned int __hiloshort2uint(short int hi, short int lo)
   {
-#ifdef __HIPCC__
+#if defined(__HIPCC__) || defined(DEVICE_DPU_CODE)
     union { unsigned int as_int; short2 as_short; } val;
     val.as_short.x = lo;
     val.as_short.y = hi;
@@ -281,7 +285,7 @@ namespace Legion {
   __device__ __forceinline__
   short int __uint2loshort(unsigned int value)
   {
-#ifdef __HIPCC__
+#if defined(__HIPCC__) || defined(DEVICE_DPU_CODE)
     union { unsigned int as_int; short2 as_short; } val;
     val.as_int = value;
     return val.as_short.x;
@@ -295,7 +299,7 @@ namespace Legion {
   __device__ __forceinline__
   short int __uint2hishort(unsigned int value)
   {
-#ifdef __HIPCC__
+#if defined(__HIPCC__) || defined(DEVICE_DPU_CODE)
     union { unsigned int as_int; short2 as_short; } val;
     val.as_int = value;
     return val.as_short.y;
@@ -310,7 +314,7 @@ namespace Legion {
   __device__ __forceinline__
   unsigned int __hilohalf2uint(__half hi, __half lo)
   {
-#ifdef __HIPCC__
+#if defined(__HIPCC__) || defined(DEVICE_DPU_CODE)
     union { unsigned int as_int; short2 as_short; } val;
     val.as_short.x = __half_as_short(lo);
     val.as_short.y = __half_as_short(hi);
@@ -325,7 +329,7 @@ namespace Legion {
   __device__ __forceinline__
   __half __uint2hihalf(unsigned int value)
   {
-#ifdef __HIPCC__
+#if defined(__HIPCC__) || defined(DEVICE_DPU_CODE)
     union { unsigned int as_int; short2 as_short; } val;
     val.as_int = value;
     return __short_as_half(val.as_short.y);
@@ -339,7 +343,7 @@ namespace Legion {
   __device__ __forceinline__
   __half __uint2lohalf(unsigned int value)
   {
-#ifdef __HIPCC__
+#if defined(__HIPCC__) || defined(DEVICE_DPU_CODE)
     union { unsigned int as_int; short2 as_short; } val;
     val.as_int = value;
     return __short_as_half(val.as_short.x);
@@ -354,7 +358,7 @@ namespace Legion {
   __device__ __forceinline__
   unsigned int __int_as_uint(int value)
   {
-#ifdef __HIPCC__
+#if defined(__HIPCC__) || defined(DEVICE_DPU_CODE)
     union { int as_signed; unsigned int as_unsigned; } val;
     val.as_signed = value; 
     return val.as_unsigned;
@@ -368,7 +372,7 @@ namespace Legion {
   __device__ __forceinline__
   int __uint_as_int(unsigned int value)
   {
-#ifdef __HIPCC__
+#if defined(__HIPCC__) || defined(DEVICE_DPU_CODE)
     union { int as_signed; unsigned int as_unsigned; } val;
     val.as_unsigned = value; 
     return val.as_signed;
@@ -382,7 +386,7 @@ namespace Legion {
   __device__ __forceinline__
   unsigned long long __longlong_as_ulonglong(long long value)
   {
-#ifdef __HIPCC__
+#if defined(__HIPCC__) || defined(DEVICE_DPU_CODE)
     union { long long as_signed; unsigned long long as_unsigned; } val;
     val.as_signed = value; 
     return val.as_unsigned;
@@ -396,7 +400,7 @@ namespace Legion {
   __device__ __forceinline__
   long long __ulonglong_as_longlong(unsigned long long value)
   {
-#ifdef __HIPCC__
+#if defined(__HIPCC__) || defined(DEVICE_DPU_CODE)
     union { long long as_signed; unsigned long long as_unsigned; } val;
     val.as_unsigned = value; 
     return val.as_signed;
@@ -410,7 +414,7 @@ namespace Legion {
   __device__ __forceinline__
   double __ulonglong_as_double(unsigned long long value)
   {
-#ifdef __HIPCC__
+#if defined(__HIPCC__) || defined(DEVICE_DPU_CODE)
     union { unsigned long long as_int; double as_float; } val; 
     val.as_int = value;
     return val.as_float;
@@ -424,7 +428,7 @@ namespace Legion {
   __device__ __forceinline__
   unsigned long long __double_as_ulonglong(double value)
   {
-#ifdef __HIPCC__
+#if defined(__HIPCC__) || defined(DEVICE_DPU_CODE)
     union { unsigned long long as_int; double as_float; } val; 
     val.as_float = value;
     return val.as_int;
@@ -440,7 +444,7 @@ namespace Legion {
   __device__ __forceinline__
   unsigned int __complex_as_uint(complex<__half> value)
   {
-#ifdef __HIPCC__
+#if defined(__HIPCC__) || defined(DEVICE_DPU_CODE)
     union { unsigned int as_int; __half as_float[2]; } val; 
     val.as_float[0] = __half_as_ushort(value.real());
     val.as_float[1] = __half_as_ushort(value.imag());
@@ -457,7 +461,7 @@ namespace Legion {
   __device__ __forceinline__
   complex<__half> __uint_as_complex(unsigned int value)
   {
-#ifdef __HIPCC__
+#if defined(__HIPCC__) || defined(DEVICE_DPU_CODE)
     union { unsigned int as_int; __half as_float[2]; } val;
     val.as_int = value;
     return complex<__half>(__ushort_as_half(val.as_float[0]), __ushort_as_half(val.as_float[1]));
@@ -471,7 +475,7 @@ namespace Legion {
   __device__ __forceinline__
   unsigned long long __complex_as_ulonglong(complex<float> value)
   {
-#ifdef __HIPCC__
+#if defined(__HIPCC__) || defined(DEVICE_DPU_CODE)
     union { unsigned long long as_int; float as_float[2]; } val; 
     val.as_float[0] = value.real();
     val.as_float[1] = value.imag();
@@ -486,7 +490,7 @@ namespace Legion {
   __device__ __forceinline__
   complex<float> __ulonglong_as_complex(unsigned long long value)
   {
-#ifdef __HIPCC__
+#if defined(__HIPCC__) || defined(DEVICE_DPU_CODE)
     union { unsigned long long as_int; float as_float[2]; } val; 
     val.as_int = value;
     return complex<float>(val.as_float[0], val.as_float[1]);
@@ -508,7 +512,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void SumReduction<bool>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&lhs);
     const unsigned offset = unaligned % sizeof(unsigned int);
@@ -552,7 +558,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void SumReduction<bool>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&rhs1);
     const unsigned offset = unaligned % sizeof(unsigned int);
@@ -596,7 +604,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void SumReduction<int8_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&lhs);
     const unsigned offset = unaligned % sizeof(int);
@@ -624,7 +634,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void SumReduction<int8_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&rhs1);
     const unsigned offset = unaligned % sizeof(int);
@@ -652,7 +664,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void SumReduction<int16_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
@@ -708,7 +722,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void SumReduction<int16_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
@@ -764,7 +780,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void SumReduction<int32_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicAdd(&lhs, rhs);
 #else
     __sync_fetch_and_add(&lhs, rhs);
@@ -780,7 +798,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void SumReduction<int32_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicAdd(&rhs1, rhs2);
 #else
     __sync_fetch_and_add(&rhs1, rhs2);
@@ -796,7 +816,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void SumReduction<int64_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // Apparently there is no signed 64bit int atomic yet
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
@@ -822,7 +844,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void SumReduction<int64_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // Apparently there is no signed 64bit int atomic yet
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
@@ -848,7 +872,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void SumReduction<uint8_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&lhs);
     const unsigned offset = unaligned % sizeof(unsigned int);
@@ -876,7 +902,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void SumReduction<uint8_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&rhs1);
     const unsigned offset = unaligned % sizeof(unsigned int);
@@ -904,7 +932,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline 
   void SumReduction<uint16_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = lhs, oldval;
     do {
@@ -956,7 +986,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void SumReduction<uint16_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = rhs1, oldval;
     do {
@@ -1008,7 +1040,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void SumReduction<uint32_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicAdd(&lhs, rhs); 
 #else
     __sync_fetch_and_add(&lhs, rhs);
@@ -1024,7 +1058,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void SumReduction<uint32_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicAdd(&rhs1, rhs2);
 #else
     __sync_fetch_and_add(&rhs1, rhs2);
@@ -1040,7 +1076,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void SumReduction<uint64_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicAdd((unsigned long long*)&lhs, (unsigned long long)rhs);
 #else
     __sync_fetch_and_add(&lhs, rhs);
@@ -1056,7 +1094,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void SumReduction<uint64_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicAdd((unsigned long long*)&rhs1, (unsigned long long)rhs2);
 #else
     __sync_fetch_and_add(&rhs1, rhs2);
@@ -1073,7 +1113,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void SumReduction<__half>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     atomicAdd(&lhs,rhs);
 #else
@@ -1140,7 +1182,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void SumReduction<__half>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     atomicAdd(&rhs1, rhs2);
 #else
@@ -1208,7 +1252,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void SumReduction<float>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicAdd(&lhs, rhs);
 #else
 #if defined(__cpp_lib_atomic_ref) && (__cpp_lib_atomic_ref >= 201806L)
@@ -1240,7 +1286,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void SumReduction<float>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicAdd(&rhs1, rhs2);
 #else
 #if defined(__cpp_lib_atomic_ref) && (__cpp_lib_atomic_ref >= 201806L)
@@ -1272,7 +1320,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void SumReduction<double>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 600) || defined(__HIP_DEVICE_COMPILE__)
     atomicAdd(&lhs, rhs);
 #else
@@ -1317,7 +1367,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void SumReduction<double>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 600) || defined(__HIP_DEVICE_COMPILE__)
     atomicAdd(&rhs1, rhs2);
 #else
@@ -1364,7 +1416,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void SumReduction<complex<__half> >::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -1404,7 +1458,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void SumReduction<complex<__half> >::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -1445,7 +1501,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void SumReduction<complex<float> >::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -1485,7 +1543,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void SumReduction<complex<float> >::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -1525,7 +1585,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void SumReduction<complex<double> >::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 600) || defined(__HIP_DEVICE_COMPILE__)
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -1582,7 +1644,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void SumReduction<complex<double> >::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 600) || defined(__HIP_DEVICE_COMPILE__)
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -1640,7 +1704,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DiffReduction<int8_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&lhs);
     const unsigned offset = unaligned % sizeof(int);
@@ -1668,7 +1734,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DiffReduction<int8_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&rhs1);
     const unsigned offset = unaligned % sizeof(int);
@@ -1696,7 +1764,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DiffReduction<int16_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
@@ -1752,7 +1822,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DiffReduction<int16_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
@@ -1808,7 +1880,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DiffReduction<int32_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicSub(&lhs, rhs);
 #else
     __sync_fetch_and_sub(&lhs, rhs);
@@ -1824,7 +1898,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DiffReduction<int32_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicSub(&rhs1, rhs2);
 #else
     __sync_fetch_and_sub(&rhs1, rhs2);
@@ -1840,7 +1916,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DiffReduction<int64_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // Apparently there is no signed 64bit int atomic yet
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
@@ -1866,7 +1944,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DiffReduction<int64_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // Apparently there is no signed 64bit int atomic yet
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
@@ -1892,7 +1972,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DiffReduction<uint8_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&lhs);
     const unsigned offset = unaligned % sizeof(unsigned int);
@@ -1920,7 +2002,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DiffReduction<uint8_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&rhs1);
     const unsigned offset = unaligned % sizeof(unsigned int);
@@ -1948,7 +2032,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline 
   void DiffReduction<uint16_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = lhs, oldval;
     do {
@@ -2000,7 +2086,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DiffReduction<uint16_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = rhs1, oldval;
     do {
@@ -2052,7 +2140,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DiffReduction<uint32_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicSub(&lhs, rhs); 
 #else
     __sync_fetch_and_sub(&lhs, rhs);
@@ -2068,7 +2158,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DiffReduction<uint32_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicSub(&rhs1, rhs2);
 #else
     __sync_fetch_and_sub(&rhs1, rhs2);
@@ -2084,7 +2176,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DiffReduction<uint64_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // Apparently there is no signed 64 bit int atomic yet
     unsigned long long *target = (unsigned long long *)&lhs;
     unsigned long long oldval, newval = *target;
@@ -2107,7 +2201,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DiffReduction<uint64_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // Apparently there is no signed 64 bit int atomic yet
     unsigned long long *target = (unsigned long long *)&rhs1;
     unsigned long long oldval, newval = *target;
@@ -2131,7 +2227,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DiffReduction<__half>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
@@ -2207,7 +2305,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DiffReduction<__half>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
@@ -2284,7 +2384,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DiffReduction<float>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -2325,7 +2427,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DiffReduction<float>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -2366,7 +2470,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DiffReduction<double>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -2407,7 +2513,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DiffReduction<double>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -2450,7 +2558,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DiffReduction<complex<__half> >::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -2490,7 +2600,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DiffReduction<complex<__half> >::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -2531,7 +2643,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DiffReduction<complex<float> >::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -2571,7 +2685,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DiffReduction<complex<float> >::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -2612,7 +2728,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void ProdReduction<bool>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&lhs);
     const unsigned offset = unaligned % sizeof(unsigned int);
@@ -2656,7 +2774,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void ProdReduction<bool>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&rhs1);
     const unsigned offset = unaligned % sizeof(unsigned int);
@@ -2700,7 +2820,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void ProdReduction<int8_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&lhs);
     const unsigned offset = unaligned % sizeof(int);
@@ -2743,7 +2865,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void ProdReduction<int8_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&rhs1);
     const unsigned offset = unaligned % sizeof(int);
@@ -2786,7 +2910,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void ProdReduction<int16_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
@@ -2857,7 +2983,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void ProdReduction<int16_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
@@ -2928,7 +3056,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void ProdReduction<int32_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     int *target = (int *)&lhs;
     int oldval, newval = lhs;
     do {
@@ -2965,7 +3095,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void ProdReduction<int32_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     int *target = (int *)&rhs1;
     int oldval, newval = rhs1;
     do {
@@ -3002,7 +3134,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void ProdReduction<int64_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // Apparently there is no signed 64bit int atomic yet
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
@@ -3043,7 +3177,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void ProdReduction<int64_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // Apparently there is no signed 64bit int atomic yet
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
@@ -3084,7 +3220,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void ProdReduction<uint8_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&lhs);
     const unsigned offset = unaligned % sizeof(unsigned int);
@@ -3127,7 +3265,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void ProdReduction<uint8_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&rhs1);
     const unsigned offset = unaligned % sizeof(unsigned int);
@@ -3170,7 +3310,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline 
   void ProdReduction<uint16_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = lhs, oldval;
     do {
@@ -3237,7 +3379,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void ProdReduction<uint16_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = rhs1, oldval;
     do {
@@ -3304,7 +3448,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void ProdReduction<uint32_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     unsigned *target = (unsigned *)&lhs;
     unsigned oldval, newval = lhs;
     do {
@@ -3341,7 +3487,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void ProdReduction<uint32_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     unsigned *target = (unsigned *)&rhs1;
     unsigned oldval, newval = rhs1;
     do {
@@ -3378,7 +3526,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void ProdReduction<uint64_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     unsigned long long *target = (unsigned long long *)&lhs;
     unsigned long long oldval, newval = lhs;
     do {
@@ -3415,7 +3565,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void ProdReduction<uint64_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     unsigned long long *target = (unsigned long long *)&rhs1;
     unsigned long long oldval, newval = rhs1;
     do {
@@ -3453,7 +3605,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void ProdReduction<__half>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
@@ -3529,7 +3683,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void ProdReduction<__half>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
@@ -3606,7 +3762,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void ProdReduction<float>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -3647,7 +3805,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void ProdReduction<float>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -3688,7 +3848,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void ProdReduction<double>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -3729,7 +3891,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void ProdReduction<double>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -3772,7 +3936,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void ProdReduction<complex<__half> >::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -3812,7 +3978,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void ProdReduction<complex<__half> >::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -3853,7 +4021,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void ProdReduction<complex<float> >::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -3893,7 +4063,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void ProdReduction<complex<float> >::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -3934,7 +4106,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DivReduction<int8_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&lhs);
     const unsigned offset = unaligned % sizeof(int);
@@ -3977,7 +4151,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DivReduction<int8_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&rhs1);
     const unsigned offset = unaligned % sizeof(int);
@@ -4020,7 +4196,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DivReduction<int16_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
@@ -4091,7 +4269,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DivReduction<int16_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
@@ -4162,7 +4342,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DivReduction<int32_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     int *target = (int *)&lhs;
     int oldval, newval = lhs;
     do {
@@ -4199,7 +4381,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DivReduction<int32_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     int *target = (int *)&rhs1;
     int oldval, newval = rhs1;
     do {
@@ -4236,7 +4420,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DivReduction<int64_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // Apparently there is no signed 64bit int atomic yet
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
@@ -4277,7 +4463,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DivReduction<int64_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // Apparently there is no signed 64bit int atomic yet
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
@@ -4318,7 +4506,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DivReduction<uint8_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&lhs);
     const unsigned offset = unaligned % sizeof(unsigned int);
@@ -4361,7 +4551,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DivReduction<uint8_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&rhs1);
     const unsigned offset = unaligned % sizeof(unsigned int);
@@ -4404,7 +4596,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline 
   void DivReduction<uint16_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = lhs, oldval;
     do {
@@ -4471,7 +4665,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DivReduction<uint16_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = rhs1, oldval;
     do {
@@ -4538,7 +4734,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DivReduction<uint32_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     unsigned *target = (unsigned *)&lhs;
     unsigned oldval, newval = lhs;
     do {
@@ -4575,7 +4773,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DivReduction<uint32_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     unsigned *target = (unsigned *)&rhs1;
     unsigned oldval, newval = rhs1;
     do {
@@ -4612,7 +4812,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DivReduction<uint64_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     unsigned long long *target = (unsigned long long *)&lhs;
     unsigned long long oldval, newval = lhs;
     do {
@@ -4649,7 +4851,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DivReduction<uint64_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     unsigned long long *target = (unsigned long long *)&rhs1;
     unsigned long long oldval, newval = rhs1;
     do {
@@ -4687,7 +4891,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DivReduction<__half>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
@@ -4763,7 +4969,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DivReduction<__half>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
@@ -4840,7 +5048,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DivReduction<float>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -4881,7 +5091,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DivReduction<float>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -4922,7 +5134,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DivReduction<double>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -4963,7 +5177,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DivReduction<double>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -5006,7 +5222,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DivReduction<complex<__half> >::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -5046,7 +5264,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DivReduction<complex<__half> >::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -5087,7 +5307,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DivReduction<complex<float> >::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -5127,7 +5349,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void DivReduction<complex<float> >::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -5169,7 +5393,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MaxReduction<bool>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&lhs);
     const unsigned offset = unaligned % sizeof(unsigned int);
@@ -5214,7 +5440,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MaxReduction<bool>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&rhs1);
     const unsigned offset = unaligned % sizeof(unsigned int);
@@ -5259,7 +5487,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MaxReduction<int8_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&lhs);
     const unsigned offset = unaligned % sizeof(int);
@@ -5303,7 +5533,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MaxReduction<int8_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&rhs1);
     const unsigned offset = unaligned % sizeof(int);
@@ -5347,7 +5579,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MaxReduction<int16_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
@@ -5419,7 +5653,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MaxReduction<int16_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
@@ -5491,7 +5727,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MaxReduction<int32_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicMax(&lhs, rhs);
 #else
 #if defined(__cpp_lib_atomic_ref) && (__cpp_lib_atomic_ref >= 201806L)
@@ -5523,7 +5761,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MaxReduction<int32_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicMax(&rhs1, rhs2);  
 #else
 #if defined(__cpp_lib_atomic_ref) && (__cpp_lib_atomic_ref >= 201806L)
@@ -5555,7 +5795,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MaxReduction<int64_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // Apparently there is no signed 64bit int atomic yet
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
@@ -5597,7 +5839,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MaxReduction<int64_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // Apparently there is no signed 64bit int atomic yet
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
@@ -5639,7 +5883,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MaxReduction<uint8_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&lhs);
     const unsigned offset = unaligned % sizeof(unsigned int);
@@ -5683,7 +5929,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MaxReduction<uint8_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&rhs1);
     const unsigned offset = unaligned % sizeof(unsigned int);
@@ -5727,7 +5975,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline 
   void MaxReduction<uint16_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = lhs, oldval;
     do {
@@ -5795,7 +6045,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MaxReduction<uint16_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = rhs1, oldval;
     do {
@@ -5863,7 +6115,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MaxReduction<uint32_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicMax(&lhs, rhs);
 #else
 #if defined(__cpp_lib_atomic_ref) && (__cpp_lib_atomic_ref >= 201806L)
@@ -5895,7 +6149,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MaxReduction<uint32_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicMax(&rhs1, rhs2); 
 #else
 #if defined(__cpp_lib_atomic_ref) && (__cpp_lib_atomic_ref >= 201806L)
@@ -5927,7 +6183,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MaxReduction<uint64_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if __CUDACC_VER_MAJOR__ < 11
     // Older versions of CUDA don't have 64-bit atomicMax
     unsigned long long *target = (unsigned long long *)&lhs;
@@ -5970,7 +6228,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MaxReduction<uint64_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if __CUDACC_VER_MAJOR__ < 11
     // Older versions of CUDA don't have 64-bit atomicMax
     unsigned long long *target = (unsigned long long *)&rhs1;
@@ -6014,7 +6274,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MaxReduction<__half>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
@@ -6091,7 +6353,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MaxReduction<__half>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
@@ -6169,7 +6433,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MaxReduction<float>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -6211,7 +6477,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MaxReduction<float>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -6253,7 +6521,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MaxReduction<double>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -6295,7 +6565,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MaxReduction<double>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -6337,7 +6609,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MinReduction<bool>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&lhs);
     const unsigned offset = unaligned % sizeof(unsigned int);
@@ -6382,7 +6656,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MinReduction<bool>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&rhs1);
     const unsigned offset = unaligned % sizeof(unsigned int);
@@ -6427,7 +6703,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MinReduction<int8_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&lhs);
     const unsigned offset = unaligned % sizeof(int);
@@ -6471,7 +6749,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MinReduction<int8_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&rhs1);
     const unsigned offset = unaligned % sizeof(int);
@@ -6515,7 +6795,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MinReduction<int16_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
@@ -6587,7 +6869,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MinReduction<int16_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
@@ -6659,7 +6943,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MinReduction<int32_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicMin(&lhs, rhs);
 #else
 #if defined(__cpp_lib_atomic_ref) && (__cpp_lib_atomic_ref >= 201806L)
@@ -6691,7 +6977,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MinReduction<int32_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicMin(&rhs1, rhs2);
 #else
 #if defined(__cpp_lib_atomic_ref) && (__cpp_lib_atomic_ref >= 201806L)
@@ -6723,7 +7011,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MinReduction<int64_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // Apparently there is no signed 64bit int atomic yet
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
@@ -6765,7 +7055,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MinReduction<int64_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // Apparently there is no signed 64bit int atomic yet
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
@@ -6807,7 +7099,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MinReduction<uint8_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&lhs);
     const unsigned offset = unaligned % sizeof(unsigned int);
@@ -6851,7 +7145,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MinReduction<uint8_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&rhs1);
     const unsigned offset = unaligned % sizeof(unsigned int);
@@ -6895,7 +7191,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline 
   void MinReduction<uint16_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = lhs, oldval;
     do {
@@ -6963,7 +7261,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MinReduction<uint16_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = rhs1, oldval;
     do {
@@ -7031,7 +7331,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MinReduction<uint32_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicMin(&lhs, rhs); 
 #else
 #if defined(__cpp_lib_atomic_ref) && (__cpp_lib_atomic_ref >= 201806L)
@@ -7063,7 +7365,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MinReduction<uint32_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicMin(&rhs1, rhs2); 
 #else
 #if defined(__cpp_lib_atomic_ref) && (__cpp_lib_atomic_ref >= 201806L)
@@ -7095,7 +7399,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MinReduction<uint64_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if __CUDACC_VER_MAJOR__ < 11
     // Older versions of CUDA don't have 64-bit atomicMin
     unsigned long long *target = (unsigned long long *)&lhs;
@@ -7138,7 +7444,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MinReduction<uint64_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if __CUDACC_VER_MAJOR__ < 11
     // Older versions of CUDA don't have 64-bit atomicMin
     unsigned long long *target = (unsigned long long *)&rhs1;
@@ -7182,7 +7490,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MinReduction<__half>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
@@ -7252,7 +7562,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MinReduction<__half>::fold<true>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     if (rhs2 < rhs1)
       rhs1 = rhs2;
 #else
@@ -7264,7 +7576,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MinReduction<__half>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
@@ -7342,7 +7656,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MinReduction<float>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -7384,7 +7700,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MinReduction<float>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -7426,7 +7744,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MinReduction<double>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -7468,7 +7788,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void MinReduction<double>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
     // CUDA manual has an example just like it so fuck it
@@ -7509,7 +7831,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void OrReduction<int8_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&lhs);
     const unsigned offset = unaligned % sizeof(int);
@@ -7552,7 +7876,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void OrReduction<int8_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&rhs1);
     const unsigned offset = unaligned % sizeof(int);
@@ -7595,7 +7921,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void OrReduction<int16_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
@@ -7666,7 +7994,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void OrReduction<int16_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
@@ -7737,7 +8067,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void OrReduction<int32_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicOr(&lhs, rhs);
 #else
 #if defined(__cpp_lib_atomic_ref) && (__cpp_lib_atomic_ref >= 201806L)
@@ -7768,7 +8100,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void OrReduction<int32_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicOr(&rhs1, rhs2); 
 #else
 #if defined(__cpp_lib_atomic_ref) && (__cpp_lib_atomic_ref >= 201806L)
@@ -7799,7 +8133,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void OrReduction<int64_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // Apparently there is no signed 64bit int atomic yet
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
@@ -7840,7 +8176,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void OrReduction<int64_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // Apparently there is no signed 64bit int atomic yet
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
@@ -7881,7 +8219,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void OrReduction<uint8_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&lhs);
     const unsigned offset = unaligned % sizeof(unsigned int);
@@ -7924,7 +8264,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void OrReduction<uint8_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&rhs1);
     const unsigned offset = unaligned % sizeof(unsigned int);
@@ -7967,7 +8309,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline 
   void OrReduction<uint16_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = lhs, oldval;
     do {
@@ -8034,7 +8378,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void OrReduction<uint16_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = rhs1, oldval;
     do {
@@ -8101,7 +8447,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void OrReduction<uint32_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicOr(&lhs, rhs);
 #else
 #if defined(__cpp_lib_atomic_ref) && (__cpp_lib_atomic_ref >= 201806L)
@@ -8132,7 +8480,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void OrReduction<uint32_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicOr(&rhs1, rhs2); 
 #else
 #if defined(__cpp_lib_atomic_ref) && (__cpp_lib_atomic_ref >= 201806L)
@@ -8163,7 +8513,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void OrReduction<uint64_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if __CUDACC_VER_MAJOR__ < 11
     // Older versions of CUDA don't have 64-bit atomicOr
     unsigned long long *target = (unsigned long long *)&lhs;
@@ -8205,7 +8557,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void OrReduction<uint64_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if __CUDACC_VER_MAJOR__ < 11
     // Older versions of CUDA don't have 64-bit atomicOr
     unsigned long long *target = (unsigned long long *)&rhs1;
@@ -8247,7 +8601,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void AndReduction<int8_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&lhs);
     const unsigned offset = unaligned % sizeof(int);
@@ -8290,7 +8646,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void AndReduction<int8_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&rhs1);
     const unsigned offset = unaligned % sizeof(int);
@@ -8333,7 +8691,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void AndReduction<int16_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
@@ -8404,7 +8764,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void AndReduction<int16_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
@@ -8475,7 +8837,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void AndReduction<int32_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicAnd(&lhs, rhs); 
 #else
 #if defined(__cpp_lib_atomic_ref) && (__cpp_lib_atomic_ref >= 201806L)
@@ -8506,7 +8870,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void AndReduction<int32_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicAnd(&rhs1, rhs2); 
 #else
 #if defined(__cpp_lib_atomic_ref) && (__cpp_lib_atomic_ref >= 201806L)
@@ -8537,7 +8903,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void AndReduction<int64_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // Apparently there is no signed 64bit int atomic yet
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
@@ -8578,7 +8946,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void AndReduction<int64_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // Apparently there is no signed 64bit int atomic yet
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
@@ -8619,7 +8989,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void AndReduction<uint8_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&lhs);
     const unsigned offset = unaligned % sizeof(unsigned int);
@@ -8662,7 +9034,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void AndReduction<uint8_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&rhs1);
     const unsigned offset = unaligned % sizeof(unsigned int);
@@ -8705,7 +9079,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline 
   void AndReduction<uint16_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = lhs, oldval;
     do {
@@ -8772,7 +9148,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void AndReduction<uint16_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = rhs1, oldval;
     do {
@@ -8839,7 +9217,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void AndReduction<uint32_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicAnd(&lhs, rhs); 
 #else
 #if defined(__cpp_lib_atomic_ref) && (__cpp_lib_atomic_ref >= 201806L)
@@ -8870,7 +9250,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void AndReduction<uint32_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicAnd(&rhs1, rhs2); 
 #else
 #if defined(__cpp_lib_atomic_ref) && (__cpp_lib_atomic_ref >= 201806L)
@@ -8901,7 +9283,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void AndReduction<uint64_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if __CUDACC_VER_MAJOR__ < 11
     // Older versions of CUDA don't have 64-bit atomicAnd
     unsigned long long *target = (unsigned long long *)&lhs;
@@ -8943,7 +9327,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void AndReduction<uint64_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if __CUDACC_VER_MAJOR__ < 11
     // Older versions of CUDA don't have 64-bit atomicAnd
     unsigned long long *target = (unsigned long long *)&rhs1;
@@ -8985,7 +9371,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void XorReduction<bool>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&lhs);
     const unsigned offset = unaligned % sizeof(unsigned int);
@@ -9029,7 +9417,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void XorReduction<bool>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&rhs1);
     const unsigned offset = unaligned % sizeof(unsigned int);
@@ -9073,7 +9463,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void XorReduction<int8_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&lhs);
     const unsigned offset = unaligned % sizeof(int);
@@ -9116,7 +9508,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void XorReduction<int8_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&rhs1);
     const unsigned offset = unaligned % sizeof(int);
@@ -9159,7 +9553,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void XorReduction<int16_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
@@ -9230,7 +9626,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void XorReduction<int16_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
@@ -9301,7 +9699,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void XorReduction<int32_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicXor(&lhs, rhs);
 #else
 #if defined(__cpp_lib_atomic_ref) && (__cpp_lib_atomic_ref >= 201806L)
@@ -9332,7 +9732,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void XorReduction<int32_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicXor(&rhs1, rhs2); 
 #else
 #if defined(__cpp_lib_atomic_ref) && (__cpp_lib_atomic_ref >= 201806L)
@@ -9363,7 +9765,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void XorReduction<int64_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // Apparently there is no signed 64bit int atomic yet
     RHS newval = lhs, oldval;
     // Type punning like this is illegal in C++ but the
@@ -9404,7 +9808,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void XorReduction<int64_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // Apparently there is no signed 64bit int atomic yet
     RHS newval = rhs1, oldval;
     // Type punning like this is illegal in C++ but the
@@ -9445,7 +9851,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void XorReduction<uint8_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&lhs);
     const unsigned offset = unaligned % sizeof(unsigned int);
@@ -9488,7 +9896,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void XorReduction<uint8_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     // GPU atomics need 4 byte alignment
     const uintptr_t unaligned = reinterpret_cast<uintptr_t>(&rhs1);
     const unsigned offset = unaligned % sizeof(unsigned int);
@@ -9531,7 +9941,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline 
   void XorReduction<uint16_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = lhs, oldval;
     do {
@@ -9598,7 +10010,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void XorReduction<uint16_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if (__CUDA_ARCH__ >= 700) && (__CUDACC_VER_MAJOR__ >= 10)
     RHS newval = rhs1, oldval;
     do {
@@ -9665,7 +10079,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void XorReduction<uint32_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicXor(&lhs, rhs); 
 #else
 #if defined(__cpp_lib_atomic_ref) && (__cpp_lib_atomic_ref >= 201806L)
@@ -9696,7 +10112,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void XorReduction<uint32_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
     atomicXor(&rhs1, rhs2); 
 #else
 #if defined(__cpp_lib_atomic_ref) && (__cpp_lib_atomic_ref >= 201806L)
@@ -9727,7 +10145,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void XorReduction<uint64_t>::apply<false>(LHS &lhs, RHS rhs)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if __CUDACC_VER_MAJOR__ < 11
     // Older versions of CUDA don't have 64-bit atomicXor
     unsigned long long *target = (unsigned long long *)&lhs;
@@ -9769,7 +10189,9 @@ namespace Legion {
   template<> __CUDA_HD__ inline
   void XorReduction<uint64_t>::fold<false>(RHS &rhs1, RHS rhs2)
   {
-#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+    #if defined(DEVICE_DPU_CODE)
+    assert(0 && "DPU chip has exclusive access");
+#elif defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
 #if __CUDACC_VER_MAJOR__ < 11
     // Older versions of CUDA don't have 64-bit atomicXor
     unsigned long long *target = (unsigned long long *)&rhs1;
