@@ -48,6 +48,15 @@ using namespace Legion;
 
 #endif
 
+#if defined(DEVICE_DPU_CODE)
+#include <realm/redop.h>
+typedef void (*proxy_function)(uintptr_t side1_base, uintptr_t side1_stride,
+                               uintptr_t side2_base, uintptr_t side2_stride, size_t count,
+                               int redop);
+__host void *REDUCE_ARGS[6];
+__host proxy_function REDUCE_FUNCTION;
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 

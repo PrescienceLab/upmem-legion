@@ -15,7 +15,6 @@
  */
 
 #include "realm/upmem/upmem_dma.h"
-#include "realm/upmem/upmem_redop.h"
 
 #define XFER_SYNC_TYPE DPU_XFER_ASYNC
 
@@ -922,11 +921,6 @@ namespace Realm {
       DPU *dpu = checked_cast<DPUreduceChannel *>(channel)->dpu;
 
       // select reduction kernel now - translate to CUfunction if possible
-      // void *host_proxy = (redop_info.is_fold ?
-      //     (redop_info.is_exclusive ? redop->upmem_fold_excl_fn :
-      //     redop->upmem_fold_nonexcl_fn) : (redop_info.is_exclusive ?
-      //     redop->upmem_apply_excl_fn : redop->upmem_apply_nonexcl_fn));
-
       assert(redop_info.is_exclusive == true &&
              "Reduction on local UPMEM should be exclusive");
       // figure out if its fold or apply
@@ -1083,12 +1077,26 @@ namespace Realm {
                 void *params[] = {&args->dst_base,   &args->dst_stride, &src_device,
                                   &args->src_stride, &args->count,      args + 1};
 
-                int orig_device;
+                // funct(args->dst_base, args->dst_stride, (uintptr_t)src_device,
+                //       args->src_stride, args->count, *(int *)(args + 1)
 
-                host_proxy_function funct = (host_proxy_function)kernel_host_proxy;
+                dpu_set_t dpu_proc;
+                DPU_FOREACH(*stream->get_stream(), dpu_proc)
+                {
+                  CHECK_UPMEM(dpu_prepare_xfer(dpu_proc, params));
+                }
+                CHECK_UPMEM(dpu_push_xfer(*stream->get_stream(), DPU_XFER_TO_DPU,
+                                          "REDUCE_ARGS", 0, args_size, DPU_XFER_DEFAULT));
 
-                funct(args->dst_base, args->dst_stride, (uintptr_t)src_device,
-                      args->src_stride, args->count, *(int *)(args + 1));
+                DPU_FOREACH(*stream->get_stream(), dpu_proc)
+                {
+                  CHECK_UPMEM(dpu_prepare_xfer(dpu_proc, (void *)kernel_host_proxy));
+                }
+                CHECK_UPMEM(dpu_push_xfer(*stream->get_stream(), DPU_XFER_TO_DPU,
+                                          "REDUCE_FUNCTION", 0, sizeof(kernel_host_proxy),
+                                          DPU_XFER_DEFAULT));
+
+                CHECK_UPMEM(dpu_launch(*stream->get_stream(), DPU_ASYNCHRONOUS));
 
                 // CHECK_HIP( hipGetDevice(&orig_device) );
                 // CHECK_HIP( hipSetDevice(channel->dpu->info->index) );
