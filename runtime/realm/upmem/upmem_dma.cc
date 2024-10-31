@@ -384,29 +384,37 @@ namespace Realm {
                   //  allowing us to stop early if we hit the rate limit or a
                   //  timeout
                   DPUMemcpyKind copy_type;
-                  if(in_dpu) {
-                    if(out_dpu == in_dpu || (out_ipc_index >= 0)) {
-                      printf("device to device not currently supported\n");
-                    } else if(!out_dpu) {
-                      copy_type = DPU_XFER_FROM_DPU;
-                    }
-                  } else {
-                    copy_type = DPU_XFER_TO_DPU;
-                  }
+                  size_t baseoffset_src, baseoffset_dst;
 
                   size_t act_planes = 0;
                   while(act_planes < planes) {
+
+                    if(in_dpu) {
+                      if(out_dpu == in_dpu || (out_ipc_index >= 0)) {
+                        printf("device to device not currently supported\n");
+                      } else if(!out_dpu) {
+                        copy_type = DPU_XFER_FROM_DPU;
+                        stream = in_dpu->stream;
+                        baseoffset_src =
+                            (out_base + out_offset + (act_planes * out_pstride));
+                        baseoffset_dst = in_base + in_offset + (act_planes * in_pstride);
+                      }
+                    } else {
+                      copy_type = DPU_XFER_TO_DPU;
+                      stream = out_dpu->stream;
+                      baseoffset_src = in_base + in_offset + (act_planes * in_pstride);
+                      baseoffset_dst =
+                          (out_base + out_offset + (act_planes * out_pstride));
+                    }
+
                     // check rate limit on stream
                     if(!stream->ok_to_submit_copy(contig_bytes * lines, this))
                       break;
 
-                    const void *src = reinterpret_cast<const void *>(
-                        in_base + in_offset + (act_planes * in_pstride));
-                    size_t dst = (out_base + out_offset + (act_planes * out_pstride));
-
-                    CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()), (void *)src));
+                    CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()),
+                                                 (void *)baseoffset_src));
                     CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), copy_type,
-                                              DPU_MRAM_HEAP_POINTER_NAME, dst,
+                                              DPU_MRAM_HEAP_POINTER_NAME, baseoffset_dst,
                                               lines * contig_bytes, XFER_SYNC_TYPE));
 
                     // CHECK_HIP(hipMemcpy2DAsync(dst, out_lstride, src, in_lstride,

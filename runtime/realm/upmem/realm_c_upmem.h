@@ -50,7 +50,7 @@ namespace Realm {
 
   template <int N, typename T = int>
   struct Point;
-  template <int N, typename T = int>
+  template <int N, typename T = uint64_t>
   struct Rect;
   template <int N, typename T = int>
   class PointInRectIterator;
