@@ -79,18 +79,15 @@ namespace Realm {
              "cfg_task_streams should be set to zero");
 
       task_streams.resize(1);
-
-      dpu_set_t *single_dpu = new dpu_set_t;
-
-#if !defined(__SIMULATOR__)
-      CHECK_UPMEM(dpu_alloc(1, "backend=hw", single_dpu));
-#else
-      CHECK_UPMEM(dpu_alloc(1, "backend=simulator", single_dpu));
-#endif
+      dpu_rank_t *rank = module->allocated_set->list.ranks[device_id];
+      dpu_set_t *single_dpu =  new dpu_set_t;
+      single_dpu->list.ranks = new dpu_rank_t *;
+      
+      single_dpu->list.nr_ranks = 1;
+      *single_dpu->list.ranks  = rank;
 
       stream = new DPUStream(this, worker);
       stream->set_stream(single_dpu);
-
       task_streams[0] = stream;
 
       // for(unsigned i = 0; i < module->config->cfg_task_streams; i++)
@@ -99,8 +96,6 @@ namespace Realm {
 
     DPU::~DPU(void)
     {
-      CHECK_UPMEM(dpu_free(*task_streams[0]->get_stream()));
-
       event_pool.empty_pool();
     }
 

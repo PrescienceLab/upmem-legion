@@ -84,6 +84,8 @@ namespace Realm {
 
     UpmemModule::~UpmemModule(void)
     {
+      CHECK_UPMEM(dpu_free(*allocated_set));
+      
       assert(config != nullptr);
       config = nullptr;
       assert(upmem_module_singleton == this);
@@ -119,6 +121,11 @@ namespace Realm {
     {
       Module::initialize(runtime);
 
+      if(config->cfg_num_dpus >  MAX_DPUS_PER_RANK) {
+        log_dpu.fatal() << "Specified > MAX_DPUS_PER_RANK. Check command line options -ll:num_dpus";
+        assert(false);
+      }
+
       // if we are using a shared worker, create that next
       if(config->cfg_use_shared_worker) {
         shared_worker = new DPUWorker;
@@ -138,6 +145,12 @@ namespace Realm {
 
       dpus.resize(config->cfg_num_dpus);
       dpu_info.resize(config->cfg_num_dpus);
+      allocated_set = new dpu_set_t;
+#if !defined(__SIMULATOR__)
+        CHECK_UPMEM(dpu_alloc(config->cfg_num_dpus, "backend=hw", allocated_set));
+#else
+        CHECK_UPMEM(dpu_alloc(config->cfg_num_dpus, "backend=simulator", allocated_set));
+#endif
 
       unsigned dpu_count = 0;
       // try to get cfg_num_dpus, working through the list in order
@@ -198,12 +211,15 @@ namespace Realm {
           abort();
         }
 
-        Memory m = runtime->next_local_memory_id();
-        zcmem = new DPUZCMemory(m, zcmem_dpu_base, config->cfg_zc_mem_size);
-        runtime->add_memory(zcmem);
+        // Memory m = runtime->next_local_memory_id();
+        // zcmem = new DPUZCMemory(m, zcmem_dpu_base, config->cfg_zc_mem_size);
+        // runtime->add_memory(zcmem);
 
         // add the ZC memory as a pinned memory to all GPUs
         for(unsigned i = 0; i < dpus.size(); i++) {
+          Memory m = runtime->next_local_memory_id();
+          zcmem = new DPUZCMemory(m, zcmem_dpu_base, config->cfg_zc_mem_size);
+          runtime->add_memory(zcmem);
           dpus[i]->pinned_sysmems.insert(zcmem->me);
         }
       }

@@ -20,6 +20,8 @@
 #define MEGABYTE (2 << 20)
 #define KILOBYTE (2 << 10)
 
+#define MAX_DPUS_PER_RANK 64
+
 #include "realm/upmem/upmem_internal.h"
 
 #include "realm/atomics.h"
@@ -69,7 +71,7 @@ namespace Realm {
       int cfg_num_dpus = 64;
       int cfg_tasklets = 16;
       size_t cfg_mram_mem_size = 64 * MEGABYTE;
-      size_t cfg_zc_mem_size = 64 << 20, cfg_zc_ib_size = 256 << 20;
+      size_t cfg_zc_mem_size = (size_t)64 * (size_t)64 * (size_t)MEGABYTE, cfg_zc_ib_size = 256 << 20;
 
       int cfg_task_streams = 16;
 
@@ -140,7 +142,8 @@ namespace Realm {
       std::vector<DPUInfo *> dpu_info;
       std::vector<DPU *> dpus;
       DPUZCMemory *zcmem;
-
+      dpu_set_t *allocated_set;
+      
       void *zcmem_cpu_base, *zcib_cpu_base;
 
       std::vector<void *> registered_host_ptrs;
