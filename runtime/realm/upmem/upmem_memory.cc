@@ -70,7 +70,7 @@ namespace Realm {
 
     void *DPUMRAMMemory::get_direct_ptr(off_t offset, size_t size)
     {
-      return (void *)(base + offset);
+      return (void *)(0x8 + offset);
     }
 
     ////////////////////////////////////////////////////////////////////////

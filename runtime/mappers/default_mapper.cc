@@ -269,7 +269,7 @@ namespace Legion {
         if (total_nodes == 0) total_nodes = remote_gpus.size();
       }
       if (!local_dpus.empty()) {
-        for (unsigned idx = 0; idx < remote_gpus.size(); idx++) {
+        for (unsigned idx = 0; idx < remote_dpus.size(); idx++) {
 	  if (idx == node_id) continue;  // ignore our own node
           if (!remote_dpus[idx].exists())
           {
