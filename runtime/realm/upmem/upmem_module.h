@@ -17,8 +17,8 @@
 #ifndef REALM_UPMEM_MODULE_H
 #define REALM_UPMEM_MODULE_H
 
-#define MEGABYTE (2 << 20)
-#define KILOBYTE (2 << 10)
+#define MEGABYTE (1 << 20)
+#define KILOBYTE (1 << 10)
 
 #define MAX_DPUS_PER_RANK 64
 
@@ -71,7 +71,9 @@ namespace Realm {
       int cfg_num_dpus = 64;
       int cfg_tasklets = 16;
       size_t cfg_mram_mem_size = 64 * MEGABYTE;
-      size_t cfg_zc_mem_size = (size_t)64 * (size_t)64 * (size_t)MEGABYTE, cfg_zc_ib_size = 256 << 20;
+      size_t cfg_zc_mem_size = cfg_num_dpus * cfg_mram_mem_size;
+      size_t cfg_zc_ib_size = cfg_num_dpus * cfg_mram_mem_size;
+      size_t cfg_hostreg_limit = cfg_num_dpus * cfg_mram_mem_size;
 
       int cfg_task_streams = 16;
 
@@ -83,7 +85,6 @@ namespace Realm {
       int cfg_task_context_sync = -1; // 0 = no, 1 = yes, -1 = default (based on hijack)
       int cfg_max_ctxsync_threads = 4;
       bool cfg_multithread_dma = false;
-      size_t cfg_hostreg_limit = 1 << 30;
       int cfg_d2d_stream_priority = -1;
       bool cfg_use_upmem_ipc = true;
       bool cfg_use_worker_threads = false;

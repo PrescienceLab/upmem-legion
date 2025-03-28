@@ -26,6 +26,8 @@
 #include "realm/bgwork.h"
 #include "realm/network.h"
 
+#define DPU_REALM_ADDRESS(addr)  (addr % (64*MEGABYTE))
+
 typedef void (*proxy_function)(uintptr_t side1_base, uintptr_t side1_stride,
                                uintptr_t side2_base, uintptr_t side2_stride, size_t count,
                                int redop);

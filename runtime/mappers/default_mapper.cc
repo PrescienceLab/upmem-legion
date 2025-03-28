@@ -178,7 +178,7 @@ namespace Legion {
         {
           case Processor::DPU_PROC:
             {
-              // See if we already have a target GPU processor for this node
+              // See if we already have a target DPU processor for this node
               if (node >= remote_dpus.size())
                 remote_dpus.resize(node+1, Processor::NO_PROC);
               if (!remote_dpus[node].exists())
@@ -662,7 +662,7 @@ namespace Legion {
       if (!next_global_dpu.exists())
       {
         global_dpu_query = new Machine::ProcessorQuery(machine);
-        global_dpu_query->only_kind(Processor::TOC_PROC);
+        global_dpu_query->only_kind(Processor::DPU_PROC);
         next_global_dpu = global_dpu_query->first();
       }
       Processor result = next_global_dpu;
@@ -1060,8 +1060,6 @@ namespace Legion {
       ranking.push_back(Processor::LOC_PROC);
       if (local_ios.size() > 0) ranking.push_back(Processor::IO_PROC);
       if (local_pys.size() > 0) ranking.push_back(Processor::PY_PROC);
-      if ((local_dpus.size() > 0) && prefer_cpu)
-       ranking.push_back(Processor::TOC_PROC);
     }
 
     //--------------------------------------------------------------------------

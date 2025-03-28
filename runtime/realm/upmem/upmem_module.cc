@@ -133,7 +133,7 @@ namespace Realm {
         if(config->cfg_use_worker_threads)
           shared_worker->start_background_thread(
               runtime->core_reservation_set(),
-              64 * MEGABYTE); // hardcoded worker stack size
+              config->cfg_mram_mem_size);
         else
           shared_worker->add_to_manager(&(runtime->bgwork));
       }
@@ -167,7 +167,7 @@ namespace Realm {
 
           if(config->cfg_use_worker_threads)
             worker->start_background_thread(runtime->core_reservation_set(),
-                                            64 * MEGABYTE); // hardcoded worker stack size
+                                             config->cfg_mram_mem_size);
           else
             worker->add_to_manager(&(runtime->bgwork));
         }
@@ -211,15 +211,12 @@ namespace Realm {
           abort();
         }
 
-        // Memory m = runtime->next_local_memory_id();
-        // zcmem = new DPUZCMemory(m, zcmem_dpu_base, config->cfg_zc_mem_size);
-        // runtime->add_memory(zcmem);
+        Memory m = runtime->next_local_memory_id();
+        zcmem = new DPUZCMemory(m, zcmem_dpu_base, config->cfg_zc_mem_size);
+        runtime->add_memory(zcmem);
 
-        // add the ZC memory as a pinned memory to all GPUs
+        // add the ZC memory as a pinned memory to all DPUs
         for(unsigned i = 0; i < dpus.size(); i++) {
-          Memory m = runtime->next_local_memory_id();
-          zcmem = new DPUZCMemory(m, zcmem_dpu_base, config->cfg_zc_mem_size);
-          runtime->add_memory(zcmem);
           dpus[i]->pinned_sysmems.insert(zcmem->me);
         }
       }
@@ -235,6 +232,8 @@ namespace Realm {
         ib_mem = new IBMemory(m, config->cfg_zc_ib_size, MemoryImpl::MKIND_ZEROCOPY,
                               Memory::Z_COPY_MEM, zcib_cpu_base, 0);
         runtime->add_ib_memory(ib_mem);
+
+        // add the IB memory as a pinned memory to all the DPUs
         for(unsigned i = 0; i < dpus.size(); i++) {
           dpus[i]->pinned_sysmems.insert(ib_mem->me);
         }
@@ -251,7 +250,7 @@ namespace Realm {
       // we can load a MAX of 64MB per DPU. This is the stack size limit here.
       for(std::vector<DPU *>::iterator it = dpus.begin(); it != dpus.end(); it++) {
         // each dpu in the dpu iterator is a processor in Realm.
-        (*it)->create_processor(runtime, 64 * MEGABYTE);
+        (*it)->create_processor(runtime, config->cfg_mram_mem_size);
       }
     }
 
@@ -268,6 +267,7 @@ namespace Realm {
         // </NEW_DMA>
         for(std::vector<MemoryImpl *>::iterator it = all_local_mems.begin();
             it != all_local_mems.end(); it++) {
+
           // ignore MRAM memories or anything that doesn't have a "direct" pointer
           if(((*it)->kind == MemoryImpl::MKIND_MRAM))
             continue;
@@ -279,52 +279,22 @@ namespace Realm {
             log_dpu.info() << "memory " << (*it)->me << " is larger than hostreg limit ("
                            << (*it)->size << " > " << config->cfg_hostreg_limit
                            << ") - skipping registration";
+            assert(0 && "We should not be here\n");
             continue;
           }
 
           void *base = (*it)->get_direct_ptr(0, (*it)->size);
+
           if(base == 0)
             continue;
 
-          // // using GPU 0's context, attempt a portable registration
-          // hipError_t ret;
-          // {
-          //   ret = hipHostRegister(base, (*it)->size,
-          //         hipHostRegisterPortable |
-          //         hipHostRegisterMapped);
-          // }
-          // if(ret != hipSuccess) {
-          //   log_dpu.info() << "failed to register mem " << (*it)->me << " (" << base <<
-          //   " + " << (*it)->size << ") : "
-          //       << ret;
-          //   continue;
-          // }
-
           registered_host_ptrs.push_back(base);
 
-          // now go through each GPU and verify that it got a GPU pointer (it may not
-          // match the CPU
-          //  pointer, but that's ok because we'll never refer to it directly)
+          // now go through each DPU
           for(unsigned i = 0; i < dpus.size(); i++) {
             log_dpu.info() << "memory " << (*it)->me
-                           << " successfully registered with GPU " << dpus[i]->proc->me;
+                           << " successfully registered with DPU " << dpus[i]->proc->me;
             dpus[i]->pinned_sysmems.insert((*it)->me);
-
-            // char *dpuptr;
-            // hipError_t ret;
-            // {
-            //   AutoGPUContext agc(dpus[i]);
-            //   ret = hipHostGetDevicePointer((void **)&dpuptr, base, 0);
-            // }
-            // if(ret == hipSuccess) {
-            //   // no test for && ((void *)dpuptr == base)) {
-            //   log_dpu.info() << "memory " << (*it)->me << " successfully registered
-            //   with GPU " << dpus[i]->proc->me;
-            //   dpus[i]->pinned_sysmems.insert((*it)->me);
-            // } else {
-            //   log_dpu.warning() << "GPU #" << i << " has no mapping for registered
-            //   memory (" << (*it)->me << " at " << base << ") !?";
-            // }
           }
         }
       }

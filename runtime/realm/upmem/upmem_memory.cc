@@ -50,7 +50,7 @@ namespace Realm {
     // these work, but they are SLOW
     void DPUMRAMMemory::get_bytes(off_t offset, void *dst, size_t size)
     {
-      // use a blocking copy - host memory probably isn't pinned anyway
+      // use a blocking copy
       {
         // we need to get the dpu_set_t stream
         CHECK_UPMEM(dpu_copy_from(*stream->get_stream(), DPU_MRAM_HEAP_POINTER_NAME,
@@ -60,7 +60,7 @@ namespace Realm {
 
     void DPUMRAMMemory::put_bytes(off_t offset, const void *src, size_t size)
     {
-      // use a blocking copy - host memory probably isn't pinned anyway
+      // use a blocking copy
       {
         // we need to get the dpu_set_t stream
         CHECK_UPMEM(dpu_broadcast_to(*stream->get_stream(), DPU_MRAM_HEAP_POINTER_NAME,
@@ -70,7 +70,7 @@ namespace Realm {
 
     void *DPUMRAMMemory::get_direct_ptr(off_t offset, size_t size)
     {
-      return (void *)(0x8 + offset);
+      return (void *)((0x8 + offset)); // TODO should be number of DPUs per process
     }
 
     ////////////////////////////////////////////////////////////////////////

@@ -43,14 +43,10 @@ namespace Realm {
         const UpmemDeviceMemoryInfo *cdm =
             mem->find_module_specific<UpmemDeviceMemoryInfo>();
         if(cdm && cdm->dpu)
-          return cdm->dpu;
-
-        // not a dpu-associated memory
-        return 0;
-      } else {
-        // not a dpu-associated memory
-        return 0;
+          return cdm->dpu;       
       }
+      // not a dpu-associated memory
+      return 0;
     }
 
     DPUXferDes::DPUXferDes(uintptr_t _dma_op, Channel *_channel, NodeID _launch_node,
@@ -99,8 +95,8 @@ namespace Realm {
       bool did_work = false;
       std::string memcpy_kind;
 
-      ReadSequenceCache rseqcache(this, 2 << 20);
-      WriteSequenceCache wseqcache(this, 2 << 20);
+      ReadSequenceCache rseqcache(this,  MEGABYTE);
+      WriteSequenceCache wseqcache(this, MEGABYTE);
 
       while(true) {
         size_t min_xfer_size = 4096; // TODO: make controllable
@@ -179,9 +175,9 @@ namespace Realm {
               size_t bytes_left = max_bytes - total_bytes;
 
               // limit transfer size for host<->device copies
-              if((bytes_left > (4 << 20)) &&
+              if((bytes_left > (32 * MEGABYTE)) &&
                  (!in_dpu || (!out_dpu && (out_ipc_index == -1))))
-                bytes_left = 4 << 20;
+                bytes_left = 32 * MEGABYTE;
 
               assert(in_dim > 0);
               assert(out_dim > 0);
@@ -205,8 +201,8 @@ namespace Realm {
 
                 // grr...  prototypes of these differ slightly...
                 DPUMemcpyKind copy_type;
-                size_t baseoffset_src = 0;
-                size_t baseoffset_dst = 0;
+                size_t baseoffset_host = 0;
+                size_t baseoffset_dpu = 0;
 
                 if(in_dpu) {
                   if(out_dpu == in_dpu || (out_ipc_index >= 0)) {
@@ -214,20 +210,21 @@ namespace Realm {
                   } else if(!out_dpu) {
                     copy_type = DPU_XFER_FROM_DPU;
                     stream = in_dpu->stream;
-                    baseoffset_src = out_base + out_offset;
-                    baseoffset_dst = in_base + in_offset;
+                    baseoffset_dpu = DPU_REALM_ADDRESS((in_base + in_offset)); // input = dpu
+                    baseoffset_host = out_base + out_offset; // output = host
                   }
                 } else {
                   copy_type = DPU_XFER_TO_DPU;
                   stream = out_dpu->stream;
-                  baseoffset_src = in_base + in_offset;
-                  baseoffset_dst = out_base + out_offset;
+                  baseoffset_host = in_base + in_offset; // input = host
+                  baseoffset_dpu = DPU_REALM_ADDRESS((out_base + out_offset)); // output = dpu
+
                 }
 
                 CHECK_UPMEM(
-                    dpu_prepare_xfer(*(stream->get_stream()), (void *)(baseoffset_src)));
+                    dpu_prepare_xfer(*(stream->get_stream()), (void *)(baseoffset_host)));
                 CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), copy_type,
-                                          DPU_MRAM_HEAP_POINTER_NAME, baseoffset_dst,
+                                          DPU_MRAM_HEAP_POINTER_NAME, baseoffset_dpu,
                                           bytes, XFER_SYNC_TYPE));
 
                 // CHECK_HIP(
@@ -302,36 +299,36 @@ namespace Realm {
                     break;
 
                   DPUMemcpyKind copy_type;
-                  size_t baseoffset_src, baseoffset_dst;
+                  size_t baseoffset_dpu, baseoffset_host;
                   if(in_dpu) {
                     if(out_dpu == in_dpu || (out_ipc_index >= 0)) {
                       printf("device to device not currently supported\n");
                     } else if(!out_dpu) {
                       copy_type = DPU_XFER_FROM_DPU;
                       stream = in_dpu->stream;
-                      baseoffset_src = out_base + out_offset;
-                      baseoffset_dst = in_base + in_offset;
+                      baseoffset_dpu = DPU_REALM_ADDRESS((out_base + out_offset)); // input = dpu
+                      baseoffset_host = in_base + in_offset; // output = host
                     }
                   } else {
                     copy_type = DPU_XFER_TO_DPU;
-                    stream = out_dpu->stream;
-                    baseoffset_src = in_base + in_offset;
-                    baseoffset_dst = out_base + out_offset;
+                    stream = out_dpu->stream; 
+                    baseoffset_host = in_base + in_offset; // input = host
+                    baseoffset_dpu = DPU_REALM_ADDRESS((out_base + out_offset)); // output = dpu
                   }
 
-                  const void *src = reinterpret_cast<const void *>(baseoffset_src);
-                  size_t dst = (baseoffset_dst);
+                  const void *src = reinterpret_cast<const void *>(baseoffset_host);
+
 
                   log_dpudma.info()
-                      << "dpu memcpy 2d: dst=" << std::hex << (baseoffset_dst) << std::dec
-                      << "+" << out_lstride << " src=" << std::hex << (baseoffset_src)
+                      << "dpu memcpy 2d: dst=" << std::hex << (baseoffset_dpu) << std::dec
+                      << "+" << out_lstride << " src=" << std::hex << (baseoffset_host)
                       << std::dec << "+" << in_lstride << " bytes=" << bytes
                       << " lines=" << lines << " stream=" << stream
                       << " kind=" << memcpy_kind;
 
                   CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()), (void *)src));
                   CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), copy_type,
-                                            DPU_MRAM_HEAP_POINTER_NAME, dst,
+                                            DPU_MRAM_HEAP_POINTER_NAME, baseoffset_dpu,
                                             lines * contig_bytes, XFER_SYNC_TYPE));
 
                   // CHECK_HIP(hipMemcpy2DAsync(dst, out_lstride, src, in_lstride,
@@ -384,7 +381,7 @@ namespace Realm {
                   //  allowing us to stop early if we hit the rate limit or a
                   //  timeout
                   DPUMemcpyKind copy_type;
-                  size_t baseoffset_src, baseoffset_dst;
+                  size_t baseoffset_dpu, baseoffset_host;
 
                   size_t act_planes = 0;
                   while(act_planes < planes) {
@@ -395,16 +392,16 @@ namespace Realm {
                       } else if(!out_dpu) {
                         copy_type = DPU_XFER_FROM_DPU;
                         stream = in_dpu->stream;
-                        baseoffset_src =
-                            (out_base + out_offset + (act_planes * out_pstride));
-                        baseoffset_dst = in_base + in_offset + (act_planes * in_pstride);
+                        baseoffset_dpu =
+                            DPU_REALM_ADDRESS((out_base + out_offset + (act_planes * out_pstride))); // input = dpu
+                        baseoffset_host = in_base + in_offset + (act_planes * in_pstride); // output = host
                       }
                     } else {
                       copy_type = DPU_XFER_TO_DPU;
                       stream = out_dpu->stream;
-                      baseoffset_src = in_base + in_offset + (act_planes * in_pstride);
-                      baseoffset_dst =
-                          (out_base + out_offset + (act_planes * out_pstride));
+                      baseoffset_host = in_base + in_offset + (act_planes * in_pstride); // input = host
+                      baseoffset_dpu =
+                          DPU_REALM_ADDRESS((out_base + out_offset + (act_planes * out_pstride))); // output = dpu
                     }
 
                     // check rate limit on stream
@@ -412,9 +409,9 @@ namespace Realm {
                       break;
 
                     CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()),
-                                                 (void *)baseoffset_src));
+                                                 (void *)baseoffset_host));
                     CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), copy_type,
-                                              DPU_MRAM_HEAP_POINTER_NAME, baseoffset_dst,
+                                              DPU_MRAM_HEAP_POINTER_NAME, baseoffset_dpu,
                                               lines * contig_bytes, XFER_SYNC_TYPE));
 
                     // CHECK_HIP(hipMemcpy2DAsync(dst, out_lstride, src, in_lstride,
@@ -531,10 +528,14 @@ namespace Realm {
       std::vector<Memory> peer_dpu_mems;
       peer_dpu_mems.insert(peer_dpu_mems.end(), src_dpu->peer_mram.begin(),
                            src_dpu->peer_mram.end());
+
+      // ipc
       for(std::vector<DPU::UpmemIpcMapping>::const_iterator it =
               src_dpu->upmemipc_mappings.begin();
           it != src_dpu->upmemipc_mappings.end(); ++it)
+      {
         peer_dpu_mems.push_back(it->mem);
+      }
 
       // look for any other local memories that belong to our context or
       //  peer-able contexts
@@ -544,6 +545,7 @@ namespace Realm {
         UpmemDeviceMemoryInfo *cdm = (*it)->find_module_specific<UpmemDeviceMemoryInfo>();
         if(!cdm)
           continue;
+        
         if(cdm->device_id == src_dpu->device_id) {
           local_dpu_mems.push_back((*it)->me);
         } else {
@@ -707,8 +709,8 @@ namespace Realm {
     bool DPUfillXferDes::progress_xd(DPUfillChannel *channel, TimeLimit work_until)
     {
       bool did_work = false;
-      ReadSequenceCache rseqcache(this, 2 << 20);
-      WriteSequenceCache wseqcache(this, 2 << 20);
+      ReadSequenceCache rseqcache(this, MEGABYTE);
+      WriteSequenceCache wseqcache(this, MEGABYTE);
 
       DPUStream *stream = channel->dpu->get_next_task_stream(false);
 
@@ -766,7 +768,7 @@ namespace Realm {
             {
               CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()), buffer));
               CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), DPU_XFER_TO_DPU,
-                                        DPU_MRAM_HEAP_POINTER_NAME, out_base + out_offset,
+                                        DPU_MRAM_HEAP_POINTER_NAME, DPU_REALM_ADDRESS(out_base + out_offset),
                                         elems * fill_size, XFER_SYNC_TYPE));
             }
 
@@ -792,7 +794,7 @@ namespace Realm {
 
                 CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()), (void *)srcDevice));
                 CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), DPU_XFER_TO_DPU,
-                                          DPU_MRAM_HEAP_POINTER_NAME, dstDevice,
+                                          DPU_MRAM_HEAP_POINTER_NAME, DPU_REALM_ADDRESS(dstDevice),
                                           bytes * todo, XFER_SYNC_TYPE));
 
                 // CHECK_HIP(hipMemcpy2DAsync(dstDevice, lstride, srcDevice, lstride,
@@ -814,7 +816,7 @@ namespace Realm {
                   CHECK_UPMEM(
                       dpu_prepare_xfer(*(stream->get_stream()), (void *)srcDevice));
                   CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), DPU_XFER_TO_DPU,
-                                            DPU_MRAM_HEAP_POINTER_NAME, dstDevice,
+                                            DPU_MRAM_HEAP_POINTER_NAME, DPU_REALM_ADDRESS(dstDevice),
                                             bytes * lines, XFER_SYNC_TYPE));
 
                   // CHECK_HIP(hipMemcpy2DAsync(dstDevice, lstride, srcDevice, lstride,
@@ -950,8 +952,8 @@ namespace Realm {
     bool DPUreduceXferDes::progress_xd(DPUreduceChannel *channel, TimeLimit work_until)
     {
       bool did_work = false;
-      ReadSequenceCache rseqcache(this, 2 << 20);
-      ReadSequenceCache wseqcache(this, 2 << 20);
+      ReadSequenceCache rseqcache(this, MEGABYTE);
+      ReadSequenceCache wseqcache(this, MEGABYTE);
 
       const size_t in_elem_size = redop->sizeof_rhs;
       const size_t out_elem_size =

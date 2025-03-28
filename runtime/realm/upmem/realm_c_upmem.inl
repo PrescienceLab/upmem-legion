@@ -879,7 +879,7 @@ inline FT *AffineAccessor<FT, N, T>::get_ptr(const Point<N, T> &p) const
   for(int i = 0; i < N; i++)
     rawptr += p[i] * strides[i];
 
-  return reinterpret_cast<FT *>(rawptr);
+  return reinterpret_cast<FT *>(rawptr % (64*(1<<20))); // TODO should be # of DPUs per process
 }
 
 ////////////////////////////////////////////////////////////////////////
