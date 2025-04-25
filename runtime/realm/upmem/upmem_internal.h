@@ -120,10 +120,9 @@ namespace Realm {
       std::set<Memory> peer_mram;
 
       DPUStream *find_stream(struct dpu_set_t *stream) const;
-      DPUStream *get_null_task_stream(void) const;
-      DPUStream *get_next_task_stream(bool create = false);
+      DPUStream *get_null_stream(void) const;
+      DPUStream *get_next_stream(bool create = false);
 
-      std::vector<DPUStream *> task_streams;
       atomic<unsigned> next_task_stream;
 
       DPUEventPool event_pool;

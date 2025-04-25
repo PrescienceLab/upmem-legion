@@ -78,7 +78,6 @@ namespace Realm {
       assert(module->config->cfg_task_streams > 0 &&
              "cfg_task_streams should be set to zero");
 
-      task_streams.resize(1);
       dpu_rank_t *rank = module->allocated_set->list.ranks[device_id];
       dpu_set_t *single_dpu =  new dpu_set_t;
       single_dpu->list.ranks = new dpu_rank_t *;
@@ -88,10 +87,6 @@ namespace Realm {
 
       stream = new DPUStream(this, worker);
       stream->set_stream(single_dpu);
-      task_streams[0] = stream;
-
-      // for(unsigned i = 0; i < module->config->cfg_task_streams; i++)
-      //   task_streams[i] = new DPUStream(this, worker);
     }
 
     DPU::~DPU(void)
@@ -221,36 +216,30 @@ namespace Realm {
       }
     }
 
-    DPUStream *DPU::find_stream(struct dpu_set_t *stream) const
-    {
-      for(std::vector<DPUStream *>::const_iterator it = task_streams.begin();
-          it != task_streams.end(); it++)
-        if((*it)->get_stream() == stream)
-          return *it;
-      return NULL;
-    }
-
-    DPUStream *DPU::get_null_task_stream(void) const
+    DPUStream *DPU::get_null_stream(void) const
     {
       DPUStream *stream = ThreadLocal::current_dpu_stream;
       assert(stream != NULL);
       return stream;
     }
 
-    DPUStream *DPU::get_next_task_stream(bool create)
+    DPUStream *DPU::get_next_stream(bool create)
     {
-      if(create && !ThreadLocal::created_dpu_streams) {
-        // First time we get asked to create, user our current stream
-        ThreadLocal::created_dpu_streams = new std::set<DPUStream *>();
-        assert(ThreadLocal::current_dpu_stream);
-        ThreadLocal::created_dpu_streams->insert(ThreadLocal::current_dpu_stream);
-        return ThreadLocal::current_dpu_stream;
-      }
-      // unsigned index = next_task_stream.fetch_add(1) % task_streams.size();
-      DPUStream *result = task_streams[0];
-      if(create)
-        ThreadLocal::created_dpu_streams->insert(result);
-      return result;
+      // if(create && !ThreadLocal::created_dpu_streams) {
+      //   // First time we get asked to create, user our current stream
+      //   ThreadLocal::created_dpu_streams = new std::set<DPUStream *>();
+      //   assert(ThreadLocal::current_dpu_stream);
+      //   ThreadLocal::created_dpu_streams->insert(ThreadLocal::current_dpu_stream);
+      //   return ThreadLocal::current_dpu_stream;
+      // }
+      // // unsigned index = next_task_stream.fetch_add(1) % task_streams.size();
+      // DPUStream *result = task_streams[0];
+      // if(create)
+      //   ThreadLocal::created_dpu_streams->insert(result);
+      // return result;
+
+      assert(stream != NULL);
+      return stream;
     }
 
     ///////////////////////////////////////////////////////////////////////
@@ -423,7 +412,7 @@ namespace Realm {
     {
 
       if(!block_on_synchronize) {
-        DPUStream *s = dpu->find_stream(stream);
+        DPUStream *s = dpu->get_null_stream();
         if(s) {
           // We don't actually want to block the GPU processor
           // when synchronizing, so we instead register a cuda
@@ -479,7 +468,7 @@ namespace Realm {
       // bump the current stream
       // TODO: sanity-check whether this even works right when DPU tasks suspend
       assert(ThreadLocal::current_dpu_stream == 0);
-      DPUStream *s = dpu_proc->dpu->get_next_task_stream();
+      DPUStream *s = dpu_proc->dpu->get_next_stream();
       ThreadLocal::current_dpu_stream = s;
       assert(!ThreadLocal::created_dpu_streams);
 
@@ -545,7 +534,7 @@ namespace Realm {
       ThreadLocal::current_dpu_proc = dpu_proc;
 
       assert(ThreadLocal::current_dpu_stream == 0);
-      DPUStream *s = dpu_proc->dpu->get_next_task_stream();
+      DPUStream *s = dpu_proc->dpu->get_next_stream();
       ThreadLocal::current_dpu_stream = s;
       assert(!ThreadLocal::created_dpu_streams);
 
@@ -590,13 +579,10 @@ namespace Realm {
       , syncing_threads(0)
     {
       Realm::CoreReservationParameters params;
-      // params.set_num_cores(_dpu->module->config->cfg_num_dpus);
       params.set_num_cores(1);
       params.set_alu_usage(params.CORE_USAGE_EXCLUSIVE);
       params.set_fpu_usage(params.CORE_USAGE_EXCLUSIVE);
       params.set_ldst_usage(params.CORE_USAGE_SHARED);
-      // params.set_max_stack_size(_dpu->module->config->cfg_mram_mem_size * 
-      //                               _dpu->module->config->cfg_num_dpus); 
       params.set_max_stack_size(_dpu->module->config->cfg_mram_mem_size); 
 
       std::string name = stringbuilder() << "DPU ctxsync " << device_id;

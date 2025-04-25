@@ -712,7 +712,7 @@ namespace Realm {
       ReadSequenceCache rseqcache(this, MEGABYTE);
       WriteSequenceCache wseqcache(this, MEGABYTE);
 
-      DPUStream *stream = channel->dpu->get_next_task_stream(false);
+      DPUStream *stream = channel->dpu->get_next_stream(false);
 
       while(true) {
         size_t min_xfer_size = 4096; // TODO: make controllable
@@ -939,7 +939,7 @@ namespace Realm {
 
       kernel_host_proxy = host_proxy;
       // stream = dpu->get_next_d2d_stream();
-      stream = dpu->get_next_task_stream();
+      stream = dpu->get_next_stream();
     }
 
     long DPUreduceXferDes::get_requests(Request **requests, long nr)
