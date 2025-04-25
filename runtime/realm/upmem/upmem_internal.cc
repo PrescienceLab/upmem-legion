@@ -78,15 +78,14 @@ namespace Realm {
       assert(module->config->cfg_task_streams > 0 &&
              "cfg_task_streams should be set to zero");
 
-      dpu_rank_t *rank = module->allocated_set->list.ranks[device_id];
-      dpu_set_t *single_dpu =  new dpu_set_t;
-      single_dpu->list.ranks = new dpu_rank_t *;
-      
-      single_dpu->list.nr_ranks = 1;
-      *single_dpu->list.ranks  = rank;
+      // dpu_rank_t *rank = module->allocated_set->list.ranks[device_id];
+      // dpu_set_t *single_dpu =  new dpu_set_t;
+      // single_dpu->list.ranks = new dpu_rank_t *;      
+      // single_dpu->list.nr_ranks = 1;
+      // *single_dpu->list.ranks  = rank;
 
       stream = new DPUStream(this, worker);
-      stream->set_stream(single_dpu);
+      stream->set_stream(module->allocated_dpus[device_id]);
     }
 
     DPU::~DPU(void)

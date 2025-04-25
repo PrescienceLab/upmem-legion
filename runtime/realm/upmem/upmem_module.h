@@ -143,7 +143,8 @@ namespace Realm {
       std::vector<DPUInfo *> dpu_info;
       std::vector<DPU *> dpus;
       DPUZCMemory *zcmem;
-      dpu_set_t *allocated_set;
+      
+      std::vector<dpu_set_t *> allocated_dpus;
       
       void *zcmem_cpu_base, *zcib_cpu_base;
 

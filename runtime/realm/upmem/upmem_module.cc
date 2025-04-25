@@ -84,7 +84,10 @@ namespace Realm {
 
     UpmemModule::~UpmemModule(void)
     {
-      CHECK_UPMEM(dpu_free(*allocated_set));
+      
+      for(int i = 0; i < config->cfg_num_dpus; i++) {
+          CHECK_UPMEM(dpu_free(*allocated_dpus[i]));
+      }
       
       assert(config != nullptr);
       config = nullptr;
@@ -145,12 +148,6 @@ namespace Realm {
 
       dpus.resize(config->cfg_num_dpus);
       dpu_info.resize(config->cfg_num_dpus);
-      allocated_set = new dpu_set_t;
-#if !defined(__SIMULATOR__)
-        CHECK_UPMEM(dpu_alloc(config->cfg_num_dpus, "backend=hw", allocated_set));
-#else
-        CHECK_UPMEM(dpu_alloc(config->cfg_num_dpus, "backend=simulator", allocated_set));
-#endif
 
       unsigned dpu_count = 0;
       // try to get cfg_num_dpus, working through the list in order
@@ -158,6 +155,14 @@ namespace Realm {
           (i < dpu_info.size()) && (static_cast<int>(dpu_count) < config->cfg_num_dpus);
           i++) {
         int idx = (fixed_indices.empty() ? i : fixed_indices[i]);
+        dpu_set_t *allocated_dpu = new dpu_set_t;
+        allocated_dpus.push_back(allocated_dpu);
+
+        #if !defined(__SIMULATOR__)
+                CHECK_UPMEM(dpu_alloc(1, "backend=hw", allocated_dpu));
+        #else
+                CHECK_UPMEM(dpu_alloc(1, "backend=simulator", allocated_dpu));
+        #endif
 
         DPUWorker *worker;
         if(config->cfg_use_shared_worker) {
