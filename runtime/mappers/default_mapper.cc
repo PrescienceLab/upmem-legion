@@ -1739,9 +1739,7 @@ namespace Legion {
         {
 			case Processor::DPU_PROC:
 				{
-			target_procs.push_back(task.target_proc);
-			break;
-			
+			 target_procs.push_back(task.target_proc);
 				}
           case Processor::TOC_PROC:
             {
@@ -2613,7 +2611,8 @@ namespace Legion {
       // Heuristically use the exact region if the target memory is either a GPU
       // framebuffer or a zero copy memory.
       if (target_memory.kind() == Memory::GPU_FB_MEM ||
-          target_memory.kind() == Memory::Z_COPY_MEM)
+          target_memory.kind() == Memory::Z_COPY_MEM ||
+          target_memory.kind() == Memory::DPU_MRAM_MEM)
         return result;
 
       // Need to use the exact region if the padding constraint is requested
@@ -3283,7 +3282,7 @@ namespace Legion {
             output.chosen_instances.begin(); it !=
             output.chosen_instances.end(); it++)
       {
-        if (it->get_location().kind() == Memory::GPU_FB_MEM) {
+        if (it->get_location().kind() == Memory::GPU_FB_MEM || it->get_location().kind() == Memory::DPU_MRAM_MEM) {
           // These instances are not supported yet (see Legion issue #516)
           to_erase.push_back(it - output.chosen_instances.begin());
         } else {

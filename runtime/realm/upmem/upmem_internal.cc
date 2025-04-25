@@ -268,7 +268,7 @@ namespace Realm {
       params.set_num_cores(1);
       params.set_alu_usage(params.CORE_USAGE_EXCLUSIVE);
       params.set_fpu_usage(params.CORE_USAGE_EXCLUSIVE);
-      params.set_ldst_usage(params.CORE_USAGE_EXCLUSIVE);
+      params.set_ldst_usage(params.CORE_USAGE_SHARED);
       params.set_max_stack_size(_stack_size); // 64 MB for each DPU
 
       std::string name = stringbuilder() << "DPU proc " << _me;
@@ -590,11 +590,12 @@ namespace Realm {
       , syncing_threads(0)
     {
       Realm::CoreReservationParameters params;
-      params.set_num_cores(1);
+      params.set_num_cores(_dpu->module->config->cfg_num_dpus);
       params.set_alu_usage(params.CORE_USAGE_EXCLUSIVE);
       params.set_fpu_usage(params.CORE_USAGE_EXCLUSIVE);
-      params.set_ldst_usage(params.CORE_USAGE_EXCLUSIVE);
-      params.set_max_stack_size(_dpu->module->config->cfg_mram_mem_size); 
+      params.set_ldst_usage(params.CORE_USAGE_SHARED);
+      params.set_max_stack_size(_dpu->module->config->cfg_mram_mem_size * 
+                                    _dpu->module->config->cfg_num_dpus); 
 
       std::string name = stringbuilder() << "DPU ctxsync " << device_id;
 
