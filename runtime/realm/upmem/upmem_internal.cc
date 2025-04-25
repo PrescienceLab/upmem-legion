@@ -590,12 +590,14 @@ namespace Realm {
       , syncing_threads(0)
     {
       Realm::CoreReservationParameters params;
-      params.set_num_cores(_dpu->module->config->cfg_num_dpus);
+      // params.set_num_cores(_dpu->module->config->cfg_num_dpus);
+      params.set_num_cores(1);
       params.set_alu_usage(params.CORE_USAGE_EXCLUSIVE);
       params.set_fpu_usage(params.CORE_USAGE_EXCLUSIVE);
       params.set_ldst_usage(params.CORE_USAGE_SHARED);
-      params.set_max_stack_size(_dpu->module->config->cfg_mram_mem_size * 
-                                    _dpu->module->config->cfg_num_dpus); 
+      // params.set_max_stack_size(_dpu->module->config->cfg_mram_mem_size * 
+      //                               _dpu->module->config->cfg_num_dpus); 
+      params.set_max_stack_size(_dpu->module->config->cfg_mram_mem_size); 
 
       std::string name = stringbuilder() << "DPU ctxsync " << device_id;
 
@@ -751,4 +753,4 @@ namespace Realm {
     }
 
   }; // namespace Upmem
-};   // namespace Realm
+};
