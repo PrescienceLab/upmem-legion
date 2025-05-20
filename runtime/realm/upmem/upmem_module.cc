@@ -85,8 +85,8 @@ namespace Realm {
     UpmemModule::~UpmemModule(void)
     {
       
-      for(int i = 0; i < config->cfg_num_dpus; i++) {
-          CHECK_UPMEM(dpu_free(*allocated_dpus[i]));
+      for(int i = 0; i < (config->cfg_num_dpus / 64); i++) {
+          CHECK_UPMEM(dpu_free(*allocated_dpu_sets[i]));
       }
       
       assert(config != nullptr);
@@ -141,48 +141,49 @@ namespace Realm {
           shared_worker->add_to_manager(&(runtime->bgwork));
       }
 
-      std::vector<unsigned> fixed_indices;
-
       // each DPU has 64MB of MRAM and 64KB of cache
       // we need to add each DPU to the core reservation in Realm
 
       dpus.resize(config->cfg_num_dpus);
       dpu_info.resize(config->cfg_num_dpus);
 
-      unsigned dpu_count = 0;
+      uint64_t dpu_count = 0;
       // try to get cfg_num_dpus, working through the list in order
-      for(size_t i = config->cfg_skip_dpu_count;
-          (i < dpu_info.size()) && (static_cast<int>(dpu_count) < config->cfg_num_dpus);
-          i++) {
-        int idx = (fixed_indices.empty() ? i : fixed_indices[i]);
-        dpu_set_t *allocated_dpu = new dpu_set_t;
-        allocated_dpus.push_back(allocated_dpu);
+      while(dpu_count < (uint64_t)config->cfg_num_dpus) { 
+  
+        uint64_t dpus_allocated = std::min<uint64_t>(config->cfg_num_dpus, 64);
 
-        #if !defined(__SIMULATOR__)
-                CHECK_UPMEM(dpu_alloc(1, "backend=hw", allocated_dpu));
-        #else
-                CHECK_UPMEM(dpu_alloc(1, "backend=simulator", allocated_dpu));
-        #endif
+        dpu_set_t *allocated_dpu_set_single = new dpu_set_t;
+        allocated_dpu_sets.push_back(allocated_dpu_set_single);
 
-        DPUWorker *worker;
-        if(config->cfg_use_shared_worker) {
-          worker = shared_worker;
-        } else {
-          worker = new DPUWorker;
+  #if !defined(__SIMULATOR__)
+        CHECK_UPMEM(dpu_alloc(dpus_allocated, "backend=hw", allocated_dpu_set_single));
+  #else
+        CHECK_UPMEM(dpu_alloc(dpus_allocated, "backend=simulator", allocated_dpu_set_single));
+  #endif
 
-          if(config->cfg_use_worker_threads)
-            worker->start_background_thread(runtime->core_reservation_set(),
-                                             config->cfg_mram_mem_size);
-          else
-            worker->add_to_manager(&(runtime->bgwork));
+        for(uint64_t j=0; j < dpus_allocated; j++) {
+          DPUWorker *worker;
+          if(config->cfg_use_shared_worker) {
+            worker = shared_worker;
+          } else {
+            worker = new DPUWorker;
+
+            if(config->cfg_use_worker_threads)
+              worker->start_background_thread(runtime->core_reservation_set(),
+                                              config->cfg_mram_mem_size);
+            else
+              worker->add_to_manager(&(runtime->bgwork));
+          }
+          DPU *g = new DPU(this, dpu_info[dpu_count], worker, dpu_count);
+
+          if(!config->cfg_use_shared_worker)
+            dedicated_workers[g] = worker;
+
+          dpus[dpu_count++] = g;
         }
-        DPU *g = new DPU(this, dpu_info[idx], worker, idx);
-
-        if(!config->cfg_use_shared_worker)
-          dedicated_workers[g] = worker;
-
-        dpus[dpu_count++] = g;
       }
+
 
       if(static_cast<int>(dpu_count) < config->cfg_num_dpus) {
         log_dpu.fatal() << config->cfg_num_dpus << " DPUs requested, but only "

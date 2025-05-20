@@ -47,7 +47,7 @@ namespace Realm {
         CHECK_UPMEM(dpu_launch(*stream, DPU_SYNCHRONOUS));
 
         // once heap is cleared, load this
-        CHECK_UPMEM(dpu_load(*stream, this->bin, NULL));
+        CHECK_UPMEM(dpu_load(*stream, this->bin, NULL)); // launch binaries at a stream granularity
       }
     }
 

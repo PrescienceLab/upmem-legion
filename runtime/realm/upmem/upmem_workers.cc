@@ -17,6 +17,13 @@
 #include "realm/upmem/upmem_workers.h"
 #include "realm/upmem/upmem_internal.h"
 
+
+#define GET_IDXED_DPU(set, dpu, i)                                                          \
+    for (struct dpu_set_dpu_iterator_t __dpu_it = dpu_set_dpu_iterator_from(&set);          \
+         dpu = __dpu_it.next, __dpu_it.has_next; dpu_set_dpu_iterator_next(&__dpu_it))      \
+         {if (i == __dpu_it.count) break;}
+
+
 namespace Realm {
 
   extern Logger log_xd;
@@ -281,7 +288,14 @@ namespace Realm {
     void DPUWorkFence::enqueue_on_stream(DPUStream *stream)
     {
       if(stream->get_dpu()->module->config->cfg_fences_use_callbacks) {
-        CHECK_UPMEM(dpu_callback(*stream->get_stream(), &upmem_start_callback,
+
+        uint64_t idx_dpu = stream->get_dpu()->device_id % 64;
+        dpu_set_t indexed_dpu; 
+        GET_IDXED_DPU(*(stream->get_stream()), indexed_dpu, idx_dpu)
+
+
+
+        CHECK_UPMEM(dpu_callback(indexed_dpu, &upmem_start_callback,
                                  (void *)this,
                                  (dpu_callback_flags_t)(DPU_CALLBACK_ASYNC)));
       } else {
@@ -313,7 +327,13 @@ namespace Realm {
     void DPUWorkStart::enqueue_on_stream(DPUStream *stream)
     {
       if(stream->get_dpu()->module->config->cfg_fences_use_callbacks) {
-        CHECK_UPMEM(dpu_callback(*stream->get_stream(), &upmem_start_callback,
+        
+        uint64_t idx_dpu = stream->get_dpu()->device_id % 64;
+        dpu_set_t indexed_dpu; 
+        GET_IDXED_DPU(*(stream->get_stream()), indexed_dpu, idx_dpu)
+
+
+        CHECK_UPMEM(dpu_callback(indexed_dpu, &upmem_start_callback,
                                  (void *)this,
                                  (dpu_callback_flags_t)(DPU_CALLBACK_ASYNC)));
       } else {
