@@ -18,12 +18,6 @@
 
 #define XFER_SYNC_TYPE DPU_XFER_ASYNC
 
-#define GET_IDXED_DPU(set, dpu, i)                                                          \
-    for (struct dpu_set_dpu_iterator_t __dpu_it = dpu_set_dpu_iterator_from(&set);          \
-         dpu = __dpu_it.next, __dpu_it.has_next; dpu_set_dpu_iterator_next(&__dpu_it))      \
-         {if (i == __dpu_it.count) break;}
-
-
 namespace Realm {
 
   extern Logger log_xd;
@@ -219,22 +213,17 @@ namespace Realm {
                     stream = in_dpu->stream;
                     baseoffset_dpu = DPU_REALM_ADDRESS((in_base + in_offset)); // input = dpu
                     baseoffset_host = out_base + out_offset; // output = host
-                    idx_dpu = in_dpu->device_id % 64; 
                   }
                 } else {
                   copy_type = DPU_XFER_TO_DPU;
                   stream = out_dpu->stream;
                   baseoffset_host = in_base + in_offset; // input = host
                   baseoffset_dpu = DPU_REALM_ADDRESS((out_base + out_offset)); // output = dpu
-                  idx_dpu = out_dpu->device_id % 64; 
                 }
 
-                dpu_set_t indexed_dpu; 
-                GET_IDXED_DPU(*(stream->get_stream()), indexed_dpu, idx_dpu)
-
                 CHECK_UPMEM(
-                    dpu_prepare_xfer(indexed_dpu, (void *)(baseoffset_host)));
-                CHECK_UPMEM(dpu_push_xfer(indexed_dpu, copy_type,
+                    dpu_prepare_xfer(*(stream->get_stream()), (void *)(baseoffset_host)));
+                CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), copy_type,
                                           DPU_MRAM_HEAP_POINTER_NAME, baseoffset_dpu,
                                           bytes, XFER_SYNC_TYPE));
 
@@ -320,14 +309,12 @@ namespace Realm {
                       stream = in_dpu->stream;
                       baseoffset_dpu = DPU_REALM_ADDRESS((out_base + out_offset)); // input = dpu
                       baseoffset_host = in_base + in_offset; // output = host
-                      idx_dpu = in_dpu->device_id % 64; 
                     }
                   } else {
                     copy_type = DPU_XFER_TO_DPU;
                     stream = out_dpu->stream; 
                     baseoffset_host = in_base + in_offset; // input = host
                     baseoffset_dpu = DPU_REALM_ADDRESS((out_base + out_offset)); // output = dpu
-                    idx_dpu = out_dpu->device_id % 64; 
                   }
 
                   const void *src = reinterpret_cast<const void *>(baseoffset_host);
@@ -340,12 +327,8 @@ namespace Realm {
                       << " lines=" << lines << " stream=" << stream
                       << " kind=" << memcpy_kind;
 
-
-                  dpu_set_t indexed_dpu; 
-                  GET_IDXED_DPU(*(stream->get_stream()), indexed_dpu, idx_dpu)
-
-                  CHECK_UPMEM(dpu_prepare_xfer(indexed_dpu, (void *)src));
-                  CHECK_UPMEM(dpu_push_xfer(indexed_dpu, copy_type,
+                  CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()), (void *)src));
+                  CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), copy_type,
                                             DPU_MRAM_HEAP_POINTER_NAME, baseoffset_dpu,
                                             lines * contig_bytes, XFER_SYNC_TYPE));
 
@@ -415,7 +398,6 @@ namespace Realm {
                         baseoffset_dpu =
                             DPU_REALM_ADDRESS((out_base + out_offset + (act_planes * out_pstride))); // input = dpu
                         baseoffset_host = in_base + in_offset + (act_planes * in_pstride); // output = host
-                        idx_dpu = in_dpu->device_id % 64;
                       }
                     } else {
                       copy_type = DPU_XFER_TO_DPU;
@@ -423,20 +405,15 @@ namespace Realm {
                       baseoffset_host = in_base + in_offset + (act_planes * in_pstride); // input = host
                       baseoffset_dpu =
                           DPU_REALM_ADDRESS((out_base + out_offset + (act_planes * out_pstride))); // output = dpu
-                      idx_dpu = out_dpu->device_id % 64; 
                     }
 
                     // check rate limit on stream
                     if(!stream->ok_to_submit_copy(contig_bytes * lines, this))
                       break;
 
-                    dpu_set_t indexed_dpu; 
-                    GET_IDXED_DPU(*(stream->get_stream()), indexed_dpu, idx_dpu)
-
-
-                    CHECK_UPMEM(dpu_prepare_xfer(indexed_dpu,
+                    CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()),
                                                  (void *)baseoffset_host));
-                    CHECK_UPMEM(dpu_push_xfer(indexed_dpu, copy_type,
+                    CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), copy_type,
                                               DPU_MRAM_HEAP_POINTER_NAME, baseoffset_dpu,
                                               lines * contig_bytes, XFER_SYNC_TYPE));
 
@@ -790,14 +767,10 @@ namespace Realm {
             for(unsigned int i = 0; i < elems; i++) {
               memcpy((void *)((char *)buffer + fill_size * i), fill_buffer, fill_size);
             }
-
+            
             {
-              uint64_t idx_dpu = channel->dpu->device_id % 64;
-              dpu_set_t indexed_dpu; 
-              GET_IDXED_DPU(*(stream->get_stream()), indexed_dpu, idx_dpu)
-
-              CHECK_UPMEM(dpu_prepare_xfer(indexed_dpu, buffer));
-              CHECK_UPMEM(dpu_push_xfer(indexed_dpu, DPU_XFER_TO_DPU,
+              CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()), buffer));
+              CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), DPU_XFER_TO_DPU,
                                         DPU_MRAM_HEAP_POINTER_NAME, DPU_REALM_ADDRESS(out_base + out_offset),
                                         elems * fill_size, XFER_SYNC_TYPE));
             }
@@ -822,12 +795,9 @@ namespace Realm {
                 size_t todo = std::min(lines_done, lines - lines_done);
                 size_t dstDevice = (out_base + out_offset + (lines_done * lstride));
 
-                uint64_t idx_dpu = channel->dpu->device_id % 64;
-                dpu_set_t indexed_dpu; 
-                GET_IDXED_DPU(*(stream->get_stream()), indexed_dpu, idx_dpu)
-
-                CHECK_UPMEM(dpu_prepare_xfer(indexed_dpu, (void *)srcDevice));
-                CHECK_UPMEM(dpu_push_xfer(indexed_dpu, DPU_XFER_TO_DPU,
+   
+                CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()), (void *)srcDevice));
+                CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), DPU_XFER_TO_DPU,
                                           DPU_MRAM_HEAP_POINTER_NAME, DPU_REALM_ADDRESS(dstDevice),
                                           bytes * todo, XFER_SYNC_TYPE));
 
@@ -847,13 +817,9 @@ namespace Realm {
                 for(size_t p = 1; p < planes; p++) {
                   size_t dstDevice = (out_base + out_offset + (p * pstride));
 
-                  uint64_t idx_dpu = channel->dpu->device_id % 64;
-                  dpu_set_t indexed_dpu; 
-                  GET_IDXED_DPU(*(stream->get_stream()), indexed_dpu, idx_dpu)
-
                   CHECK_UPMEM(
-                      dpu_prepare_xfer(indexed_dpu, (void *)srcDevice));
-                  CHECK_UPMEM(dpu_push_xfer(indexed_dpu, DPU_XFER_TO_DPU,
+                      dpu_prepare_xfer(*(stream->get_stream()), (void *)srcDevice));
+                  CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), DPU_XFER_TO_DPU,
                                             DPU_MRAM_HEAP_POINTER_NAME, DPU_REALM_ADDRESS(dstDevice),
                                             bytes * lines, XFER_SYNC_TYPE));
 
