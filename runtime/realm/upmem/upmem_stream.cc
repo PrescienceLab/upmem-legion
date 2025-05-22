@@ -14,6 +14,11 @@
  * limitations under the License.
  */
 
+#define GET_IDXED_DPU(set, dpu, i)                                                          \
+    for (struct dpu_set_dpu_iterator_t __dpu_it = dpu_set_dpu_iterator_from(&set);          \
+         dpu = __dpu_it.next, __dpu_it.has_next; dpu_set_dpu_iterator_next(&__dpu_it))      \
+         {if (i == __dpu_it.count) break;}
+
 #include "realm/upmem/upmem_stream.h"
 #include "realm/upmem/upmem_internal.h"
 
@@ -79,7 +84,11 @@ namespace Realm {
 
     DPU *DPUStream::get_dpu(void) const { return dpu; }
 
-    struct dpu_set_t *DPUStream::get_stream(void) const { return this->stream; }
+    struct dpu_set_t *DPUStream::get_stream(void) const { 
+      dpu_set_t *single_dpu = new dpu_set_t;
+      GET_IDXED_DPU(*this->stream, *single_dpu, uint32_t(dpu->device_id % 64))
+      return single_dpu; 
+    }
 
     void DPUStream::set_stream(struct dpu_set_t *_stream) { this->stream = _stream; }
 

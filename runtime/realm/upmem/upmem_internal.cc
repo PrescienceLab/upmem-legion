@@ -14,12 +14,6 @@
  * limitations under the License.
  */
 
-
-#define GET_IDXED_DPU(set, dpu, i)                                                          \
-    for (struct dpu_set_dpu_iterator_t __dpu_it = dpu_set_dpu_iterator_from(&set);          \
-         dpu = __dpu_it.next, __dpu_it.has_next; dpu_set_dpu_iterator_next(&__dpu_it))      \
-         {if (i == __dpu_it.count) break;}
-
 #include "realm/upmem/upmem_internal.h"
 
 namespace Realm {
@@ -85,9 +79,7 @@ namespace Realm {
              "cfg_task_streams should be set to zero");
 
       stream = new DPUStream(this, worker);
-      dpu_set_t *single_dpu = new dpu_set_t;
-      GET_IDXED_DPU(*module->allocated_dpu_sets[device_id / 64], *single_dpu, uint32_t(device_id % 64))
-      stream->set_stream(single_dpu);
+      stream->set_stream(module->allocated_dpu_sets[_device_id / 64]);
     }
 
     DPU::~DPU(void)
