@@ -28,6 +28,8 @@ extern "C" {
 #include <assert.h>
 }
 
+#include "realm/upmem/upmem_layout.h"
+
 #ifdef __cplusplus
 #define EXTERNC extern "C"
 #else

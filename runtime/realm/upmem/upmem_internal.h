@@ -78,9 +78,11 @@ namespace Realm {
       DPU *dpu;
     };
 
+    // one UPMEM rank: one processor, one memory, one stream
     class DPU {
     public:
-      DPU(UpmemModule *_module, DPUInfo *_info, DPUWorker *worker, int _device_id);
+      DPU(UpmemModule *_module, DPUWorker *worker, int _device_id,
+          dpu_set_t *_rank_set);
 
       DPU() { assert(0); } // should never happen
 
@@ -108,9 +110,24 @@ namespace Realm {
       DPUMRAMMemory *mram;
       DPUStream *stream;
 
-      // upmemCtx_t context;
+      // index of this rank among the allocated ranks
       int device_id;
       char *mram_base;
+
+      // enabled DPUs, in DPU_FOREACH order (the layout's DPU index)
+      uint32_t nr_dpus;
+      std::vector<dpu_set_t> dpu_handles;
+      uint32_t granule;
+      // MRAM region backing the rank memory on each DPU
+      dpu_symbol_t mram_data;
+
+      size_t row_bytes(void) const { return size_t(nr_dpus) * granule; }
+
+      // async copy on the rank stream; host buffer must live until a later
+      //  stream notification fires
+      void enqueue_copy(DPUMemcpyKind kind, void *host, uint64_t rank_addr,
+                        size_t bytes);
+      void copy_sync(DPUMemcpyKind kind, void *host, uint64_t rank_addr, size_t bytes);
 
       // which system memories have been registered and can be used for cuMemcpyAsync
       std::set<Memory> pinned_sysmems;
@@ -119,6 +136,24 @@ namespace Realm {
       // which other mram we have peer access to
       std::set<Memory> peer_mram;
 
+    protected:
+      void copy_partial_word(DPUMemcpyKind kind, uint8_t *host, uint64_t rank_addr,
+                             size_t bytes);
+      void enqueue_aligned_copy(DPUMemcpyKind kind, uint8_t *host, uint64_t rank_addr,
+                                size_t bytes);
+      void enqueue_row_copy(DPUMemcpyKind kind, uint8_t *host, uint64_t rank_addr,
+                            size_t bytes);
+      // ptrs[i] == null skips DPU i
+      void push_dpus(DPUMemcpyKind kind, const std::vector<void *> &ptrs,
+                     uint64_t local, size_t bytes);
+
+      // serializes all UPMEM runtime calls on the rank (not thread-safe per rank)
+      Mutex xfer_mutex;
+
+    public:
+      Mutex &get_xfer_mutex(void) { return xfer_mutex; }
+
+    public:
       DPUStream *find_stream(struct dpu_set_t *stream) const;
       DPUStream *get_null_stream(void) const;
       DPUStream *get_next_stream(bool create = false);

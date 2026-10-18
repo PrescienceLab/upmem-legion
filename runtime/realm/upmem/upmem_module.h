@@ -22,6 +22,9 @@
 
 #define MAX_DPUS_PER_RANK 64
 
+#include "realm/upmem/upmem_layout.h"
+#include "realm/upmem/upmem_api.h"
+
 #include "realm/upmem/upmem_internal.h"
 
 #include "realm/atomics.h"
@@ -68,12 +71,19 @@ namespace Realm {
 
     public:
       // configurations
-      int cfg_num_dpus = 64;
+      int cfg_num_ranks = 1;
       int cfg_tasklets = 16;
-      size_t cfg_mram_mem_size = 64 * MEGABYTE;
-      size_t cfg_zc_mem_size = cfg_num_dpus * cfg_mram_mem_size;
-      size_t cfg_zc_ib_size = cfg_num_dpus * cfg_mram_mem_size;
-      size_t cfg_hostreg_limit = cfg_num_dpus * cfg_mram_mem_size;
+      // rank memory interleave granule (bytes, power of two, >= 8)
+      size_t cfg_dpu_granule = 1024;
+      // MRAM bytes per DPU made available to Realm
+      size_t cfg_mram_mem_size = REALM_UPMEM_MRAM_DATA_SIZE;
+      size_t cfg_zc_mem_size = 256 * MEGABYTE;
+      size_t cfg_zc_ib_size = 256 * MEGABYTE;
+      size_t cfg_hostreg_limit = 0;
+      // max rows per scatter/gather transfer
+      int cfg_sg_max_blocks = 4096;
+      // allocation indices of ranks to hold but not use (e.g. faulty hardware)
+      std::vector<int> cfg_skip_ranks;
 
       int cfg_task_streams = 16;
 
@@ -93,7 +103,6 @@ namespace Realm {
 
       // resources
       bool resource_discovered = false;
-      int res_num_dpus = 0;
     };
 
     // our interface to the rest of the runtime
@@ -133,6 +142,9 @@ namespace Realm {
 
       struct dpu_set_t *get_task_upmem_stream();
 
+      // the DPU (rank) object for the current DPU task, or null
+      DPU *get_task_dpu();
+
     public:
       UpmemModuleConfig *config;
       RuntimeImpl *runtime;
@@ -144,8 +156,9 @@ namespace Realm {
       std::vector<DPU *> dpus;
       DPUZCMemory *zcmem;
       
-      std::vector<dpu_set_t *> allocated_dpus;
-      
+      // one dpu_set_t per allocated rank
+      std::vector<dpu_set_t *> allocated_ranks;
+
       void *zcmem_cpu_base, *zcib_cpu_base;
 
       std::vector<void *> registered_host_ptrs;

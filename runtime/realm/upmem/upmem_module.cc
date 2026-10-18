@@ -24,6 +24,7 @@
 #include "realm/mutex.h"
 #include "realm/utils.h"
 
+#include <algorithm>
 #include <dlfcn.h>
 #include <stdio.h>
 #include <string.h>
@@ -50,11 +51,30 @@ namespace Realm {
       CommandLineParser cp;
 
       cp.add_option_int("-ll:tasklets", cfg_tasklets);
-      cp.add_option_int("-ll:num_dpus", cfg_num_dpus);
+      cp.add_option_int("-ll:num_ranks", cfg_num_ranks);
+      cp.add_option_int_units("-ll:dpu_granule", cfg_dpu_granule, 'b');
+      cp.add_option_int_units("-ll:dpu_mram", cfg_mram_mem_size, 'm');
+      cp.add_option_int_units("-ll:dpu_zsize", cfg_zc_mem_size, 'm');
+      cp.add_option_int_units("-ll:dpu_ib_zsize", cfg_zc_ib_size, 'm');
+      cp.add_option_int("-ll:dpu_sg_blocks", cfg_sg_max_blocks);
+      std::vector<std::string> skip_ranks;
+      cp.add_option_stringlist("-ll:dpu_skip_ranks", skip_ranks);
 
       bool ok = cp.parse_command_line(cmdline);
       if(!ok) {
         log_dpu.fatal() << "error reading Upmem command line parameters";
+        assert(false);
+      }
+      for(size_t i = 0; i < skip_ranks.size(); i++)
+        cfg_skip_ranks.push_back(atoi(skip_ranks[i].c_str()));
+      if((cfg_dpu_granule < 8) || ((cfg_dpu_granule & (cfg_dpu_granule - 1)) != 0)) {
+        log_dpu.fatal() << "-ll:dpu_granule must be a power of two >= 8, got "
+                        << cfg_dpu_granule;
+        assert(false);
+      }
+      if(cfg_mram_mem_size > REALM_UPMEM_MRAM_DATA_SIZE) {
+        log_dpu.fatal() << "-ll:dpu_mram may be at most "
+                        << (REALM_UPMEM_MRAM_DATA_SIZE >> 20) << "MB";
         assert(false);
       }
       if(cfg_tasklets != 0) {
@@ -66,6 +86,17 @@ namespace Realm {
     // class UpmemModule
 
     UpmemModule *upmem_module_singleton = 0;
+
+    size_t get_mram_row_bytes(Memory m)
+    {
+      if(!upmem_module_singleton)
+        return 0;
+      const std::vector<DPU *> &dpus = upmem_module_singleton->dpus;
+      for(size_t i = 0; i < dpus.size(); i++)
+        if(dpus[i]->mram && (dpus[i]->mram->me == m))
+          return dpus[i]->row_bytes();
+      return 0;
+    }
 
     UpmemModule::UpmemModule(RuntimeImpl *_runtime)
       : Module("upmem")
@@ -84,11 +115,12 @@ namespace Realm {
 
     UpmemModule::~UpmemModule(void)
     {
-      
-      for(int i = 0; i < config->cfg_num_dpus; i++) {
-          CHECK_UPMEM(dpu_free(*allocated_dpus[i]));
+      for(size_t i = 0; i < allocated_ranks.size(); i++) {
+        CHECK_UPMEM(dpu_free(*allocated_ranks[i]));
+        delete allocated_ranks[i];
       }
-      
+      allocated_ranks.clear();
+
       assert(config != nullptr);
       config = nullptr;
       assert(upmem_module_singleton == this);
@@ -124,45 +156,42 @@ namespace Realm {
     {
       Module::initialize(runtime);
 
-      if(config->cfg_num_dpus >  MAX_DPUS_PER_RANK) {
-        log_dpu.fatal() << "Specified > MAX_DPUS_PER_RANK. Check command line options -ll:num_dpus";
-        assert(false);
-      }
-
       // if we are using a shared worker, create that next
       if(config->cfg_use_shared_worker) {
         shared_worker = new DPUWorker;
 
         if(config->cfg_use_worker_threads)
-          shared_worker->start_background_thread(
-              runtime->core_reservation_set(),
-              config->cfg_mram_mem_size);
+          shared_worker->start_background_thread(runtime->core_reservation_set(),
+                                                 1 << 20);
         else
           shared_worker->add_to_manager(&(runtime->bgwork));
       }
 
-      std::vector<unsigned> fixed_indices;
+      // one dpu_set_t (and Realm processor + memory) per rank
+      std::string profile;
+#if !defined(__SIMULATOR__)
+      profile = "backend=hw";
+#else
+      profile = "backend=simulator";
+#endif
+      profile += stringbuilder() << ",sgXferEnable=true,sgXferMaxBlocksPerDpu="
+                                 << config->cfg_sg_max_blocks;
 
-      // each DPU has 64MB of MRAM and 64KB of cache
-      // we need to add each DPU to the core reservation in Realm
-
-      dpus.resize(config->cfg_num_dpus);
-      dpu_info.resize(config->cfg_num_dpus);
-
-      unsigned dpu_count = 0;
-      // try to get cfg_num_dpus, working through the list in order
-      for(size_t i = config->cfg_skip_dpu_count;
-          (i < dpu_info.size()) && (static_cast<int>(dpu_count) < config->cfg_num_dpus);
-          i++) {
-        int idx = (fixed_indices.empty() ? i : fixed_indices[i]);
-        dpu_set_t *allocated_dpu = new dpu_set_t;
-        allocated_dpus.push_back(allocated_dpu);
-
-        #if !defined(__SIMULATOR__)
-                CHECK_UPMEM(dpu_alloc(1, "backend=hw", allocated_dpu));
-        #else
-                CHECK_UPMEM(dpu_alloc(1, "backend=simulator", allocated_dpu));
-        #endif
+      for(int i = 0, alloc_idx = 0; i < config->cfg_num_ranks; alloc_idx++) {
+        dpu_set_t *rank_set = new dpu_set_t;
+        dpu_error_t err = dpu_alloc_ranks(1, profile.c_str(), rank_set);
+        if(err != DPU_OK) {
+          delete rank_set;
+          log_dpu.fatal() << config->cfg_num_ranks << " DPU ranks requested, but only "
+                          << i << " could be allocated: " << dpu_error_to_string(err);
+          assert(false);
+        }
+        allocated_ranks.push_back(rank_set);
+        if(std::find(config->cfg_skip_ranks.begin(), config->cfg_skip_ranks.end(),
+                     alloc_idx) != config->cfg_skip_ranks.end()) {
+          log_dpu.info() << "holding but not using rank allocation " << alloc_idx;
+          continue;
+        }
 
         DPUWorker *worker;
         if(config->cfg_use_shared_worker) {
@@ -172,23 +201,19 @@ namespace Realm {
 
           if(config->cfg_use_worker_threads)
             worker->start_background_thread(runtime->core_reservation_set(),
-                                             config->cfg_mram_mem_size);
+                                             1 << 20);
           else
             worker->add_to_manager(&(runtime->bgwork));
         }
-        DPU *g = new DPU(this, dpu_info[idx], worker, idx);
+        DPU *g = new DPU(this, worker, i, rank_set);
 
         if(!config->cfg_use_shared_worker)
           dedicated_workers[g] = worker;
 
-        dpus[dpu_count++] = g;
+        dpus.push_back(g);
+        i++;
       }
 
-      if(static_cast<int>(dpu_count) < config->cfg_num_dpus) {
-        log_dpu.fatal() << config->cfg_num_dpus << " DPUs requested, but only "
-                        << dpu_count << " available!";
-        assert(false);
-      }
       runtime->repl_heap.add_listener(rh_listener);
     }
 
@@ -197,7 +222,7 @@ namespace Realm {
     void UpmemModule::create_memories(RuntimeImpl *runtime)
     {
       Module::create_memories(runtime);
-      // each DPU has its own memory
+      // one memory per rank
       if(config->cfg_mram_mem_size > 0) {
         for(std::vector<DPU *>::iterator it = dpus.begin(); it != dpus.end(); it++) {
           (*it)->create_mram_memory(runtime, config->cfg_mram_mem_size);
@@ -207,7 +232,7 @@ namespace Realm {
       if((config->cfg_zc_mem_size > 0) && !dpus.empty()) {
         char *zcmem_dpu_base;
         {
-          zcmem_dpu_base = (char *)malloc(config->cfg_zc_ib_size);
+          zcmem_dpu_base = (char *)malloc(config->cfg_zc_mem_size);
         }
         if(zcmem_dpu_base == NULL) {
           log_dpu.fatal() << "insufficient device-mappable host memory: "
@@ -251,11 +276,9 @@ namespace Realm {
     void UpmemModule::create_processors(RuntimeImpl *runtime)
     {
       Module::create_processors(runtime);
-      // each DPU has 64MB of MRAM and 64KB of cache
-      // we can load a MAX of 64MB per DPU. This is the stack size limit here.
+      // each rank is a processor in Realm
       for(std::vector<DPU *>::iterator it = dpus.begin(); it != dpus.end(); it++) {
-        // each dpu in the dpu iterator is a processor in Realm.
-        (*it)->create_processor(runtime, config->cfg_mram_mem_size);
+        (*it)->create_processor(runtime, 1 << 20);
       }
     }
 
@@ -383,13 +406,8 @@ namespace Realm {
       // and clean up anything that was needed for the replicated heap
       runtime->repl_heap.remove_listener(rh_listener);
 
-      size_t dpu_count = 0;
-      for(size_t i = config->cfg_skip_dpu_count;
-          (i < dpu_info.size()) && (static_cast<int>(dpu_count) < config->cfg_num_dpus);
-          i++, dpu_count++) {
-        delete dpus[dpu_count];
-      }
-
+      for(size_t i = 0; i < dpus.size(); i++)
+        delete dpus[i];
       dpus.clear();
 
       Module::cleanup();

@@ -26,8 +26,6 @@
 #include "realm/bgwork.h"
 #include "realm/network.h"
 
-#define DPU_REALM_ADDRESS(addr)  (addr % (64*MEGABYTE))
-
 typedef void (*proxy_function)(uintptr_t side1_base, uintptr_t side1_stride,
                                uintptr_t side2_base, uintptr_t side2_stride, size_t count,
                                int redop);
@@ -106,10 +104,14 @@ namespace Realm {
 
       long get_requests(Request **requests, long nr);
 
+      virtual ~DPUfillXferDes(void);
+
       bool progress_xd(DPUfillChannel *channel, TimeLimit work_until);
 
     protected:
-      size_t reduced_fill_size;
+      static const size_t PATTERN_BYTES = 1 << 20;
+      char *pattern;
+      size_t pattern_bytes;
     };
 
     class DPUfillChannel : public SingleXDQChannel<DPUfillChannel, DPUfillXferDes> {

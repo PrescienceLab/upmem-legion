@@ -695,15 +695,14 @@ inline FT AffineAccessor<FT, N, T>::read(const Point<N, T> &p, bool single) cons
 
   if(sizeof(FT) == 8) {
     double buffff = 0.0;
-    mram_read((__mram_ptr void const *)((uintptr_t)DPU_MRAM_HEAP_POINTER +
-                                        (uintptr_t)(this->get_ptr(p))),
+    mram_read((__mram_ptr void const *)((uintptr_t)realm_upmem_local_ptr(this->get_ptr(p))),
               (void *)(&buffff), sizeof(uint64_t));
     double ret = (double)buffff;
     return ret;
   } else {
     uint64_t buffff = 0;
     uint64_t desired_addr =
-        ((uintptr_t)DPU_MRAM_HEAP_POINTER + (uintptr_t)(this->get_ptr(p)));
+        ((uintptr_t)realm_upmem_local_ptr(this->get_ptr(p)));
     uint64_t actual_addr = ALIGN8(desired_addr);
 
     mram_read((__mram_ptr void const *)actual_addr, (void *)(&buffff), sizeof(uint64_t));
@@ -746,13 +745,12 @@ inline void AffineAccessor<FT, N, T>::write(const Point<N, T> &p, FT newval,
 
   if(sizeof(FT) == 8) {
     mram_write((const void *)(&newval),
-               (__mram_ptr void *)((uintptr_t)DPU_MRAM_HEAP_POINTER +
-                                   (uintptr_t)(this->get_ptr(p))),
+               (__mram_ptr void *)((uintptr_t)realm_upmem_local_ptr(this->get_ptr(p))),
                sizeof(uint64_t));
   } else {
     uint64_t buffff;
     uint64_t desired_addr =
-        ((uintptr_t)DPU_MRAM_HEAP_POINTER + (uintptr_t)(this->get_ptr(p)));
+        ((uintptr_t)realm_upmem_local_ptr(this->get_ptr(p)));
     uint64_t actual_addr = ALIGN8(desired_addr);
 
     mram_read((__mram_ptr void const *)actual_addr, (void *)(&buffff), sizeof(uint64_t));
@@ -879,7 +877,7 @@ inline FT *AffineAccessor<FT, N, T>::get_ptr(const Point<N, T> &p) const
   for(int i = 0; i < N; i++)
     rawptr += p[i] * strides[i];
 
-  return reinterpret_cast<FT *>(rawptr % (64*(1<<20))); // TODO should be # of DPUs per process
+  return reinterpret_cast<FT *>(rawptr);
 }
 
 ////////////////////////////////////////////////////////////////////////

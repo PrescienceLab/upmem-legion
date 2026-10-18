@@ -16,6 +16,9 @@
 #include "legion.h"
 #include "mappers/default_mapper.h"
 #include "mappers/mapping_utilities.h"
+#ifdef LEGION_USE_UPMEM
+#include "realm/upmem/upmem_api.h"
+#endif
 
 #include <stdlib.h>
 #include <assert.h>
@@ -2516,6 +2519,24 @@ namespace Legion {
           constraints.add_constraint(OrderingConstraint(dimension_ordering,
                                                         false/*contigous*/));
         }
+#ifdef LEGION_USE_UPMEM
+        // row-align SOA fields in a rank memory so equal-sized elements with the
+        // same index land on the same DPU
+        if ((target_memory.kind() == Memory::DPU_MRAM_MEM) &&
+            (constraints.ordering_constraint.ordering.back() == LEGION_DIM_F) &&
+            constraints.alignment_constraints.empty())
+        {
+          const size_t row = Realm::Upmem::get_mram_row_bytes(target_memory);
+          if (row > 0)
+          {
+            const std::vector<FieldID> &fields =
+              constraints.field_constraint.field_set;
+            for (unsigned idx = 0; idx < fields.size(); idx++)
+              constraints.add_constraint(
+                  AlignmentConstraint(fields[idx], LEGION_EQ_EK, row));
+          }
+        }
+#endif
       }
     }
 
