@@ -249,7 +249,9 @@ namespace Realm {
       if(word_lo >= word_hi) {
         // no whole word - at most two partial ones
         uint64_t split = std::min(end, word_lo);
-        copy_partial_word(kind, h, rank_addr, split - rank_addr);
+        // an aligned start leaves no leading piece
+        if(split > rank_addr)
+          copy_partial_word(kind, h, rank_addr, split - rank_addr);
         if(split < end)
           copy_partial_word(kind, h + (split - rank_addr), split, end - split);
         return;
