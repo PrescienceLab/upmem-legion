@@ -96,6 +96,34 @@ namespace Realm {
 #endif
     }
 
+    size_t Kernel::launch_and_gather(void *args[], const char *symbol_name,
+                                     size_t arg_size, const char *partial_symbol,
+                                     void *partials, size_t partial_size)
+    {
+      UpmemModule *mod = get_runtime()->get_module<UpmemModule>("upmem");
+      DPU *dpu = mod->get_task_dpu();
+      assert(dpu && "Kernel::launch_and_gather must be called from a DPU task");
+      dpu_set_t *stream = dpu->stream->get_stream();
+
+      {
+        AutoLock<> al(dpu->get_xfer_mutex());
+        start(stream, args, symbol_name, arg_size);
+        // queued right behind the launch, before any later kernel can overwrite it
+        for(uint32_t i = 0; i < dpu->nr_dpus; i++)
+          CHECK_UPMEM(dpu_prepare_xfer(dpu->dpu_handles[i],
+                                       static_cast<char *>(partials) + i * partial_size));
+        CHECK_UPMEM(dpu_push_xfer(*stream, DPU_XFER_FROM_DPU, partial_symbol, 0,
+                                  partial_size, DPU_XFER_ASYNC));
+      }
+
+      // wait without blocking the processor
+      DPUPreemptionWaiter waiter(dpu);
+      dpu->stream->add_notification(&waiter);
+      waiter.preempt();
+
+      return dpu->nr_dpus;
+    }
+
   }; // namespace Upmem
   using Upmem::log_upmem;
 } // namespace Realm
