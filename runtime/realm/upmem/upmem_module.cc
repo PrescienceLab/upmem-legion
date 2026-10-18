@@ -207,7 +207,7 @@ namespace Realm {
       if((config->cfg_zc_mem_size > 0) && !dpus.empty()) {
         char *zcmem_dpu_base;
         {
-          zcmem_dpu_base = (char *)malloc(config->cfg_zc_ib_size);
+          zcmem_dpu_base = (char *)malloc(config->cfg_zc_mem_size);
         }
         if(zcmem_dpu_base == NULL) {
           log_dpu.fatal() << "insufficient device-mappable host memory: "
