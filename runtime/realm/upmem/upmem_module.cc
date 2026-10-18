@@ -87,6 +87,17 @@ namespace Realm {
 
     UpmemModule *upmem_module_singleton = 0;
 
+    size_t get_mram_row_bytes(Memory m)
+    {
+      if(!upmem_module_singleton)
+        return 0;
+      const std::vector<DPU *> &dpus = upmem_module_singleton->dpus;
+      for(size_t i = 0; i < dpus.size(); i++)
+        if(dpus[i]->mram && (dpus[i]->mram->me == m))
+          return dpus[i]->row_bytes();
+      return 0;
+    }
+
     UpmemModule::UpmemModule(RuntimeImpl *_runtime)
       : Module("upmem")
       , config(nullptr)

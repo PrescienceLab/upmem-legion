@@ -23,6 +23,7 @@
 #define MAX_DPUS_PER_RANK 64
 
 #include "realm/upmem/upmem_layout.h"
+#include "realm/upmem/upmem_api.h"
 
 #include "realm/upmem/upmem_internal.h"
 
