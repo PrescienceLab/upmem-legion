@@ -24,6 +24,15 @@ namespace Realm {
   namespace Upmem {
     // row size (bytes) of a local rank memory's interleaved layout, 0 if m isn't one
     REALM_PUBLIC_API size_t get_mram_row_bytes(Memory m);
+
+    // whether local rank memory m uses the blocked layout (-ll:dpu_layout blocked)
+    REALM_PUBLIC_API bool is_mram_blocked(Memory m);
+
+    // blocked layout: the rank address of the allocation holding `ptr` (a pointer
+    //  into m, e.g. from an accessor) and the bytes of each DPU's shard of it;
+    //  false if m isn't a blocked rank memory or nothing holds ptr
+    REALM_PUBLIC_API bool get_mram_block(Memory m, const void *ptr, uint64_t *start,
+                                         uint64_t *shard);
   }; // namespace Upmem
 };   // namespace Realm
 

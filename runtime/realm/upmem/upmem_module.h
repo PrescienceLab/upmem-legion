@@ -75,6 +75,8 @@ namespace Realm {
       int cfg_tasklets = 16;
       // rank memory interleave granule (bytes, power of two, >= 8)
       size_t cfg_dpu_granule = 1024;
+      // -ll:dpu_layout blocked: one contiguous shard per DPU per allocation
+      bool cfg_blocked_layout = false;
       // MRAM bytes per DPU made available to Realm
       size_t cfg_mram_mem_size = REALM_UPMEM_MRAM_DATA_SIZE;
       size_t cfg_zc_mem_size = 256 * MEGABYTE;
