@@ -15,6 +15,7 @@
  */
 
 #include "realm/upmem/upmem_memory.h"
+#include "realm/upmem/upmem_internal.h"
 
 namespace Realm {
   namespace Upmem {
@@ -47,30 +48,20 @@ namespace Realm {
 
     DPUMRAMMemory::~DPUMRAMMemory(void) {}
 
-    // these work, but they are SLOW
     void DPUMRAMMemory::get_bytes(off_t offset, void *dst, size_t size)
     {
-      // use a blocking copy
-      {
-        // we need to get the dpu_set_t stream
-        CHECK_UPMEM(dpu_copy_from(*stream->get_stream(), DPU_MRAM_HEAP_POINTER_NAME,
-                                  offset, dst, size));
-      }
+      dpu->copy_sync(DPU_XFER_FROM_DPU, dst, offset, size);
     }
 
     void DPUMRAMMemory::put_bytes(off_t offset, const void *src, size_t size)
     {
-      // use a blocking copy
-      {
-        // we need to get the dpu_set_t stream
-        CHECK_UPMEM(dpu_broadcast_to(*stream->get_stream(), DPU_MRAM_HEAP_POINTER_NAME,
-                                     offset, src, size, DPU_XFER_DEFAULT));
-      }
+      dpu->copy_sync(DPU_XFER_TO_DPU, const_cast<void *>(src), offset, size);
     }
 
     void *DPUMRAMMemory::get_direct_ptr(off_t offset, size_t size)
     {
-      return (void *)((0x8 + offset)); // TODO should be number of DPUs per process
+      // not dereferenceable on the host - a rank address plus REALM_UPMEM_RANK_PTR_BASE
+      return (void *)(base + offset);
     }
 
     ////////////////////////////////////////////////////////////////////////

@@ -18,6 +18,7 @@
 #define REALM_UPMEM_ACCESS_H
 
 #include "realm/inst_layout.h"
+#include "realm/upmem/upmem_layout.h"
 
 #ifndef DPURT
 #define DPURT
@@ -47,6 +48,10 @@ namespace Realm {
       virtual void load(void);
 
     protected:
+      // caller holds the rank's xfer mutex
+      void start(dpu_set_t *stream, void *args[], const char *symbol_name,
+                 size_t arg_size);
+
       const char *bin;
       const char *symbol_name;
     }; // end class Kernel

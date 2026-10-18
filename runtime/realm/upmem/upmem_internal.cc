@@ -63,29 +63,47 @@ namespace Realm {
         return 0;
     }
 
+    DPU *UpmemModule::get_task_dpu()
+    {
+      if(ThreadLocal::current_dpu_proc)
+        return ThreadLocal::current_dpu_proc->dpu;
+      else
+        return 0;
+    }
+
     ////////////////////////////////////////////////////////////////////////
     //
     // class DPU
-    DPU::DPU(UpmemModule *_module, DPUInfo *_info, DPUWorker *_worker, int _device_id)
+    DPU::DPU(UpmemModule *_module, DPUWorker *_worker, int _device_id,
+             dpu_set_t *_rank_set)
       : module(_module)
-      , info(_info)
+      , info(0)
       , worker(_worker)
       , proc(0)
+      , mram(0)
       , device_id(_device_id)
+      , granule(_module->config->cfg_dpu_granule)
     {
       event_pool.init_pool();
 
       assert(module->config->cfg_task_streams > 0 &&
              "cfg_task_streams should be set to zero");
 
-      // dpu_rank_t *rank = module->allocated_set->list.ranks[device_id];
-      // dpu_set_t *single_dpu =  new dpu_set_t;
-      // single_dpu->list.ranks = new dpu_rank_t *;      
-      // single_dpu->list.nr_ranks = 1;
-      // *single_dpu->list.ranks  = rank;
+      CHECK_UPMEM(dpu_get_nr_dpus(*_rank_set, &nr_dpus));
+      assert(nr_dpus > 0 && nr_dpus <= MAX_DPUS_PER_RANK);
+      dpu_set_t dpu;
+      DPU_FOREACH(*_rank_set, dpu) { dpu_handles.push_back(dpu); }
+      assert(dpu_handles.size() == nr_dpus);
+
+      // fixed MRAM offset, independent of the loaded binary's heap pointer
+      mram_data.address = 0x08000000 /* host-side MRAM address mask */ + REALM_UPMEM_MRAM_DATA_OFFSET;
+      mram_data.size = REALM_UPMEM_MRAM_DATA_SIZE;
+
+      log_dpu.info() << "rank " << device_id << ": " << nr_dpus
+                     << " DPUs, granule=" << granule;
 
       stream = new DPUStream(this, worker);
-      stream->set_stream(module->allocated_dpus[device_id]);
+      stream->set_stream(_rank_set);
     }
 
     DPU::~DPU(void)
@@ -95,10 +113,11 @@ namespace Realm {
 
     void DPU::create_mram_memory(RuntimeImpl *runtime, size_t size)
     {
-      // TODO: look into page offset (4096)
-      mram_base = (char *)0x8; 
+      mram_base = reinterpret_cast<char *>(uintptr_t(REALM_UPMEM_RANK_PTR_BASE));
+      // whole rows only
+      size_t rank_size = (size / granule) * granule * nr_dpus;
       Memory m = runtime->next_local_memory_id();
-      mram = new DPUMRAMMemory(m, this, stream, static_cast<char *>(mram_base), size);
+      mram = new DPUMRAMMemory(m, this, stream, mram_base, rank_size);
       runtime->add_memory(mram);
     }
 
@@ -131,28 +150,7 @@ namespace Realm {
         runtime->add_proc_mem_affinity(pma);
       }
 
-      // peer access
-      for(std::vector<DPU *>::iterator it = module->dpus.begin();
-          it != module->dpus.end(); it++) {
-        // ignore ourselves
-        if(*it == this)
-          continue;
-
-        // ignore dpus with no mram
-        if(!((*it)->mram))
-          continue;
-
-        peer_mram.insert((*it)->mram->me);
-
-        {
-          Machine::ProcessorMemoryAffinity pma;
-          pma.p = p;
-          pma.m = (*it)->mram->me;
-          pma.bandwidth = 10; // assuming pcie, this should be ~half the bw and
-          pma.latency = 400;  // ~twice the latency as zcmem
-          runtime->add_proc_mem_affinity(pma);
-        }
-      }
+      // no peer access between ranks
 
       // look for any other local memories that belong to our context or
       //  peer-able contexts
@@ -197,9 +195,8 @@ namespace Realm {
       if(!mram)
 	      return;
 
-      r->add_dma_channel(new DPUChannel(this, XFER_DPU_IN_MRAM, &r->bgwork));
+      // no in-MRAM copy channel; reduce channel disabled (not layout-aware)
       r->add_dma_channel(new DPUfillChannel(this, &r->bgwork));
-      r->add_dma_channel(new DPUreduceChannel(this, &r->bgwork));
 
       // zero copy host memory is registered in pinned_sysmems. This enables a path from 
       // host to UPMEM DPU and vice versa
@@ -209,10 +206,171 @@ namespace Realm {
       } else {
         log_dpu.warning() << "DPU " << proc->me << " has no accessible system memories!?";
       }
-      // only create a p2p channel if we have peers (and an mram)
-      if(!peer_mram.empty() || !upmemipc_mappings.empty()) {
-        r->add_dma_channel(new DPUChannel(this, XFER_DPU_PEER_MRAM, &r->bgwork));
+    }
+
+    ////////////////////////////////////////////////////////////////////////
+    //
+    // rank memory copies
+    //
+    // split: partial words (RMW), partial rows (<=3 pushes), full rows (SG push)
+
+    namespace {
+      struct RowGatherArgs {
+        uint8_t *host;
+        uint64_t row_bytes;
+        uint32_t granule;
+        uint32_t rows;
+      };
+
+      bool row_gather_block(struct sg_block_info *out, uint32_t dpu_index,
+                            uint32_t block_index, void *_args)
+      {
+        const RowGatherArgs *args = static_cast<const RowGatherArgs *>(_args);
+        if(block_index >= args->rows)
+          return false;
+        out->addr = args->host + (block_index * args->row_bytes) +
+                    (uint64_t(dpu_index) * args->granule);
+        out->length = args->granule;
+        return true;
       }
+    }; // namespace
+
+    void DPU::enqueue_copy(DPUMemcpyKind kind, void *host, uint64_t rank_addr,
+                           size_t bytes)
+    {
+      if(bytes == 0)
+        return;
+
+      uint8_t *h = static_cast<uint8_t *>(host);
+      uint64_t end = rank_addr + bytes;
+      uint64_t word_lo = (rank_addr + 7) & ~uint64_t(7);
+      uint64_t word_hi = end & ~uint64_t(7);
+
+      if(word_lo >= word_hi) {
+        // no whole word - at most two partial ones
+        uint64_t split = std::min(end, word_lo);
+        copy_partial_word(kind, h, rank_addr, split - rank_addr);
+        if(split < end)
+          copy_partial_word(kind, h + (split - rank_addr), split, end - split);
+        return;
+      }
+
+      if(rank_addr < word_lo)
+        copy_partial_word(kind, h, rank_addr, word_lo - rank_addr);
+      enqueue_aligned_copy(kind, h + (word_lo - rank_addr), word_lo, word_hi - word_lo);
+      if(word_hi < end)
+        copy_partial_word(kind, h + (word_hi - rank_addr), word_hi, end - word_hi);
+    }
+
+    void DPU::copy_sync(DPUMemcpyKind kind, void *host, uint64_t rank_addr, size_t bytes)
+    {
+      enqueue_copy(kind, host, rank_addr, bytes);
+      AutoLock<> al(xfer_mutex);
+      CHECK_UPMEM(dpu_sync(*stream->get_stream()));
+    }
+
+    void DPU::copy_partial_word(DPUMemcpyKind kind, uint8_t *host, uint64_t rank_addr,
+                                size_t bytes)
+    {
+      assert((rank_addr & ~uint64_t(7)) == ((rank_addr + bytes - 1) & ~uint64_t(7)));
+      uint32_t d = realm_upmem_owner(rank_addr, nr_dpus, granule);
+      uint64_t local = realm_upmem_local(rank_addr, nr_dpus, granule);
+      uint64_t word = local & ~uint64_t(7);
+      unsigned shift = local - word;
+
+      AutoLock<> al(xfer_mutex);
+      // sync calls queued behind async work with pending callbacks hang or crash
+      //  the UPMEM runtime (2025.1), so drain the rank first
+      CHECK_UPMEM(dpu_sync(*stream->get_stream()));
+      uint8_t buffer[8];
+      CHECK_UPMEM(dpu_copy_from_symbol(dpu_handles[d], mram_data, word, buffer, 8));
+      if(kind == DPU_XFER_TO_DPU) {
+        memcpy(buffer + shift, host, bytes);
+        CHECK_UPMEM(dpu_copy_to_symbol(dpu_handles[d], mram_data, word, buffer, 8));
+      } else {
+        memcpy(host, buffer + shift, bytes);
+      }
+    }
+
+    void DPU::enqueue_aligned_copy(DPUMemcpyKind kind, uint8_t *host, uint64_t rank_addr,
+                                   size_t bytes)
+    {
+      const uint64_t row = row_bytes();
+      uint64_t v = rank_addr;
+      const uint64_t end = rank_addr + bytes;
+
+      // leading partial row
+      if((v % row) != 0) {
+        uint64_t len = std::min(end, (v / row + 1) * row) - v;
+        enqueue_row_copy(kind, host, v, len);
+        host += len;
+        v += len;
+      }
+
+      // full rows
+      while((end - v) >= row) {
+        uint64_t rows = std::min<uint64_t>((end - v) / row,
+                                           module->config->cfg_sg_max_blocks);
+        if(rows == 1) {
+          enqueue_row_copy(kind, host, v, row);
+        } else {
+          RowGatherArgs args;
+          args.host = host;
+          args.row_bytes = row;
+          args.granule = granule;
+          args.rows = rows;
+          get_block_t get_block;
+          get_block.f = &row_gather_block;
+          get_block.args = &args; // copied by the SDK
+          get_block.args_size = sizeof(args);
+
+          AutoLock<> al(xfer_mutex);
+          CHECK_UPMEM(dpu_push_sg_xfer_symbol(*stream->get_stream(), kind, mram_data,
+                                              (v / row) * granule, rows * granule,
+                                              &get_block, DPU_SG_XFER_ASYNC));
+        }
+        host += rows * row;
+        v += rows * row;
+      }
+
+      // trailing partial row
+      if(v < end)
+        enqueue_row_copy(kind, host, v, end - v);
+    }
+
+    void DPU::enqueue_row_copy(DPUMemcpyKind kind, uint8_t *host, uint64_t rank_addr,
+                               size_t bytes)
+    {
+      // group pieces by (local offset, length)
+      std::map<std::pair<uint64_t, uint64_t>, std::vector<void *>> groups;
+      uint64_t v = rank_addr;
+      const uint64_t end = rank_addr + bytes;
+      while(v < end) {
+        uint64_t piece = std::min(end, (v / granule + 1) * granule) - v;
+        uint32_t d = realm_upmem_owner(v, nr_dpus, granule);
+        std::vector<void *> &ptrs =
+            groups[std::make_pair(realm_upmem_local(v, nr_dpus, granule), piece)];
+        if(ptrs.empty())
+          ptrs.resize(nr_dpus, 0);
+        ptrs[d] = host + (v - rank_addr);
+        v += piece;
+      }
+
+      for(std::map<std::pair<uint64_t, uint64_t>, std::vector<void *>>::const_iterator
+              it = groups.begin();
+          it != groups.end(); ++it)
+        push_dpus(kind, it->second, it->first.first, it->first.second);
+    }
+
+    void DPU::push_dpus(DPUMemcpyKind kind, const std::vector<void *> &ptrs,
+                        uint64_t local, size_t bytes)
+    {
+      // the SDK doesn't clear prepared buffers after a push, so set all of them
+      AutoLock<> al(xfer_mutex);
+      for(uint32_t i = 0; i < nr_dpus; i++)
+        CHECK_UPMEM(dpu_prepare_xfer(dpu_handles[i], ptrs[i]));
+      CHECK_UPMEM(dpu_push_xfer_symbol(*stream->get_stream(), kind, mram_data, local,
+                                       bytes, DPU_XFER_ASYNC));
     }
 
     DPUStream *DPU::get_null_stream(void) const
@@ -252,16 +410,17 @@ namespace Realm {
       , block_on_synchronize(false)
       , ctxsync(_dpu, _dpu->device_id, crs, _dpu->module->config->cfg_max_ctxsync_threads)
     {
+      // shared: more ranks (40) than cores
       Realm::CoreReservationParameters params;
       params.set_num_cores(1);
-      params.set_alu_usage(params.CORE_USAGE_EXCLUSIVE);
-      params.set_fpu_usage(params.CORE_USAGE_EXCLUSIVE);
+      params.set_alu_usage(params.CORE_USAGE_SHARED);
+      params.set_fpu_usage(params.CORE_USAGE_SHARED);
       params.set_ldst_usage(params.CORE_USAGE_SHARED);
-      params.set_max_stack_size(_stack_size); // 64 MB for each DPU
+      params.set_max_stack_size(_stack_size);
 
       std::string name = stringbuilder() << "DPU proc " << _me;
 
-      // Each DPU gets a new Realm core reservation
+      // Each rank gets a new Realm core reservation
       core_rsrv = new Realm::CoreReservation(name, crs, params);
 
       Realm::KernelThreadTaskScheduler *sched =
@@ -553,7 +712,10 @@ namespace Realm {
       }
 
       // we didn't use streams here, so synchronize the whole context
-      CHECK_UPMEM(dpu_sync(*s->get_stream()));
+      {
+        AutoLock<> al(dpu_proc->dpu->get_xfer_mutex());
+        CHECK_UPMEM(dpu_sync(*s->get_stream()));
+      }
       dpu_proc->block_on_synchronize = false;
 
       assert(ThreadLocal::current_dpu_proc == dpu_proc);
@@ -579,10 +741,10 @@ namespace Realm {
     {
       Realm::CoreReservationParameters params;
       params.set_num_cores(1);
-      params.set_alu_usage(params.CORE_USAGE_EXCLUSIVE);
-      params.set_fpu_usage(params.CORE_USAGE_EXCLUSIVE);
+      params.set_alu_usage(params.CORE_USAGE_SHARED);
+      params.set_fpu_usage(params.CORE_USAGE_SHARED);
       params.set_ldst_usage(params.CORE_USAGE_SHARED);
-      params.set_max_stack_size(_dpu->module->config->cfg_mram_mem_size); 
+      params.set_max_stack_size(1 << 20);
 
       std::string name = stringbuilder() << "DPU ctxsync " << device_id;
 

@@ -1312,6 +1312,8 @@ INSTALL_HEADERS += realm/simpletest/simpletest_access.h
 endif
 ifeq ($(strip $(USE_UPMEM)),1)
 INSTALL_HEADERS += realm/upmem/upmem_access.h \
+                         realm/upmem/upmem_layout.h \
+                         realm/upmem/upmem_common.h \
                          realm/upmem/realm_c_upmem.h \
                          realm/upmem/realm_c_upmem.inl \
                          realm/upmem/legion_c_upmem.h \

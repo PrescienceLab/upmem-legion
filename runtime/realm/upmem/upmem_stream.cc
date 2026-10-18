@@ -95,10 +95,12 @@ namespace Realm {
       upmemEvent_t *e = dpu->event_pool.get_event();
 
       // do a callback here
-      CHECK_UPMEM(dpu_callback(*(this->get_stream()), &upmem_start_callback, (void *)e,
-                               (dpu_callback_flags_t)(DPU_CALLBACK_ASYNC |
-                                                      DPU_CALLBACK_NONBLOCKING |
-                                                      DPU_CALLBACK_SINGLE_CALL)));
+      {
+        AutoLock<> al(dpu->get_xfer_mutex());
+        CHECK_UPMEM(dpu_callback(*(this->get_stream()), &upmem_start_callback, (void *)e,
+                                 (dpu_callback_flags_t)(DPU_CALLBACK_ASYNC |
+                                                        DPU_CALLBACK_NONBLOCKING)));
+      }
 
       log_stream.debug() << "UPMEM fence event " << e << " recorded on stream " << stream
                          << " (DPU " << dpu << ")";
@@ -111,10 +113,12 @@ namespace Realm {
       upmemEvent_t *e = dpu->event_pool.get_event();
 
       // do a callback here
-      CHECK_UPMEM(dpu_callback(*(this->get_stream()), &upmem_start_callback, (void *)e,
-                               (dpu_callback_flags_t)(DPU_CALLBACK_ASYNC |
-                                                      DPU_CALLBACK_NONBLOCKING |
-                                                      DPU_CALLBACK_SINGLE_CALL)));
+      {
+        AutoLock<> al(dpu->get_xfer_mutex());
+        CHECK_UPMEM(dpu_callback(*(this->get_stream()), &upmem_start_callback, (void *)e,
+                                 (dpu_callback_flags_t)(DPU_CALLBACK_ASYNC |
+                                                        DPU_CALLBACK_NONBLOCKING)));
+      }
 
       log_stream.debug() << "UPMEM start event " << e << " recorded on stream " << stream
                          << " (DPU " << dpu << ")";
@@ -138,10 +142,12 @@ namespace Realm {
       assert(e->finished == false);
 
       // do a callback here
-      CHECK_UPMEM(dpu_callback(*(this->get_stream()), &upmem_start_callback, (void *)e,
-                               (dpu_callback_flags_t)(DPU_CALLBACK_ASYNC |
-                                                      DPU_CALLBACK_NONBLOCKING |
-                                                      DPU_CALLBACK_SINGLE_CALL)));
+      {
+        AutoLock<> al(dpu->get_xfer_mutex());
+        CHECK_UPMEM(dpu_callback(*(this->get_stream()), &upmem_start_callback, (void *)e,
+                                 (dpu_callback_flags_t)(DPU_CALLBACK_ASYNC |
+                                                        DPU_CALLBACK_NONBLOCKING)));
+      }
 
       add_event(e, 0, notification, 0);
     }

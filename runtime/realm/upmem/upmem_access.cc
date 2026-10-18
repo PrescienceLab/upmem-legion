@@ -16,6 +16,7 @@
 
 #include "realm/upmem/upmem_access.h"
 #include "realm/upmem/upmem_module.h"
+#include "realm/upmem/upmem_internal.h"
 
 namespace Realm {
   namespace Upmem {
@@ -37,10 +38,10 @@ namespace Realm {
       std::string reset_path =
           std::string(rt_dir) + "/realm/upmem/upmem_mram_reset.up.o";
 
-      dpu_set_t *stream;
       for(std::vector<DPU *>::iterator it = mod->dpus.begin(); it != mod->dpus.end();
           it++) {
-        stream = ((*it)->stream)->get_stream();
+        DPU *dpu = *it;
+        dpu_set_t *stream = dpu->stream->get_stream();
 
         // clear the heap from prior kernel invocations
         CHECK_UPMEM(dpu_load(*stream, reset_path.c_str(), NULL));
@@ -48,29 +49,50 @@ namespace Realm {
 
         // once heap is cleared, load this
         CHECK_UPMEM(dpu_load(*stream, this->bin, NULL));
+
+        // tell each DPU where it sits in the rank layout
+        AutoLock<> al(dpu->get_xfer_mutex());
+        std::vector<uint32_t> ids(dpu->nr_dpus);
+        for(uint32_t i = 0; i < dpu->nr_dpus; i++) {
+          ids[i] = i;
+          CHECK_UPMEM(dpu_prepare_xfer(dpu->dpu_handles[i], &ids[i]));
+        }
+        CHECK_UPMEM(dpu_push_xfer(*stream, DPU_XFER_TO_DPU, "REALM_UPMEM_DPU_ID", 0,
+                                  sizeof(uint32_t), DPU_XFER_DEFAULT));
+        uint32_t shape[2] = {dpu->nr_dpus, dpu->granule};
+        CHECK_UPMEM(dpu_broadcast_to(*stream, "REALM_UPMEM_SHAPE", 0, shape,
+                                     sizeof(shape), DPU_XFER_DEFAULT));
       }
+    }
+
+    void Kernel::start(dpu_set_t *stream, void *args[], const char *symbol_name,
+                       size_t arg_size)
+    {
+#ifdef DEBUG_REALM
+      assert(arg_size % 8 == 0 && "args_size must be multiple of 8 bytes");
+#endif
+      // see DPU::copy_partial_word - a sync transfer must not queue behind async work
+      CHECK_UPMEM(dpu_sync(*stream));
+      CHECK_UPMEM(dpu_broadcast_to(*stream, symbol_name, 0, args, arg_size,
+                                   DPU_XFER_DEFAULT));
+      CHECK_UPMEM(dpu_launch(*stream, DPU_ASYNCHRONOUS));
     }
 
     void Kernel::launch(void *args[], const char *symbol_name, size_t arg_size)
     {
       UpmemModule *mod = get_runtime()->get_module<UpmemModule>("upmem");
-      dpu_set_t *stream = mod->get_task_upmem_stream(); // need to be right context
-      dpu_set_t dpu_proc;
-#ifdef DEBUG_REALM
-      assert(arg_size % 8 == 0 && "args_size must be multiple of 8 bytes");
-#endif
+      DPU *dpu = mod->get_task_dpu();
+      assert(dpu && "Kernel::launch must be called from a DPU task");
+      dpu_set_t *stream = dpu->stream->get_stream();
 
-      DPU_FOREACH(*stream, dpu_proc) { CHECK_UPMEM(dpu_prepare_xfer(dpu_proc, args)); }
-
-      CHECK_UPMEM(dpu_push_xfer(*stream, DPU_XFER_TO_DPU, symbol_name, 0, arg_size,
-                                DPU_XFER_DEFAULT));
+      // the UPMEM runtime isn't safe for concurrent calls on one rank
+      AutoLock<> al(dpu->get_xfer_mutex());
+      start(stream, args, symbol_name, arg_size);
 #ifdef PRINT_UPMEM
       // printing is a blocking operation. we need to read buffer once available.
-      CHECK_UPMEM(dpu_launch(*stream, DPU_SYNCHRONOUS));
       CHECK_UPMEM(dpu_sync(*stream));
+      dpu_set_t dpu_proc;
       DPU_FOREACH(*stream, dpu_proc) { DPU_ASSERT(dpu_log_read(dpu_proc, stdout)); }
-#else
-      CHECK_UPMEM(dpu_launch(*stream, DPU_ASYNCHRONOUS));
 #endif
     }
 

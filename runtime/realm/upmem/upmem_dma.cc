@@ -16,8 +16,6 @@
 
 #include "realm/upmem/upmem_dma.h"
 
-#define XFER_SYNC_TYPE DPU_XFER_ASYNC
-
 namespace Realm {
 
   extern Logger log_xd;
@@ -93,9 +91,8 @@ namespace Realm {
     bool DPUXferDes::progress_xd(DPUChannel *channel, TimeLimit work_until)
     {
       bool did_work = false;
-      std::string memcpy_kind;
 
-      ReadSequenceCache rseqcache(this,  MEGABYTE);
+      ReadSequenceCache rseqcache(this, MEGABYTE);
       WriteSequenceCache wseqcache(this, MEGABYTE);
 
       while(true) {
@@ -108,8 +105,6 @@ namespace Realm {
         XferPort *in_port = 0, *out_port = 0;
         size_t in_span_start = 0, out_span_start = 0;
         DPU *in_dpu = 0, *out_dpu = 0;
-        bool out_is_ipc = false;
-        int out_ipc_index = -1;
         if(input_control.current_io_port >= 0) {
           in_port = &input_ports[input_control.current_io_port];
           in_span_start = in_port->local_bytes_total;
@@ -119,7 +114,6 @@ namespace Realm {
           out_port = &output_ports[output_control.current_io_port];
           out_span_start = out_port->local_bytes_total;
           out_dpu = dst_dpus[output_control.current_io_port];
-          out_is_ipc = dst_is_ipc[output_control.current_io_port];
         }
 
         size_t total_bytes = 0;
@@ -131,33 +125,13 @@ namespace Realm {
 
             uintptr_t in_base =
                 reinterpret_cast<uintptr_t>(in_port->mem->get_direct_ptr(0, 0));
-            uintptr_t out_base;
-            const DPU::UpmemIpcMapping *out_mapping = 0;
-            if(out_is_ipc) {
-              out_mapping = in_dpu->find_ipc_mapping(out_port->mem->me);
-              assert(out_mapping);
-              out_base = out_mapping->local_base;
-            } else
-              out_base = reinterpret_cast<uintptr_t>(out_port->mem->get_direct_ptr(0, 0));
+            uintptr_t out_base =
+                reinterpret_cast<uintptr_t>(out_port->mem->get_direct_ptr(0, 0));
 
-            DPUStream *stream = NULL;
-
-            if(in_dpu) {
-              if(out_dpu == in_dpu) {
-                memcpy_kind = "d2d";
-              } else if(out_mapping) {
-                memcpy_kind = "ipc";
-              } else if(!out_dpu) {
-                memcpy_kind = "d2h";
-              } else {
-                memcpy_kind = "p2p";
-              }
-            } else {
-              assert(out_dpu);
-              memcpy_kind = "h2d";
-            }
-
-            size_t bytes_to_fence = 0;
+            // exactly one side is a rank memory (no d2d/p2p paths are registered)
+            assert((in_dpu != 0) != (out_dpu != 0));
+            DPU *dpu = in_dpu ? in_dpu : out_dpu;
+            DPUMemcpyKind copy_type = in_dpu ? DPU_XFER_FROM_DPU : DPU_XFER_TO_DPU;
 
             while(total_bytes < max_bytes) {
               AddressListCursor &in_alc = in_port->addrcursor;
@@ -166,286 +140,31 @@ namespace Realm {
               uintptr_t in_offset = in_alc.get_offset();
               uintptr_t out_offset = out_alc.get_offset();
 
-              // the reported dim is reduced for partially consumed address
-              //  ranges - whatever we get can be assumed to be regular
-              int in_dim = in_alc.get_dim();
-              int out_dim = out_alc.get_dim();
+              // strided copies are issued one line at a time - the rank layout
+              //  turns any line into several DPU pushes anyway
+              size_t bytes = std::min(std::min(in_alc.remaining(0), out_alc.remaining(0)),
+                                      max_bytes - total_bytes);
 
-              size_t bytes = 0;
-              size_t bytes_left = max_bytes - total_bytes;
-
-              // limit transfer size for host<->device copies
-              if((bytes_left > (32 * MEGABYTE)) &&
-                 (!in_dpu || (!out_dpu && (out_ipc_index == -1))))
-                bytes_left = 32 * MEGABYTE;
-
-              assert(in_dim > 0);
-              assert(out_dim > 0);
-
-              size_t icount = in_alc.remaining(0);
-              size_t ocount = out_alc.remaining(0);
-
-              // contig bytes is always the min of the first dimensions
-              size_t contig_bytes = std::min(std::min(icount, ocount), bytes_left);
-
-              // catch simple 1D case first
-              if((contig_bytes == bytes_left) ||
-                 ((contig_bytes == icount) && (in_dim == 1)) ||
-                 ((contig_bytes == ocount) && (out_dim == 1))) {
-                bytes = contig_bytes;
-
-                // check rate limit on stream
-                if(!stream->ok_to_submit_copy(bytes, this)) {
-                  break;
-                }
-
-                // grr...  prototypes of these differ slightly...
-                DPUMemcpyKind copy_type;
-                size_t baseoffset_host = 0;
-                size_t baseoffset_dpu = 0;
-
-                if(in_dpu) {
-                  if(out_dpu == in_dpu || (out_ipc_index >= 0)) {
-                    printf("device to device not currently supported\n");
-                  } else if(!out_dpu) {
-                    copy_type = DPU_XFER_FROM_DPU;
-                    stream = in_dpu->stream;
-                    baseoffset_dpu = DPU_REALM_ADDRESS((in_base + in_offset)); // input = dpu
-                    baseoffset_host = out_base + out_offset; // output = host
-                  }
-                } else {
-                  copy_type = DPU_XFER_TO_DPU;
-                  stream = out_dpu->stream;
-                  baseoffset_host = in_base + in_offset; // input = host
-                  baseoffset_dpu = DPU_REALM_ADDRESS((out_base + out_offset)); // output = dpu
-
-                }
-
-                CHECK_UPMEM(
-                    dpu_prepare_xfer(*(stream->get_stream()), (void *)(baseoffset_host)));
-                CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), copy_type,
-                                          DPU_MRAM_HEAP_POINTER_NAME, baseoffset_dpu,
-                                          bytes, XFER_SYNC_TYPE));
-
-                // CHECK_HIP(
-                //     hipMemcpyAsync(reinterpret_cast<void *>(out_base + out_offset),
-                //                      reinterpret_cast<const void *>(in_base +
-                //                      in_offset), bytes, copy_type,
-                //                      (stream->get_stream())));
-
-                log_dpudma.info()
-                    << "dpu memcpy: dst=" << std::hex << (out_base + out_offset)
-                    << " src=" << (in_base + in_offset) << std::dec << " bytes=" << bytes
-                    << " stream=" << stream << " kind=" << memcpy_kind;
-
-                in_alc.advance(0, bytes);
-                out_alc.advance(0, bytes);
-
-                bytes_to_fence += bytes;
-                // TODO: fence on a threshold
+              // rank memory offsets are rank addresses
+              void *host;
+              uint64_t rank_addr;
+              if(in_dpu) {
+                rank_addr = in_offset;
+                host = reinterpret_cast<void *>(out_base + out_offset);
               } else {
-                // grow to a 2D copy
-                int id;
-                int iscale;
-                uintptr_t in_lstride;
-                if(contig_bytes < icount) {
-                  // second input dim comes from splitting first
-                  id = 0;
-                  in_lstride = contig_bytes;
-                  size_t ilines = icount / contig_bytes;
-                  if((ilines * contig_bytes) != icount)
-                    in_dim = 1; // leftover means we can't go beyond this
-                  icount = ilines;
-                  iscale = contig_bytes;
-                } else {
-                  assert(in_dim > 1);
-                  id = 1;
-                  icount = in_alc.remaining(id);
-                  in_lstride = in_alc.get_stride(id);
-                  iscale = 1;
-                }
-
-                int od;
-                int oscale;
-                uintptr_t out_lstride;
-                if(contig_bytes < ocount) {
-                  // second output dim comes from splitting first
-                  od = 0;
-                  out_lstride = contig_bytes;
-                  size_t olines = ocount / contig_bytes;
-                  if((olines * contig_bytes) != ocount)
-                    out_dim = 1; // leftover means we can't go beyond this
-                  ocount = olines;
-                  oscale = contig_bytes;
-                } else {
-                  assert(out_dim > 1);
-                  od = 1;
-                  ocount = out_alc.remaining(od);
-                  out_lstride = out_alc.get_stride(od);
-                  oscale = 1;
-                }
-
-                size_t lines =
-                    std::min(std::min(icount, ocount), bytes_left / contig_bytes);
-
-                // see if we need to stop at 2D
-                if(((contig_bytes * lines) == bytes_left) ||
-                   ((lines == icount) && (id == (in_dim - 1))) ||
-                   ((lines == ocount) && (od == (out_dim - 1)))) {
-                  bytes = contig_bytes * lines;
-
-                  // check rate limit on stream
-                  if(!stream->ok_to_submit_copy(bytes, this))
-                    break;
-
-                  DPUMemcpyKind copy_type;
-                  size_t baseoffset_dpu, baseoffset_host;
-                  if(in_dpu) {
-                    if(out_dpu == in_dpu || (out_ipc_index >= 0)) {
-                      printf("device to device not currently supported\n");
-                    } else if(!out_dpu) {
-                      copy_type = DPU_XFER_FROM_DPU;
-                      stream = in_dpu->stream;
-                      baseoffset_dpu = DPU_REALM_ADDRESS((out_base + out_offset)); // input = dpu
-                      baseoffset_host = in_base + in_offset; // output = host
-                    }
-                  } else {
-                    copy_type = DPU_XFER_TO_DPU;
-                    stream = out_dpu->stream; 
-                    baseoffset_host = in_base + in_offset; // input = host
-                    baseoffset_dpu = DPU_REALM_ADDRESS((out_base + out_offset)); // output = dpu
-                  }
-
-                  const void *src = reinterpret_cast<const void *>(baseoffset_host);
-
-
-                  log_dpudma.info()
-                      << "dpu memcpy 2d: dst=" << std::hex << (baseoffset_dpu) << std::dec
-                      << "+" << out_lstride << " src=" << std::hex << (baseoffset_host)
-                      << std::dec << "+" << in_lstride << " bytes=" << bytes
-                      << " lines=" << lines << " stream=" << stream
-                      << " kind=" << memcpy_kind;
-
-                  CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()), (void *)src));
-                  CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), copy_type,
-                                            DPU_MRAM_HEAP_POINTER_NAME, baseoffset_dpu,
-                                            lines * contig_bytes, XFER_SYNC_TYPE));
-
-                  // CHECK_HIP(hipMemcpy2DAsync(dst, out_lstride, src, in_lstride,
-                  //                                contig_bytes, lines, copy_type,
-                  //                                (stream->get_stream())));
-
-                  in_alc.advance(id, lines * iscale);
-                  out_alc.advance(od, lines * oscale);
-
-                  bytes_to_fence += bytes;
-                  // TODO: fence on a threshold
-                } else {
-                  uintptr_t in_pstride;
-                  if(lines < icount) {
-                    // third input dim comes from splitting current
-                    in_pstride = in_lstride * lines;
-                    size_t iplanes = icount / lines;
-                    // check for leftovers here if we go beyond 3D!
-                    icount = iplanes;
-                    iscale *= lines;
-                  } else {
-                    id++;
-                    assert(in_dim > id);
-                    icount = in_alc.remaining(id);
-                    in_pstride = in_alc.get_stride(id);
-                    iscale = 1;
-                  }
-
-                  uintptr_t out_pstride;
-                  if(lines < ocount) {
-                    // third output dim comes from splitting current
-                    out_pstride = out_lstride * lines;
-                    size_t oplanes = ocount / lines;
-                    // check for leftovers here if we go beyond 3D!
-                    ocount = oplanes;
-                    oscale *= lines;
-                  } else {
-                    od++;
-                    assert(out_dim > od);
-                    ocount = out_alc.remaining(od);
-                    out_pstride = out_alc.get_stride(od);
-                    oscale = 1;
-                  }
-
-                  size_t planes = std::min(std::min(icount, ocount),
-                                           (bytes_left / (contig_bytes * lines)));
-
-                  // a cuMemcpy3DAsync appears to be unrolled on the host in the
-                  //  driver, so we'll do the unrolling into 2D copies ourselves,
-                  //  allowing us to stop early if we hit the rate limit or a
-                  //  timeout
-                  DPUMemcpyKind copy_type;
-                  size_t baseoffset_dpu, baseoffset_host;
-
-                  size_t act_planes = 0;
-                  while(act_planes < planes) {
-
-                    if(in_dpu) {
-                      if(out_dpu == in_dpu || (out_ipc_index >= 0)) {
-                        printf("device to device not currently supported\n");
-                      } else if(!out_dpu) {
-                        copy_type = DPU_XFER_FROM_DPU;
-                        stream = in_dpu->stream;
-                        baseoffset_dpu =
-                            DPU_REALM_ADDRESS((out_base + out_offset + (act_planes * out_pstride))); // input = dpu
-                        baseoffset_host = in_base + in_offset + (act_planes * in_pstride); // output = host
-                      }
-                    } else {
-                      copy_type = DPU_XFER_TO_DPU;
-                      stream = out_dpu->stream;
-                      baseoffset_host = in_base + in_offset + (act_planes * in_pstride); // input = host
-                      baseoffset_dpu =
-                          DPU_REALM_ADDRESS((out_base + out_offset + (act_planes * out_pstride))); // output = dpu
-                    }
-
-                    // check rate limit on stream
-                    if(!stream->ok_to_submit_copy(contig_bytes * lines, this))
-                      break;
-
-                    CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()),
-                                                 (void *)baseoffset_host));
-                    CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), copy_type,
-                                              DPU_MRAM_HEAP_POINTER_NAME, baseoffset_dpu,
-                                              lines * contig_bytes, XFER_SYNC_TYPE));
-
-                    // CHECK_HIP(hipMemcpy2DAsync(dst, out_lstride, src, in_lstride,
-                    //                                contig_bytes, lines, copy_type,
-                    //                                (stream->get_stream())));
-                    act_planes++;
-
-                    if(work_until.is_expired())
-                      break;
-                  }
-
-                  if(act_planes == 0)
-                    break;
-
-                  log_dpudma.info()
-                      << "dpu memcpy 3d: dst=" << std::hex << (out_base + out_offset)
-                      << std::dec << "+" << out_lstride << "+" << out_pstride
-                      << " src=" << std::hex << (in_base + in_offset) << std::dec << "+"
-                      << in_lstride << "+" << in_pstride << " bytes=" << bytes
-                      << " lines=" << lines << " planes=" << act_planes
-                      << " stream=" << stream << " kind=" << memcpy_kind;
-
-                  bytes = contig_bytes * lines * act_planes;
-                  in_alc.advance(id, act_planes * iscale);
-                  out_alc.advance(od, act_planes * oscale);
-
-                  bytes_to_fence += bytes;
-                  // TODO: fence on a threshold
-                }
+                rank_addr = out_offset;
+                host = reinterpret_cast<void *>(in_base + in_offset);
               }
 
-#ifdef DEBUG_REALM
-              assert(bytes <= bytes_left);
-#endif
+              dpu->enqueue_copy(copy_type, host, rank_addr, bytes);
+
+              log_dpudma.info() << "dpu memcpy: rank=" << dpu->device_id
+                                << " rank_addr=" << std::hex << rank_addr
+                                << " host=" << host << std::dec << " bytes=" << bytes
+                                << " kind=" << (in_dpu ? "d2h" : "h2d");
+
+              in_alc.advance(0, bytes);
+              out_alc.advance(0, bytes);
               total_bytes += bytes;
 
               // stop if it's been too long, but make sure we do at least the
@@ -454,16 +173,14 @@ namespace Realm {
                 break;
             }
 
-            if(bytes_to_fence > 0) {
+            if(total_bytes > 0) {
               add_reference(); // released by transfer completion
-              log_dpudma.info()
-                  << "dpu memcpy fence: stream=" << stream << " xd=" << std::hex << guid
-                  << std::dec << " bytes=" << total_bytes;
-              stream->add_notification(new DPUTransferCompletion(
+              log_dpudma.info() << "dpu memcpy fence: rank=" << dpu->device_id
+                                << " xd=" << std::hex << guid << std::dec
+                                << " bytes=" << total_bytes;
+              dpu->stream->add_notification(new DPUTransferCompletion(
                   this, input_control.current_io_port, in_span_start, total_bytes,
                   output_control.current_io_port, out_span_start, total_bytes));
-              in_span_start += total_bytes;
-              out_span_start += total_bytes;
             }
           } else { // out_port == 0
             // input but no output, so skip input bytes
@@ -471,7 +188,6 @@ namespace Realm {
             in_port->addrcursor.skip_bytes(total_bytes);
 
             rseqcache.add_span(input_control.current_io_port, in_span_start, total_bytes);
-            in_span_start += total_bytes;
           }
         } else { // in_port == 0
           if(out_port != 0) {
@@ -485,7 +201,6 @@ namespace Realm {
 
             wseqcache.add_span(output_control.current_io_port, out_span_start,
                                total_bytes);
-            out_span_start += total_bytes;
           }
         }
 
@@ -688,6 +403,8 @@ namespace Realm {
                                    size_t _fill_size, size_t _fill_total)
       : XferDes(_dma_op, _channel, _launch_node, _guid, inputs_info, outputs_info,
                 _priority, _fill_data, _fill_size)
+      , pattern(0)
+      , pattern_bytes(0)
     {
       kind = XFER_DPU_IN_MRAM;
 
@@ -706,13 +423,25 @@ namespace Realm {
       return 0;
     }
 
+    DPUfillXferDes::~DPUfillXferDes(void) { free(pattern); }
+
     bool DPUfillXferDes::progress_xd(DPUfillChannel *channel, TimeLimit work_until)
     {
       bool did_work = false;
       ReadSequenceCache rseqcache(this, MEGABYTE);
       WriteSequenceCache wseqcache(this, MEGABYTE);
 
-      DPUStream *stream = channel->dpu->get_next_stream(false);
+      DPU *dpu = channel->dpu;
+
+      // fill_data repeated, reused for every chunk (freed with the xd, after all
+      //  completions have released their references)
+      if(!pattern) {
+        size_t reps = std::max<size_t>(1, PATTERN_BYTES / fill_size);
+        pattern_bytes = reps * fill_size;
+        pattern = static_cast<char *>(malloc(pattern_bytes));
+        for(size_t i = 0; i < reps; i++)
+          memcpy(pattern + (i * fill_size), fill_data, fill_size);
+      }
 
       while(true) {
         size_t min_xfer_size = 4096; // TODO: make controllable
@@ -732,100 +461,22 @@ namespace Realm {
 
         size_t total_bytes = 0;
         if(out_port != 0) {
-          // input and output both exist - transfer what we can
           log_xd.info() << "dpufill chunk: min=" << min_xfer_size << " max=" << max_bytes;
-
-          uintptr_t out_base =
-              reinterpret_cast<uintptr_t>(out_port->mem->get_direct_ptr(0, 0));
 
           while(total_bytes < max_bytes) {
             AddressListCursor &out_alc = out_port->addrcursor;
 
-            uintptr_t out_offset = out_alc.get_offset();
-
-            // the reported dim is reduced for partially consumed address
-            //  ranges - whatever we get can be assumed to be regular
-            int out_dim = out_alc.get_dim();
-
-            // more general approach - use strided 2d copies to fill the first
-            //  line, and then we can use logarithmic doublings to deal with
-            //  multiple lines and/or planes
-            size_t bytes = out_alc.remaining(0);
-            size_t elems = bytes / fill_size;
-
+            uint64_t rank_addr = out_alc.get_offset();
+            size_t bytes = std::min(out_alc.remaining(0), max_bytes - total_bytes);
 #ifdef DEBUG_REALM
             assert((bytes % fill_size) == 0);
 #endif
+            for(size_t done_bytes = 0; done_bytes < bytes; done_bytes += pattern_bytes)
+              dpu->enqueue_copy(DPU_XFER_TO_DPU, pattern, rank_addr + done_bytes,
+                                std::min(pattern_bytes, bytes - done_bytes));
 
-            void *buffer = (void *)malloc(elems * fill_size);
-
-            const char *fill_buffer = reinterpret_cast<const char *>(fill_data);
-
-            for(unsigned int i = 0; i < elems; i++) {
-              memcpy((void *)((char *)buffer + fill_size * i), fill_buffer, fill_size);
-            }
-
-            {
-              CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()), buffer));
-              CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), DPU_XFER_TO_DPU,
-                                        DPU_MRAM_HEAP_POINTER_NAME, DPU_REALM_ADDRESS(out_base + out_offset),
-                                        elems * fill_size, XFER_SYNC_TYPE));
-            }
-
-            // need to make sure the async transfer is done before we free the buffer
-            CHECK_UPMEM(dpu_sync(*(stream->get_stream())));
-            free(buffer);
-
-            if(out_dim == 1) {
-              // all done
-              out_alc.advance(0, bytes);
-              total_bytes += bytes;
-            } else {
-              assert(0 && "Not implemented correctly");
-              size_t lines = out_alc.remaining(1);
-              size_t lstride = out_alc.get_stride(1);
-
-              void *srcDevice = (void *)(out_base + out_offset);
-
-              size_t lines_done = 1; // first line already valid
-              while(lines_done < lines) {
-                size_t todo = std::min(lines_done, lines - lines_done);
-                size_t dstDevice = (out_base + out_offset + (lines_done * lstride));
-
-                CHECK_UPMEM(dpu_prepare_xfer(*(stream->get_stream()), (void *)srcDevice));
-                CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), DPU_XFER_TO_DPU,
-                                          DPU_MRAM_HEAP_POINTER_NAME, DPU_REALM_ADDRESS(dstDevice),
-                                          bytes * todo, XFER_SYNC_TYPE));
-
-                // CHECK_HIP(hipMemcpy2DAsync(dstDevice, lstride, srcDevice, lstride,
-                //                                bytes, todo, , (stream->get_stream())));
-                lines_done += todo;
-              }
-
-              if(out_dim == 2) {
-                out_alc.advance(1, lines);
-                total_bytes += bytes * lines;
-              } else {
-                assert(0 && "Not implemented correctly");
-                size_t planes = out_alc.remaining(2);
-                size_t pstride = out_alc.get_stride(2);
-
-                for(size_t p = 1; p < planes; p++) {
-                  size_t dstDevice = (out_base + out_offset + (p * pstride));
-
-                  CHECK_UPMEM(
-                      dpu_prepare_xfer(*(stream->get_stream()), (void *)srcDevice));
-                  CHECK_UPMEM(dpu_push_xfer(*(stream->get_stream()), DPU_XFER_TO_DPU,
-                                            DPU_MRAM_HEAP_POINTER_NAME, DPU_REALM_ADDRESS(dstDevice),
-                                            bytes * lines, XFER_SYNC_TYPE));
-
-                  // CHECK_HIP(hipMemcpy2DAsync(dstDevice, lstride, srcDevice, lstride,
-                  //                                bytes, lines, ,
-                  //                                (stream->get_stream())));
-                }
-              }
-              break;
-            }
+            out_alc.advance(0, bytes);
+            total_bytes += bytes;
 
             // stop if it's been too long, but make sure we do at least the
             //  minimum number of bytes
@@ -836,10 +487,9 @@ namespace Realm {
           // however many fills/copies we submitted, put in a single fence that
           //  will tell us that they're all done
           add_reference(); // released by transfer completion
-          stream->add_notification(
+          dpu->stream->add_notification(
               new DPUTransferCompletion(this, -1, 0, 0, output_control.current_io_port,
                                         out_span_start, total_bytes));
-          out_span_start += total_bytes;
         }
 
         done = record_address_consumption(total_bytes, total_bytes);
