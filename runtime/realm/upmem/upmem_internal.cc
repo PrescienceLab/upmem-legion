@@ -15,6 +15,7 @@
  */
 
 #include "realm/upmem/upmem_internal.h"
+#include "realm/inst_impl.h"
 
 namespace Realm {
 
@@ -83,6 +84,7 @@ namespace Realm {
       , mram(0)
       , device_id(_device_id)
       , granule(_module->config->cfg_dpu_granule)
+      , blocked(_module->config->cfg_blocked_layout)
     {
       event_pool.init_pool();
 
@@ -100,7 +102,8 @@ namespace Realm {
       mram_data.size = REALM_UPMEM_MRAM_DATA_SIZE;
 
       log_dpu.info() << "rank " << device_id << ": " << nr_dpus
-                     << " DPUs, granule=" << granule;
+                     << " DPUs, granule=" << granule
+                     << (blocked ? ", blocked layout" : "");
 
       stream = new DPUStream(this, worker);
       stream->set_stream(_rank_set);
@@ -243,13 +246,33 @@ namespace Realm {
 
       uint8_t *h = static_cast<uint8_t *>(host);
       uint64_t end = rank_addr + bytes;
+
+      if(blocked) {
+        // a copy should stay within one allocation, but split it if not
+        while(rank_addr < end) {
+          Block block;
+          if(!find_block(rank_addr, block)) {
+            log_dpu.fatal() << "rank " << device_id << ": no allocation holds rank address "
+                            << rank_addr;
+            abort();
+          }
+          uint64_t len = std::min(end, block.start + block.bytes) - rank_addr;
+          enqueue_blocked_copy(kind, h, rank_addr, len, block);
+          h += len;
+          rank_addr += len;
+        }
+        return;
+      }
+
       uint64_t word_lo = (rank_addr + 7) & ~uint64_t(7);
       uint64_t word_hi = end & ~uint64_t(7);
 
       if(word_lo >= word_hi) {
         // no whole word - at most two partial ones
         uint64_t split = std::min(end, word_lo);
-        copy_partial_word(kind, h, rank_addr, split - rank_addr);
+        // an aligned start leaves no leading piece
+        if(split > rank_addr)
+          copy_partial_word(kind, h, rank_addr, split - rank_addr);
         if(split < end)
           copy_partial_word(kind, h + (split - rank_addr), split, end - split);
         return;
@@ -273,8 +296,14 @@ namespace Realm {
                                 size_t bytes)
     {
       assert((rank_addr & ~uint64_t(7)) == ((rank_addr + bytes - 1) & ~uint64_t(7)));
-      uint32_t d = realm_upmem_owner(rank_addr, nr_dpus, granule);
-      uint64_t local = realm_upmem_local(rank_addr, nr_dpus, granule);
+      copy_partial_local(kind, host, realm_upmem_owner(rank_addr, nr_dpus, granule),
+                         realm_upmem_local(rank_addr, nr_dpus, granule), bytes);
+    }
+
+    void DPU::copy_partial_local(DPUMemcpyKind kind, uint8_t *host, uint32_t d,
+                                 uint64_t local, size_t bytes)
+    {
+      assert((bytes > 0) && ((local & ~uint64_t(7)) == ((local + bytes - 1) & ~uint64_t(7))));
       uint64_t word = local & ~uint64_t(7);
       unsigned shift = local - word;
 
@@ -290,6 +319,126 @@ namespace Realm {
       } else {
         memcpy(host, buffer + shift, bytes);
       }
+    }
+
+    void DPU::enqueue_blocked_copy(DPUMemcpyKind kind, uint8_t *host, uint64_t rank_addr,
+                                   size_t bytes, const Block &block)
+    {
+      const uint64_t shard = block.bytes / nr_dpus;
+      const uint64_t base = block.start / nr_dpus;
+      const uint64_t lo = rank_addr - block.start;
+      const uint64_t hi = lo + bytes;
+
+      // DPUs whose shard pieces share a (local offset, length) go in one push;
+      //  MRAM moves whole 8-byte words, so ragged ends are copied word by word
+      std::map<std::pair<uint64_t, uint64_t>, std::vector<void *>> groups;
+      for(uint32_t d = lo / shard; (d < nr_dpus) && (d * shard < hi); d++) {
+        uint64_t first = std::max(lo, d * shard);
+        uint64_t last = std::min(hi, (d + 1) * shard);
+        uint64_t local = base + (first - d * shard);
+        uint64_t len = last - first;
+        uint8_t *h = host + (first - lo);
+
+        if((local % 8) != 0) {
+          uint64_t head = std::min<uint64_t>(len, 8 - (local % 8));
+          copy_partial_local(kind, h, d, local, head);
+          local += head;
+          h += head;
+          len -= head;
+        }
+        uint64_t tail = len % 8;
+        if(len > tail) {
+          std::vector<void *> &ptrs = groups[std::make_pair(local, len - tail)];
+          if(ptrs.empty())
+            ptrs.resize(nr_dpus, 0);
+          ptrs[d] = h;
+        }
+        if(tail > 0)
+          copy_partial_local(kind, h + (len - tail), d, local + (len - tail), tail);
+      }
+
+      for(std::map<std::pair<uint64_t, uint64_t>, std::vector<void *>>::const_iterator
+              it = groups.begin();
+          it != groups.end(); ++it)
+        push_dpus(kind, it->second, it->first.first, it->first.second);
+    }
+
+    bool DPU::block_is_live(const Block &block)
+    {
+      // a released instance's slot is reused or its offset reset, so a stale
+      //  entry no longer matches the instance it names
+      MemoryImpl::InstanceList &list = mram->local_instances;
+      unsigned idx = ID(block.inst).instance_inst_idx();
+      AutoLock<> al(list.mutex);
+      if(idx >= list.instances.size() || !list.instances[idx])
+        return false;
+      const RegionInstanceImpl *impl = list.instances[idx];
+      return (impl->me == block.inst) && (impl->metadata.inst_offset == block.start);
+    }
+
+    void DPU::add_block(const Block &block)
+    {
+      // live allocations never overlap, so anything overlapping this one is stale
+      std::map<uint64_t, Block>::iterator it = blocks.lower_bound(block.start);
+      if(it != blocks.begin()) {
+        std::map<uint64_t, Block>::iterator prev = it;
+        --prev;
+        if(prev->first + prev->second.bytes > block.start)
+          it = prev;
+      }
+      while((it != blocks.end()) && (it->first < block.start + block.bytes))
+        blocks.erase(it++);
+      blocks[block.start] = block;
+    }
+
+    void DPU::note_block(RegionInstanceImpl *inst)
+    {
+      if((inst->metadata.inst_offset > RegionInstanceImpl::INSTOFFSET_MAXVALID) ||
+         !inst->metadata.layout)
+        return;
+      Block block;
+      block.start = inst->metadata.inst_offset;
+      block.bytes = inst->metadata.layout->bytes_used;
+      block.inst = inst->me;
+      AutoLock<> al(block_mutex);
+      add_block(block);
+    }
+
+    bool DPU::find_block(uint64_t v, Block &block)
+    {
+      AutoLock<> al(block_mutex);
+      std::map<uint64_t, Block>::iterator it = blocks.upper_bound(v);
+      if(it != blocks.begin()) {
+        --it;
+        if((v < it->first + it->second.bytes) && block_is_live(it->second)) {
+          block = it->second;
+          return true;
+        }
+      }
+
+      // not recorded at allocation (e.g. a deferred allocation) - look it up
+      MemoryImpl::InstanceList &list = mram->local_instances;
+      bool found = false;
+      {
+        AutoLock<> al2(list.mutex);
+        for(size_t i = 0; (i < list.instances.size()) && !found; i++) {
+          const RegionInstanceImpl *impl = list.instances[i];
+          if(!impl || !impl->metadata.layout ||
+             (impl->metadata.inst_offset > RegionInstanceImpl::INSTOFFSET_MAXVALID))
+            continue;
+          uint64_t start = impl->metadata.inst_offset;
+          uint64_t bytes = impl->metadata.layout->bytes_used;
+          if((v >= start) && (v < start + bytes)) {
+            block.start = start;
+            block.bytes = bytes;
+            block.inst = impl->me;
+            found = true;
+          }
+        }
+      }
+      if(found)
+        add_block(block);
+      return found;
     }
 
     void DPU::enqueue_aligned_copy(DPUMemcpyKind kind, uint8_t *host, uint64_t rank_addr,

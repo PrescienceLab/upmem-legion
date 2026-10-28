@@ -16,6 +16,7 @@
 
 #include "realm/upmem/upmem_memory.h"
 #include "realm/upmem/upmem_internal.h"
+#include "realm/inst_impl.h"
 
 namespace Realm {
   namespace Upmem {
@@ -62,6 +63,55 @@ namespace Realm {
     {
       // not dereferenceable on the host - a rank address plus REALM_UPMEM_RANK_PTR_BASE
       return (void *)(base + offset);
+    }
+
+    void DPUMRAMMemory::round_to_rows(RegionInstanceImpl *inst)
+    {
+      InstanceLayoutGeneric *layout = inst->metadata.layout;
+      if(!dpu->blocked || !layout || inst->metadata.ext_resource)
+        return;
+      const size_t row = dpu->row_bytes();
+      layout->bytes_used = (layout->bytes_used + row - 1) / row * row;
+      if((layout->alignment_reqd == 0) || ((row % layout->alignment_reqd) == 0))
+        layout->alignment_reqd = row;
+      else
+        layout->alignment_reqd *= row;
+    }
+
+    MemoryImpl::AllocationResult
+    DPUMRAMMemory::allocate_storage_deferrable(RegionInstanceImpl *inst,
+                                               bool need_alloc_result, Event precondition)
+    {
+      round_to_rows(inst);
+      AllocationResult result =
+          LocalManagedMemory::allocate_storage_deferrable(inst, need_alloc_result,
+                                                          precondition);
+      if(dpu->blocked && (result == ALLOC_INSTANT_SUCCESS))
+        dpu->note_block(inst);
+      return result;
+    }
+
+    MemoryImpl::AllocationResult
+    DPUMRAMMemory::allocate_storage_immediate(RegionInstanceImpl *inst,
+                                              bool need_alloc_result, bool poisoned,
+                                              TimeLimit work_until)
+    {
+      round_to_rows(inst);
+      AllocationResult result = LocalManagedMemory::allocate_storage_immediate(
+          inst, need_alloc_result, poisoned, work_until);
+      if(dpu->blocked && (result == ALLOC_INSTANT_SUCCESS))
+        dpu->note_block(inst);
+      return result;
+    }
+
+    MemoryImpl::AllocationResult
+    DPUMRAMMemory::reuse_allocated_range(RegionInstanceImpl *old_inst,
+                                         std::vector<RegionInstanceImpl *> &new_insts)
+    {
+      for(RegionInstanceImpl *inst : new_insts)
+        round_to_rows(inst);
+      // new offsets are only known once notified - copies look them up lazily
+      return LocalManagedMemory::reuse_allocated_range(old_inst, new_insts);
     }
 
     ////////////////////////////////////////////////////////////////////////

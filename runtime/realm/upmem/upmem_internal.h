@@ -123,6 +123,19 @@ namespace Realm {
 
       size_t row_bytes(void) const { return size_t(nr_dpus) * granule; }
 
+      // -ll:dpu_layout blocked: each allocation owns whole rows and is split
+      //  into one contiguous shard per DPU (see upmem_layout.h)
+      bool blocked;
+      struct Block {
+        uint64_t start; // rank address, a multiple of row_bytes()
+        uint64_t bytes; // a multiple of row_bytes()
+        RegionInstance inst;
+      };
+      // the allocation holding rank address v
+      bool find_block(uint64_t v, Block &block);
+      // records a newly allocated instance
+      void note_block(RegionInstanceImpl *inst);
+
       // async copy on the rank stream; host buffer must live until a later
       //  stream notification fires
       void enqueue_copy(DPUMemcpyKind kind, void *host, uint64_t rank_addr,
@@ -139,6 +152,18 @@ namespace Realm {
     protected:
       void copy_partial_word(DPUMemcpyKind kind, uint8_t *host, uint64_t rank_addr,
                              size_t bytes);
+      // bytes within one 8-byte word at local offset `local` of DPU d
+      void copy_partial_local(DPUMemcpyKind kind, uint8_t *host, uint32_t d,
+                              uint64_t local, size_t bytes);
+      void enqueue_blocked_copy(DPUMemcpyKind kind, uint8_t *host, uint64_t rank_addr,
+                                size_t bytes, const Block &block);
+      bool block_is_live(const Block &block);
+      void add_block(const Block &block);
+
+      // keyed by start; may hold entries for released instances, which
+      //  block_is_live filters out
+      std::map<uint64_t, Block> blocks;
+      Mutex block_mutex;
       void enqueue_aligned_copy(DPUMemcpyKind kind, uint8_t *host, uint64_t rank_addr,
                                 size_t bytes);
       void enqueue_row_copy(DPUMemcpyKind kind, uint8_t *host, uint64_t rank_addr,

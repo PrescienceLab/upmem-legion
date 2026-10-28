@@ -18,6 +18,11 @@
 // Rank address v is interleaved over N DPUs in granules of G bytes:
 //   DPU (v / G) % N, local offset (v / (N * G)) * G + v % G
 // Local offsets are relative to REALM_UPMEM_MRAM_DATA_OFFSET in each DPU's MRAM.
+//
+// With -ll:dpu_layout blocked, every allocation instead owns whole rows (N * G
+// bytes) and is split into one contiguous shard per DPU.  An allocation of R
+// rows at rank address s (a multiple of N * G) gives each DPU R * G bytes:
+//   byte b of it lives on DPU b / (R * G), local offset s / N + b % (R * G)
 
 #ifndef REALM_UPMEM_LAYOUT_H
 #define REALM_UPMEM_LAYOUT_H
@@ -69,6 +74,14 @@ static inline uint64_t realm_upmem_local_bound(uint64_t v, uint32_t d, uint32_t 
   if(in_row > lo)
     part = ((in_row - lo) < granule) ? (in_row - lo) : granule;
   return (v / row) * granule + part;
+}
+
+// blocked layout: bytes of each DPU's shard of an allocation of `bytes`
+static inline uint64_t realm_upmem_block_shard(uint64_t bytes, uint32_t nr_dpus,
+                                               uint32_t granule)
+{
+  uint64_t row = (uint64_t)granule * nr_dpus;
+  return (bytes + row - 1) / row * granule;
 }
 
 #ifdef __cplusplus

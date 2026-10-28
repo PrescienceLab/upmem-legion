@@ -74,10 +74,26 @@ namespace Realm {
 
       virtual void *get_direct_ptr(off_t offset, size_t size);
 
+      // with the blocked layout, allocations are rounded to whole rows and
+      //  recorded with the rank so copies can find their shards
+      virtual AllocationResult allocate_storage_deferrable(RegionInstanceImpl *inst,
+                                                           bool need_alloc_result,
+                                                           Event precondition);
+      virtual AllocationResult allocate_storage_immediate(RegionInstanceImpl *inst,
+                                                          bool need_alloc_result,
+                                                          bool poisoned,
+                                                          TimeLimit work_until);
+      virtual AllocationResult
+      reuse_allocated_range(RegionInstanceImpl *old_inst,
+                            std::vector<RegionInstanceImpl *> &new_insts);
+
     public:
       DPU *dpu;
       char *base;
       DPUStream *stream;
+
+    protected:
+      void round_to_rows(RegionInstanceImpl *inst);
     }; // end class DPUMRAMMemory
 
     // An abstract base class for all DPU memcpy operations

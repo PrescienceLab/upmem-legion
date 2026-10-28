@@ -59,6 +59,8 @@ namespace Realm {
       cp.add_option_int("-ll:dpu_sg_blocks", cfg_sg_max_blocks);
       std::vector<std::string> skip_ranks;
       cp.add_option_stringlist("-ll:dpu_skip_ranks", skip_ranks);
+      std::string layout = "interleaved";
+      cp.add_option_string("-ll:dpu_layout", layout);
 
       bool ok = cp.parse_command_line(cmdline);
       if(!ok) {
@@ -67,6 +69,13 @@ namespace Realm {
       }
       for(size_t i = 0; i < skip_ranks.size(); i++)
         cfg_skip_ranks.push_back(atoi(skip_ranks[i].c_str()));
+      if(layout == "blocked")
+        cfg_blocked_layout = true;
+      else if(layout != "interleaved") {
+        log_dpu.fatal() << "-ll:dpu_layout must be interleaved or blocked, got "
+                        << layout;
+        assert(false);
+      }
       if((cfg_dpu_granule < 8) || ((cfg_dpu_granule & (cfg_dpu_granule - 1)) != 0)) {
         log_dpu.fatal() << "-ll:dpu_granule must be a power of two >= 8, got "
                         << cfg_dpu_granule;
@@ -87,15 +96,40 @@ namespace Realm {
 
     UpmemModule *upmem_module_singleton = 0;
 
-    size_t get_mram_row_bytes(Memory m)
+    static DPU *find_rank(Memory m)
     {
       if(!upmem_module_singleton)
         return 0;
       const std::vector<DPU *> &dpus = upmem_module_singleton->dpus;
       for(size_t i = 0; i < dpus.size(); i++)
         if(dpus[i]->mram && (dpus[i]->mram->me == m))
-          return dpus[i]->row_bytes();
+          return dpus[i];
       return 0;
+    }
+
+    size_t get_mram_row_bytes(Memory m)
+    {
+      DPU *rank = find_rank(m);
+      return rank ? rank->row_bytes() : 0;
+    }
+
+    bool is_mram_blocked(Memory m)
+    {
+      DPU *rank = find_rank(m);
+      return rank && rank->blocked;
+    }
+
+    bool get_mram_block(Memory m, const void *ptr, uint64_t *start, uint64_t *shard)
+    {
+      DPU *rank = find_rank(m);
+      if(!rank || !rank->blocked)
+        return false;
+      DPU::Block block;
+      if(!rank->find_block(uintptr_t(ptr) - REALM_UPMEM_RANK_PTR_BASE, block))
+        return false;
+      *start = block.start;
+      *shard = block.bytes / rank->nr_dpus;
+      return true;
     }
 
     UpmemModule::UpmemModule(RuntimeImpl *_runtime)
