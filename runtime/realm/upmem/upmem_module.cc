@@ -326,6 +326,7 @@ namespace Realm {
             runtime->nodes[Network::my_node_id].memories;
         std::vector<MemoryImpl *> all_local_mems;
         all_local_mems.insert(all_local_mems.end(), local_mems.begin(), local_mems.end());
+        const MemoryImpl *ext_sysmem = runtime->get_module<CoreModule>("core")->ext_sysmem;
         // </NEW_DMA>
         for(std::vector<MemoryImpl *>::iterator it = all_local_mems.begin();
             it != all_local_mems.end(); it++) {
@@ -347,7 +348,8 @@ namespace Realm {
 
           void *base = (*it)->get_direct_ptr(0, (*it)->size);
 
-          if(base == 0)
+          // attached host buffers live in ext_sysmem: no base, absolute offsets
+          if(base == 0 && (*it) != ext_sysmem)
             continue;
 
           registered_host_ptrs.push_back(base);
