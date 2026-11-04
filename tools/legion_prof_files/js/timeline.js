@@ -219,6 +219,9 @@ function getLineColor(elem) {
     "Proc Set": "orangered",
     "OpenMP": "orangered",
     "Python": "olivedrab",
+    "DPU": "olivedrab",
+    "DPU Device": "olivedrab",
+    "DPU Host": "orangered",
     "System Memory": "olivedrab",
     "GASNet Global Memory": "crimson",
     "Registered Memory": "darkmagenta",
@@ -231,6 +234,9 @@ function getLineColor(elem) {
     "L3 Cache Memory": "crimson",
     "L2 Cache Memory": "darkmagenta",
     "L1 Cache Memory": "olivedrab",
+    "GPU Managed Memory": "darkmagenta",
+    "GPU Dynamic Memory": "orangered",
+    "DPU MRAM Memory": "blue",
     "Channel": "orangered"
   };
   return colorMap[kind];
@@ -2013,6 +2019,7 @@ function drawExpandBox() {
         + "<div style='margin: 0 auto; margin-top: 10px; text-align: center;'>" 
           + "<input class='button' type='button' value='CPUs' onclick='evalExpandRequest(\"CPU\")'></input>" 
           + "<input class='button' type='button' value='GPUs' onclick='evalExpandRequest(\"GPU\");evalExpandRequest(\"GPU Device\");evalExpandRequest(\"GPU Host\")'></input>"
+          + "<input class='button' type='button' value='DPUs' onclick='evalExpandRequest(\"DPU\");evalExpandRequest(\"DPU Device\");evalExpandRequest(\"DPU Host\")'></input>"
           + "<input class='button' type='button' value='Utilities' onclick='evalExpandRequest(\"Utility\")'></input>" 
           + "<input class='button' type='button' value='IOs' onclick='evalExpandRequest(\"IO\")'></input>" 
           + "<input class='button' type='button' value='Memories' onclick='evalExpandRequest(\"Memory\")'></input>" 
