@@ -243,6 +243,8 @@ impl StateDataSource {
                     (ProcKind::ProcSet, None) => Color::ORANGERED,
                     (ProcKind::OpenMP, None) => Color::ORANGERED,
                     (ProcKind::Python, None) => Color::OLIVEDRAB,
+                    (ProcKind::DPU, Some(DeviceKind::Device)) => Color::OLIVEDRAB,
+                    (ProcKind::DPU, Some(DeviceKind::Host)) => Color::ORANGERED,
                     _ => unreachable!(),
                 };
                 let color: Color32 = color.into();
@@ -335,6 +337,7 @@ impl StateDataSource {
                     MemKind::L1Cache => Color::OLIVEDRAB,
                     MemKind::GPUManaged => Color::DARKMAGENTA,
                     MemKind::GPUDynamic => Color::ORANGERED,
+                    MemKind::DPUMRAM => Color::BLUE,
                 };
                 let color: Color32 = color.into();
 

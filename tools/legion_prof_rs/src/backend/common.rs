@@ -106,7 +106,9 @@ impl StatePostprocess for State {
             // utilization totals
             let nodes = [None, Some(proc.proc_id.node_id())];
             let devices: &'static [_] = match proc.kind.unwrap() {
-                ProcKind::GPU => &[Some(DeviceKind::Device), Some(DeviceKind::Host)],
+                ProcKind::GPU | ProcKind::DPU => {
+                    &[Some(DeviceKind::Device), Some(DeviceKind::Host)]
+                }
                 _ => &[None],
             };
             for node in nodes {
@@ -263,7 +265,9 @@ impl StatePostprocess for State {
             }
             let nodes = [None, Some(proc.proc_id.node_id())];
             let devices: &'static [_] = match proc.kind.unwrap() {
-                ProcKind::GPU => &[Some(DeviceKind::Device), Some(DeviceKind::Host)],
+                ProcKind::GPU | ProcKind::DPU => {
+                    &[Some(DeviceKind::Device), Some(DeviceKind::Host)]
+                }
                 _ => &[None],
             };
             for node in nodes {
