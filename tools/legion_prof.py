@@ -61,6 +61,7 @@ processor_kinds = {
     6 : 'Proc Set',
     7 : 'OpenMP',
     8 : 'Python',
+    9 : 'DPU',
 }
 
 # Make sure this is up to date with realm_c.h
@@ -80,6 +81,7 @@ memory_kinds = {
     12 : 'L1 Cache',
     13 : 'GPU Managed',
     14 : 'GPU Dynamic',
+    15 : 'DPU MRAM',
 }
 # Make sure this is up to date with memory_kinds
 memory_node_proc = {
@@ -98,6 +100,7 @@ memory_node_proc = {
     'L1 Cache': 'Proc_id',
     'GPU Managed': 'Node_id',
     'GPU Dynamic': 'GPU_proc_id',
+    'DPU MRAM': 'DPU_proc_id',
 }
 
 memory_kinds_abbr = {
@@ -115,7 +118,8 @@ memory_kinds_abbr = {
     'L2 Cache': ' l2',
     'L1 Cache': ' l1',
     'GPU Managed': ' uvm',
-    'GPU Dynamic': ' gpu-dyn'
+    'GPU Dynamic': ' gpu-dyn',
+    'DPU MRAM': ' mram'
 }
 
 # Make sure this is up to date with legion_types.h
@@ -3061,6 +3065,8 @@ class MemProcAffinity(object):
             return "[n" + str(self.mem.node_id) + "]" + memory_kinds_abbr[self.mem.kind]
         elif memory_node_proc[self.mem.kind] == "GPU_proc_id":
             return "[n" + str(self.best_proc_aff.node_id) + "][gpu" + str(self.best_proc_aff.proc_in_node) + "]" + memory_kinds_abbr[self.mem.kind]
+        elif memory_node_proc[self.mem.kind] == "DPU_proc_id":
+            return "[n" + str(self.best_proc_aff.node_id) + "][dpu" + str(self.best_proc_aff.proc_in_node) + "]" + memory_kinds_abbr[self.mem.kind]
         elif memory_node_proc[self.mem.kind] == "Proc_id":
             return "[n" + str(self.best_proc_aff.node_id) + "][cpu" + str(self.best_proc_aff.proc_in_node) + "]" + memory_kinds_abbr[self.mem.kind]
         else:

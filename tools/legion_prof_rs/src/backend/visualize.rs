@@ -390,6 +390,7 @@ impl fmt::Display for MemKindShort {
             MemKind::L1Cache => write!(f, "l1"),
             MemKind::GPUManaged => write!(f, "uvm"),
             MemKind::GPUDynamic => write!(f, "gpu-dyn"),
+            MemKind::DPUMRAM => write!(f, "mram"),
         }
     }
 }
@@ -431,6 +432,17 @@ impl fmt::Display for MemShort<'_> {
                 write!(
                     f,
                     "[n{}][gpu{}] {}",
+                    proc.proc_id.node_id().0,
+                    proc.proc_id.proc_in_node(),
+                    MemKindShort(mem_kind)
+                )
+            }
+            MemKind::DPUMRAM => {
+                let affinity = affinity.unwrap();
+                let proc = state.procs.get(&affinity.best_aff_proc).unwrap();
+                write!(
+                    f,
+                    "[n{}][dpu{}] {}",
                     proc.proc_id.node_id().0,
                     proc.proc_id.proc_in_node(),
                     MemKindShort(mem_kind)
@@ -1037,7 +1049,7 @@ pub fn emit_interactive_visualization<P: AsRef<Path>>(
         .par_iter()
         .filter(|proc| !proc.is_empty() && proc.is_visible())
         .flat_map(|proc| match proc.kind.unwrap() {
-            ProcKind::GPU => vec![
+            ProcKind::GPU | ProcKind::DPU => vec![
                 (proc, Some(DeviceKind::Device)),
                 (proc, Some(DeviceKind::Host)),
             ],

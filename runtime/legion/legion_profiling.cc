@@ -2039,7 +2039,9 @@ namespace Legion {
                 Realm::ProfilingMeasurements::OperationProcessorUsage>();
       req.add_measurement<
                 Realm::ProfilingMeasurements::OperationEventWaits>();
-      if (p.kind() == Processor::TOC_PROC)
+      // device modules record when their streams actually ran the task
+      if ((p.kind() == Processor::TOC_PROC) ||
+          (p.kind() == Processor::DPU_PROC))
         req.add_measurement<
           Realm::ProfilingMeasurements::OperationTimelineGPU>();
       req.add_measurement<

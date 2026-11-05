@@ -40,6 +40,7 @@ pub enum ProcKind {
     ProcSet = 6,
     OpenMP = 7,
     Python = 8,
+    DPU = 9,
 }
 
 // Make sure this is up to date with lowlevel.h
@@ -61,12 +62,14 @@ pub enum MemKind {
     L1Cache = 12,
     GPUManaged = 13,
     GPUDynamic = 14,
+    DPUMRAM = 15,
 }
 
 impl fmt::Display for MemKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             MemKind::ZeroCopy => write!(f, "Zero-Copy"),
+            MemKind::DPUMRAM => write!(f, "DPU MRAM"),
             _ => write!(f, "{:?}", self),
         }
     }
@@ -880,8 +883,8 @@ impl Proc {
         let mut points_device = Vec::new();
         let mut util_points_device = Vec::new();
 
-        if self.kind.unwrap() == ProcKind::GPU {
-            // On GPUs, split the entries between GPU kernels (which
+        if matches!(self.kind.unwrap(), ProcKind::GPU | ProcKind::DPU) {
+            // On GPUs and DPUs, split the entries between GPU kernels (which
             // we put on the device timeline) and other tasks (which
             // we put on the host timeline).
             for (uid, entry) in &self.entries {
