@@ -1410,6 +1410,11 @@ namespace Realm {
   /*static*/ void UserThread::uthread_entry(void *)
 #endif
   {
+#if defined(__x86_64__) && !defined(REALM_ON_WINDOWS)
+    // Mark the bottom of the stack: unwinders otherwise walk past
+    // makecontext's frame into uninitialized stack (e.g. Legion Prof backtraces).
+    asm volatile(".cfi_undefined rip");
+#endif
     UserThread *thread = ThreadLocal::current_user_thread;
     assert(thread != 0);
 
